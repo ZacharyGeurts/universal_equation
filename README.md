@@ -2,6 +2,8 @@
 
 Welcome to the **Dimension Dance Project**! This is a fun and educational tool that visualizes a mathematical model of dimensions as **permeation spheres of influence**. Let's explore the universe with 1D as an infinite base, 2D as the edge of a bubble, and higher dimensions (3D to 9D) nested within each other! Everywhere you look there is 1d (God), but there is only One 1d.
 
+wip. I am less concerned about functional code and more toward the hpp file being accurate. eg. expect to modify to get working.
+
 ## Overview
 
 - **Purpose**: This project uses C++ with **SDL3**, **SDL3_ttf**, and **Vulkan** to graph the outputs of a custom `UniversalEquation` class. It displays the symmetric ± outputs (like energy waves) for dimensions 1 through 9.
