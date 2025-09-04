@@ -1,6 +1,6 @@
 # Dimension Dance Project
 
-Welcome to the **Dimension Dance Project**! This is a fun and educational tool that visualizes a mathematical model of dimensions as **permeation spheres of influence**. Let's explore the universe with 1D as an infinite base, 2D as the edge of a bubble, and higher dimensions (3D to 9D) nested within each other!
+Welcome to the **Dimension Dance Project**! This is a fun and educational tool that visualizes a mathematical model of dimensions as **permeation spheres of influence**. Let's explore the universe with 1D as an infinite base, 2D as the edge of a bubble, and higher dimensions (3D to 9D) nested within each other! Everywhere you look there is 1d (God), but there is only One 1d.
 
 ## Overview
 
