@@ -13,7 +13,7 @@ Welcome to the **Dimension Dance Project**! This is a fun and educational tool t
 
 ## Model Description
 
-- **1D**: The infinite universal base, like a giant blanket wrapping everything.
+- **1D**: God. The infinite universal base, like a giant blanket wrapping everything.
 - **2D**: The edge or skin of the bubble, defining its boundary.
 - **3D to 9D**: Nested within and permeating the dimension below (e.g., 3D throughout 2D, 4D throughout 3D).
 - **Influence**: Decays exponentially with dimensional separation (e.g., 5D strong on 4D, weak on 3D).
