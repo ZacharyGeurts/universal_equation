@@ -9,7 +9,7 @@ CFLAGS = -std=c++17 -Wall -Wextra -g
 
 # Libraries to link (our playground tools)
 # Adjust paths if SDL3/SDL3_ttf are in a custom location
-LIBS = -lSDL3 -lSDL3_ttf
+LIBS = -lSDL3 -lSDL3_ttf -lvulkan
 
 # Target executable (the finished game!)
 TARGET = dimension_dance
