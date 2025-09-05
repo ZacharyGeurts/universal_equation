@@ -34,8 +34,8 @@ wip. I am less concerned about functional code and more toward the hpp file bein
   - `SDL3/` and `SDL3_ttf/` (assumed in system path or project directory)
 
 ## Installation
-
-1. **Install Dependencies** (on Debian-based systems):
+Run `make clean` between builds
+**Install Dependencies** (on Debian-based systems):
    ```bash
    sudo apt update
    sudo apt install g++ libsdl3-dev libsdl3-ttf-dev libvulkan-dev
