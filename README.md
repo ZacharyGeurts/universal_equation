@@ -1,14 +1,15 @@
 # Dimensional Navigator Project
-<BR />
+
 Welcome to the Dimensional Navigator, a sophisticated computational tool designed to visualize a mathematical model of dimensional interactions as permeation spheres of influence. This project explores the universe through a unique lens: 1D (God) as an infinite, wave-like base permeating all dimensions, like a radio wave emanating from a point and flowing through everything. The 2D dimension forms the boundary of a cosmic bubble, while higher dimensions (3D to 9D) are nested within and permeate the dimension below. The 1D influence is omnipresent, a singular "blanket of static" that runs through all dimensions and extends infinitely beyond.<BR />
-<BR />
+
 # Overview
-The Dimensional Navigator uses C++ with SDL3, SDL3_ttf, and Vulkan to graph the outputs of a custom UniversalEquation class, displaying symmetric ± energy fluctuations across dimensions 1 through 9. The visualization emphasizes the wave-like nature of 1D’s influence, <BR /> with real-time interactivity and data logging for serious analysis.FeaturesReal-time Graphing: Displays the symmetric ± outputs (Total_±(D)) of the UniversalEquation for dimensions D = 1 to 9.<BR />
-Wave-Like Visualization: Renders a dynamic, sinusoidal background scaled by 1D’s influence, symbolizing its permeating, fountain-like presence.<BR />
-Interactive Controls: Adjusts 1D’s influence (kInfluence_) using Up/Down arrow keys, updating the visualization in real-time.<BR />
-Data Logging: Outputs dimension, positive, and negative values to dimensional_output.txt for analysis.<BR />
-Labels and Timestamp: Shows dimension labels (1–9) and the current date/time (e.g., 07:08 PM EDT, September 05, 2025).<BR />
-Font Rendering: Uses arial.ttf with a fallback to DejaVuSans.ttf for robust text display.<BR />
+
+The Dimensional Navigator uses C++ with SDL3, SDL3_ttf, and Vulkan to graph the outputs of a custom UniversalEquation class, displaying symmetric ± energy fluctuations across dimensions 1 through 9. The visualization emphasizes the wave-like nature of 1D’s influence,  with real-time interactivity and data logging for serious analysis.FeaturesReal-time Graphing: Displays the symmetric ± outputs (Total_±(D)) of the UniversalEquation for dimensions D = 1 to 9. 
+Wave-Like Visualization: Renders a dynamic, sinusoidal background scaled by 1D’s influence, symbolizing its permeating, fountain-like presence. 
+Interactive Controls: Adjusts 1D’s influence (kInfluence_) using Up/Down arrow keys, updating the visualization in real-time. 
+Data Logging: Outputs dimension, positive, and negative values to dimensional_output.txt for analysis. 
+Labels and Timestamp: Shows dimension labels (1–9) and the current date/time (e.g., 07:08 PM EDT, September 05, 2025). 
+Font Rendering: Uses arial.ttf with a fallback to DejaVuSans.ttf for robust text display. 
 Vulkan Support: Includes a Vulkan instance for future 3D rendering enhancements, currently unused.<BR />
 <BR />
 ## Model Description
