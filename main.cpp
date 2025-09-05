@@ -1,197 +1,178 @@
 #include <SDL3/SDL.h>
-#include <SDL3/SDL_vulkan.h>
-#include <vulkan/vulkan.h> // Include Vulkan header for types and functions
 #include <SDL3_ttf/SDL_ttf.h>
 #include <iostream>
 #include <ctime>
+#include <vector>
 #include "universal_equation.hpp"
 
-int main(int argc, char* argv[]) {
-    // Turn on the playground lights with SDL!
-    if (SDL_Init(SDL_INIT_VIDEO) < 0) {
-        std::cerr << "Oops! Couldn't start SDL: " << SDL_GetError() << std::endl;
-        return 1;
-    }
-    // Turn on the text magic with SDL_ttf!
-    if (TTF_Init() < 0) {
-        std::cerr << "Oops! Couldn't start text: " << SDL_GetError() << std::endl;
-        SDL_Quit();
-        return 1;
+// RAII struct to manage SDL resources
+struct SDLResources {
+    SDL_Window* window = nullptr;
+    SDL_Renderer* renderer = nullptr;
+    TTF_Font* font = nullptr;
+
+    SDLResources(const char* title, int width, int height, const char* fontPath, int fontSize) {
+        if (!SDL_Init(SDL_INIT_VIDEO)) {
+            throw std::runtime_error("SDL_Init failed: " + std::string(SDL_GetError()));
+        }
+        if (!TTF_Init()) {
+            SDL_Quit();
+            throw std::runtime_error("TTF_Init failed: " + std::string(SDL_GetError()));
+        }
+        window = SDL_CreateWindow(title, width, height, 0);
+        if (!window) {
+            TTF_Quit();
+            SDL_Quit();
+            throw std::runtime_error("SDL_CreateWindow failed: " + std::string(SDL_GetError()));
+        }
+        renderer = SDL_CreateRenderer(window, nullptr); // Corrected: Removed extra flag argument
+        if (!renderer) {
+            SDL_DestroyWindow(window);
+            TTF_Quit();
+            SDL_Quit();
+            throw std::runtime_error("SDL_CreateRenderer failed: " + std::string(SDL_GetError()));
+        }
+        font = TTF_OpenFont(fontPath, fontSize);
+        if (!font) {
+            SDL_DestroyRenderer(renderer);
+            SDL_DestroyWindow(window);
+            TTF_Quit();
+            SDL_Quit();
+            throw std::runtime_error("TTF_OpenFont failed: " + std::string(SDL_GetError()));
+        }
     }
 
-    // Create our playground window with centered position!
-    SDL_Window* window = SDL_CreateWindow("Dimension Dance", 800, 600, SDL_WINDOWPOS_CENTERED_MASK);
-    if (!window) {
-        std::cerr << "Oops! Couldn't make a window: " << SDL_GetError() << std::endl;
+    ~SDLResources() {
+        if (font) TTF_CloseFont(font);
+        if (renderer) SDL_DestroyRenderer(renderer);
+        if (window) SDL_DestroyWindow(window);
         TTF_Quit();
         SDL_Quit();
-        return 1;
     }
+};
 
-    // Initialize Vulkan instance
-    VkInstance vulkanInstance = VK_NULL_HANDLE;
-    VkApplicationInfo appInfo = {};
-    appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
-    appInfo.pApplicationName = "Dimension Dance";
-    appInfo.applicationVersion = VK_MAKE_VERSION(1, 0, 0);
-    appInfo.pEngineName = "No Engine";
-    appInfo.engineVersion = VK_MAKE_VERSION(1, 0, 0);
-    appInfo.apiVersion = VK_API_VERSION_1_0;
+// Cache for UniversalEquation results
+struct DimensionData {
+    int dimension;
+    double positive;
+    double negative;
+};
 
-    VkInstanceCreateInfo createInfo = {};
-    createInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
-    createInfo.pApplicationInfo = &appInfo;
-    unsigned int count = 0;
-    if (!SDL_Vulkan_GetInstanceExtensions(&count)) { // Use SDL_Window* and nullptr for first call
-        std::cerr << "Oops! Couldn't get Vulkan extension count: " << SDL_GetError() << std::endl;
-        SDL_DestroyWindow(window);
-        TTF_Quit();
-        SDL_Quit();
-        return 1;
-    }
-    const char** names = new const char*[count];
-    if (!SDL_Vulkan_GetInstanceExtensions(&count)) { // Get extension names
-        std::cerr << "Oops! Couldn't get Vulkan extension names: " << SDL_GetError() << std::endl;
-        delete[] names;
-        SDL_DestroyWindow(window);
-        TTF_Quit();
-        SDL_Quit();
-        return 1;
-    }
-    createInfo.enabledExtensionCount = count;
-    createInfo.ppEnabledExtensionNames = names;
-    if (vkCreateInstance(&createInfo, nullptr, &vulkanInstance) != VK_SUCCESS) {
-        std::cerr << "Oops! Couldn't create Vulkan instance: " << SDL_GetError() << std::endl;
-        delete[] names;
-        SDL_DestroyWindow(window);
-        TTF_Quit();
-        SDL_Quit();
-        return 1;
-    }
+int main([[maybe_unused]] int argc, [[maybe_unused]] char* argv[]) {
+    try {
+        // Initialize SDL and resources
+        SDLResources res("Dimension Dance", 800, 600, "arial.ttf", 16);
 
-    // Get our paintbrush (renderer) for now
-    SDL_Renderer* renderer = SDL_CreateRenderer(window, nullptr); // No flags, default renderer
-    if (!renderer) {
-        std::cerr << "Oops! Couldn't get a paintbrush: " << SDL_GetError() << std::endl;
-        vkDestroyInstance(vulkanInstance, nullptr);
-        delete[] names;
-        SDL_DestroyWindow(window);
-        TTF_Quit();
-        SDL_Quit();
-        return 1;
-    }
+        // Center the window
+        SDL_SetWindowPosition(res.window, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
 
-    // Load the magic letters from arial.ttf!
-    TTF_Font* font = TTF_OpenFont("arial.ttf", 16); // Size 16 text
-    if (!font) {
-        std::cerr << "Oops! Couldn't load the font: " << SDL_GetError() << std::endl;
-        SDL_DestroyRenderer(renderer);
-        vkDestroyInstance(vulkanInstance, nullptr);
-        delete[] names;
-        SDL_DestroyWindow(window);
-        TTF_Quit();
-        SDL_Quit();
-        return 1;
-    }
+        // Set up UniversalEquation with wave-like parameters
+        UniversalEquation ue(9, 1.0, 0.5, 0.5, 0.5, 2.0, 5.0, 0.2);
 
-    // Set up our dimension dance calculator!
-    UniversalEquation ue;
+        // Cache computation results
+        std::vector<DimensionData> cache;
+        for (int d = 1; d <= ue.getMaxDimensions(); ++d) {
+            ue.setCurrentDimension(d);
+            auto [pos, neg] = ue.compute();
+            cache.push_back({d, pos, neg});
+        }
 
-    // Keep playing until we close the window!
-    bool running = true;
-    SDL_Event event;
-    while (running) {
-        // Check if we want to quit (close the playground!)
-        while (SDL_PollEvent(&event)) {
-            if (event.type == SDL_EVENT_QUIT) {
-                running = false;
+        // Animation parameter for wave-like effect
+        float wavePhase = 0.0f;
+        const float waveSpeed = 0.1f;
+
+        // Main loop
+        bool running = true;
+        SDL_Event event;
+        while (running) {
+            while (SDL_PollEvent(&event)) {
+                if (event.type == SDL_EVENT_QUIT) {
+                    running = false;
+                }
             }
-        }
 
-        // Wipe the canvas clean!
-        SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255); // Black background
-        SDL_RenderClear(renderer);
+            // Clear the screen
+            SDL_SetRenderDrawColor(res.renderer, 0, 0, 0, 255);
+            SDL_RenderClear(res.renderer);
 
-        // Draw the dimension dance graph!
-        SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255); // White lines
-        int width = 700; // Graph width
-        int height = 500; // Graph height
-        int xOffset = 50; // Left margin
-        int yOffset = 50; // Top margin
-        for (int d = 1; d <= 9; ++d) {
-            ue.setCurrentDimension(d); // Pick a dimension to play with
-            auto [totalPositive, totalNegative] = ue.compute(); // Get the plus and minus energy
+            // Graph parameters
+            const int width = 700, height = 500, xOffset = 50, yOffset = 50;
+            const float scale = 25.0f;
 
-            // Turn dimension (1-9) into a spot on the x-axis
-            int x = xOffset + (d - 1) * (width / 8);
-            // Turn the energy values into spots on the y-axis (scale by 25 to see them)
-            int yPositive = yOffset + height - (static_cast<int>(totalPositive * 25));
-            int yNegative = yOffset + height - (static_cast<int>(totalNegative * 25));
-
-            // Draw dots for the plus and minus energy
-            SDL_RenderPoint(renderer, x, yPositive);
-            SDL_RenderPoint(renderer, x, yNegative);
-
-            // Connect the dots with lines to make a path
-            if (d > 1) {
-                int prevX = xOffset + (d - 2) * (width / 8);
-                ue.setCurrentDimension(d - 1); // Go back to the last dimension
-                auto [prevPos, prevNeg] = ue.compute();
-                int prevYPos = yOffset + height - (static_cast<int>(prevPos * 25));
-                int prevYNeg = yOffset + height - (static_cast<int>(prevNeg * 25));
-                SDL_RenderLine(renderer, prevX, prevYPos, x, yPositive);
-                SDL_RenderLine(renderer, prevX, prevYNeg, x, yNegative);
+            // Draw wave-like background for 1D influence
+            SDL_SetRenderDrawColor(res.renderer, 0, 100, 100, 128);
+            for (int x = xOffset; x < xOffset + width; x += 5) {
+                int y = yOffset + height / 2 + static_cast<int>(20.0f * std::sin((x - xOffset) * 0.01f + wavePhase));
+                SDL_RenderPoint(res.renderer, x, y);
             }
+            wavePhase += waveSpeed;
+
+            // Draw graph
+            SDL_SetRenderDrawColor(res.renderer, 255, 255, 255, 255);
+            for (size_t i = 0; i < cache.size(); ++i) {
+                int x = xOffset + static_cast<int>(i * (width / (float)(cache.size() - 1)));
+                int yPositive = yOffset + height - static_cast<int>(cache[i].positive * scale);
+                int yNegative = yOffset + height - static_cast<int>(cache[i].negative * scale);
+                SDL_RenderPoint(res.renderer, x, yPositive);
+                SDL_RenderPoint(res.renderer, x, yNegative);
+
+                if (i > 0) {
+                    int prevX = xOffset + static_cast<int>((i - 1) * (width / (float)(cache.size() - 1)));
+                    int prevYPos = yOffset + height - static_cast<int>(cache[i - 1].positive * scale);
+                    int prevYNeg = yOffset + height - static_cast<int>(cache[i - 1].negative * scale);
+                    SDL_RenderLine(res.renderer, prevX, prevYPos, x, yPositive);
+                    SDL_RenderLine(res.renderer, prevX, prevYNeg, x, yNegative);
+                }
+            }
+
+            // Draw axes
+            SDL_SetRenderDrawColor(res.renderer, 128, 128, 128, 255);
+            SDL_RenderLine(res.renderer, xOffset, yOffset + height, xOffset + width, yOffset + height);
+            SDL_RenderLine(res.renderer, xOffset, yOffset, xOffset, yOffset + height);
+
+            // Draw dimension labels
+            SDL_Color white = {255, 255, 255, 255};
+            for (int d = 1; d <= ue.getMaxDimensions(); ++d) {
+                char label[4];
+                snprintf(label, sizeof(label), "%d", d);
+                SDL_Surface* surface = TTF_RenderText_Solid(res.font, label, strlen(label), white);
+                if (!surface) continue;
+                SDL_Texture* texture = SDL_CreateTextureFromSurface(res.renderer, surface);
+                if (!texture) {
+                    SDL_DestroySurface(surface);
+                    continue;
+                }
+                int x = xOffset + (d - 1) * (width / (ue.getMaxDimensions() - 1)) - 10;
+                int y = yOffset + height + 10;
+                SDL_FRect rect = {static_cast<float>(x), static_cast<float>(y), static_cast<float>(surface->w), static_cast<float>(surface->h)};
+                SDL_RenderTexture(res.renderer, texture, nullptr, &rect);
+                SDL_DestroySurface(surface);
+                SDL_DestroyTexture(texture);
+            }
+
+            // Draw timestamp
+            time_t now = time(nullptr);
+            char timeStr[50];
+            strftime(timeStr, sizeof(timeStr), "%I:%M %p %Z, %B %d, %Y", localtime(&now));
+            SDL_Surface* timeSurface = TTF_RenderText_Solid(res.font, timeStr, strlen(timeStr), white);
+            if (timeSurface) {
+                SDL_Texture* timeTexture = SDL_CreateTextureFromSurface(res.renderer, timeSurface);
+                if (timeTexture) {
+                    SDL_FRect timeRect = {static_cast<float>(xOffset), static_cast<float>(yOffset - 20),
+                                          static_cast<float>(timeSurface->w), static_cast<float>(timeSurface->h)};
+                    SDL_RenderTexture(res.renderer, timeTexture, nullptr, &timeRect);
+                    SDL_DestroyTexture(timeTexture);
+                }
+                SDL_DestroySurface(timeSurface);
+            }
+
+            SDL_RenderPresent(res.renderer);
+            SDL_Delay(16); // ~60 FPS
         }
-
-        // Draw the playground grid (x and y axes)!
-        SDL_SetRenderDrawColor(renderer, 128, 128, 128, 255); // Gray lines
-        SDL_RenderLine(renderer, xOffset, yOffset + height, xOffset + width, yOffset + height); // X-axis
-        SDL_RenderLine(renderer, xOffset, yOffset, xOffset, yOffset + height); // Y-axis
-
-        // Add number labels for each dimension (1 to 9)!
-        for (int d = 1; d <= 9; ++d) {
-            char label[4];
-            snprintf(label, sizeof(label), "%d", d);
-            SDL_Color white = {255, 255, 255, 255}; // White color for text
-            SDL_Surface* surface = TTF_RenderText_Solid(font, label, strlen(label), white);
-            SDL_Texture* texture = SDL_CreateTextureFromSurface(renderer, surface);
-            int x = xOffset + (d - 1) * (width / 8) - 10; // Center the number
-            int y = yOffset + height + 10;
-            SDL_FRect rect = {static_cast<float>(x), static_cast<float>(y), static_cast<float>(surface->w), static_cast<float>(surface->h)};
-            SDL_RenderTexture(renderer, texture, nullptr, &rect);
-            SDL_DestroySurface(surface);
-            SDL_DestroyTexture(texture);
-        }
-
-        // Add the current time (our playground clock)!
-        time_t now = time(0);
-        tm* ltm = localtime(&now);
-        char timeStr[50];
-        strftime(timeStr, sizeof(timeStr), "Time: %I:%M %p EDT, %B %d, %Y", ltm); // e.g., 07:34 PM EDT, September 04, 2025
-        SDL_Color white = {255, 255, 255, 255}; // White color for text
-        SDL_Surface* timeSurface = TTF_RenderText_Solid(font, timeStr, strlen(timeStr), white);
-        SDL_Texture* timeTexture = SDL_CreateTextureFromSurface(renderer, timeSurface);
-        SDL_FRect timeRect = {static_cast<float>(xOffset), static_cast<float>(yOffset - 20), static_cast<float>(timeSurface->w), static_cast<float>(timeSurface->h)};
-        SDL_RenderTexture(renderer, timeTexture, nullptr, &timeRect);
-        SDL_DestroySurface(timeSurface);
-        SDL_DestroyTexture(timeTexture);
-
-        // Show the drawing to everyone!
-        SDL_RenderPresent(renderer);
-
-        // Take a little break so we can enjoy the show!
-        SDL_Delay(100);
+    } catch (const std::exception& e) {
+        std::cerr << "Error: " << e.what() << std::endl;
+        return 1;
     }
-
-    // Put the toys away!
-    TTF_CloseFont(font);
-    SDL_DestroyRenderer(renderer);
-    vkDestroyInstance(vulkanInstance, nullptr);
-    delete[] names;
-    SDL_DestroyWindow(window);
-    TTF_Quit();
-    SDL_Quit();
 
     return 0;
 }
