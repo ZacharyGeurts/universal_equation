@@ -35,6 +35,7 @@ wip. I am less concerned about functional code and more toward the hpp file bein
 
 ## Installation
 Run `make clean` between builds
+
 **Install Dependencies** (on Debian-based systems):
    ```bash
    sudo apt update
