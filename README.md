@@ -39,3 +39,8 @@ wip. I am less concerned about functional code and more toward the hpp file bein
    ```bash
    sudo apt update
    sudo apt install g++ libsdl3-dev libsdl3-ttf-dev libvulkan-dev
+
+   git clone https://github.com/ZacharyGeurts/universal_equation
+
+   cd universal_equation
+   make
