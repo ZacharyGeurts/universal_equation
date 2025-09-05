@@ -1,163 +1,154 @@
 // universal_equation.hpp
-// This file is like a magical playground where we explore a universe made of dimensions (1D, 2D, 3D, up to 9D) 
-// that fit inside each other like Russian dolls! 1D is an infinite, giant blanket that wraps everything up. 
-// 2D is like the edge or skin of a big bubble that holds all the dimensions, not a bubble itself. 
-// Then, 3D lives inside and spreads throughout 2D, 4D lives inside and spreads throughout 3D, and so on, 
-// up to 9D! The pattern 1D-9D-8D-...-2D-1D-2D-...-1D is like a dance where 2D-1D-2D (the middle part) 
-// shows 2D as the bubble's edge with 1D in the center. The dimensions talk to each other: close ones shout, 
-// far ones whisper, and each dimension loves to fill the one below it. We get two answers (plus and minus) 
-// like a seesaw, showing the universe's wiggly energy waves!
+// This header defines the UniversalEquation class, a precise mathematical model for calculating
+// interactions between dimensions (1D to maxDimensions, default 9D). The model represents 1D as an
+// infinite foundational layer, 2D as the boundary enclosing all dimensions, and higher dimensions (3D to 9D)
+// embedded within lower ones. Interactions follow a pattern (1D to 9D, back to 1D, then to 2D) with a cycle
+// length of 2*maxDimensions-1. Influence between dimensions decays exponentially with distance, and a collapse
+// term introduces oscillatory dynamics. The model outputs dual values (positive and negative) representing
+// energy fluctuations.
 
 #ifndef UNIVERSAL_EQUATION_HPP
 #define UNIVERSAL_EQUATION_HPP
 
-#include <vector>   // This helps us make lists to keep track of our dimension friends
-#include <cmath>    // This gives us cool math tools like cos (wiggly waves) and exp (fading whispers)
-#include <utility>  // This lets us give two answers at once, like a plus and minus pair
+#include <vector>
+#include <cmath>
+#include <utility>
 
-// The UniversalEquation is our playground toy that figures out how dimensions talk and wave!
 class UniversalEquation {
 public:
-    // Constructor: This sets up our toy with dials to adjust how it works.
-    // Think of it like building a playground with sliders to change the game!
+    // Constructor: Initializes the dimensional interaction model with configurable parameters.
+    // Parameters control influence strength, dimensional interactions, and oscillatory behavior.
     UniversalEquation(
-        int maxDimensions = 9,     // The biggest dimension we can play with (like 9D)
-        double influence = 1.0,    // How strong 1D's giant blanket hugs everything
-        double weak = 0.5,         // A softer voice for big dimensions (above 3D)
-        double collapse = 0.5,     // How much the energy pull or push works
-        double twoD = 0.5,         // How strong 2D's edge wiggle is
-        double permeation = 2.0,   // How much a dimension loves to fill the one below it
-        double alpha = 5.0,        // How fast voices fade when dimensions are far apart
-        double beta = 0.2          // How the pull changes as dimensions get bigger
+        int maxDimensions = 9,     // Maximum dimension (e.g., 9D)
+        double influence = 1.0,    // Strength of 1D's foundational influence
+        double weak = 0.5,         // Attenuation factor for interactions between dimensions > 3
+        double collapse = 0.5,     // Amplitude of the collapse term
+        double twoD = 0.5,         // Strength of 2D's boundary interaction
+        double permeation = 2.0,   // Amplification for higher dimensions interacting with lower ones
+        double alpha = 5.0,        // Exponential decay rate for interdimensional influence
+        double beta = 0.2          // Modulation factor for collapse term scaling
     )
-        : maxDimensions_(maxDimensions), // Save the biggest dimension
-          currentDimension_(1),         // Start with 1D, the infinite blanket
-          kInfluence_(influence),      // Save 1D's hugging strength
-          kWeak_(weak),                // Save the soft voice for big dimensions
-          kCollapse_(collapse),        // Save the pull strength
-          kTwoD_(twoD),                // Save 2D's edge wiggle strength
-          kPermeation_(permeation),    // Save how much dimensions fill the ones below
-          alpha_(alpha),               // Save the fading speed
-          beta_(beta) {                // Save the pull changer
-        initializeDimensions();        // Get our dimension friends ready to play
+        : maxDimensions_(std::max(1, maxDimensions)), // Ensure at least 1D
+          currentDimension_(1),
+          kInfluence_(std::max(0.0, influence)),      // Non-negative influence
+          kWeak_(std::max(0.0, weak)),                // Non-negative attenuation
+          kCollapse_(std::max(0.0, collapse)),        // Non-negative collapse amplitude
+          kTwoD_(std::max(0.0, twoD)),                // Non-negative 2D interaction
+          kPermeation_(std::max(0.0, permeation)),    // Non-negative permeation
+          alpha_(std::max(0.1, alpha)),              // Positive decay rate
+          beta_(std::max(0.0, beta)) {               // Non-negative modulation
+        initializeDimensions();
     }
 
-    // Setters: These are like sliders to change the playground rules.
-    void setInfluence(double value) { kInfluence_ = value; }   // Change 1D's hugging strength
-    void setWeak(double value) { kWeak_ = value; }             // Change the soft voice
-    void setCollapse(double value) { kCollapse_ = value; }     // Change the pull strength
-    void setTwoD(double value) { kTwoD_ = value; }             // Change 2D's edge wiggle
-    void setPermeation(double value) { kPermeation_ = value; } // Change how much dimensions fill below
-    void setAlpha(double value) { alpha_ = value; }            // Change the fading speed
-    void setBeta(double value) { beta_ = value; }              // Change the pull changer
+    // Setters: Adjust model parameters for interdimensional interactions.
+    void setInfluence(double value) { kInfluence_ = std::max(0.0, value); }
+    void setWeak(double value) { kWeak_ = std::max(0.0, value); }
+    void setCollapse(double value) { kCollapse_ = std::max(0.0, value); }
+    void setTwoD(double value) { kTwoD_ = std::max(0.0, value); }
+    void setPermeation(double value) { kPermeation_ = std::max(0.0, value); }
+    void setAlpha(double value) { alpha_ = std::max(0.1, value); }
+    void setBeta(double value) { beta_ = std::max(0.0, value); }
 
-    // Getters: These tell us where the sliders are set right now.
-    double getInfluence() const { return kInfluence_; }   // What's 1D's hugging strength?
-    double getWeak() const { return kWeak_; }             // What's the soft voice?
-    double getCollapse() const { return kCollapse_; }     // What's the pull strength?
-    double getTwoD() const { return kTwoD_; }             // What's 2D's edge wiggle?
-    double getPermeation() const { return kPermeation_; } // How much do dimensions fill below?
-    double getAlpha() const { return alpha_; }            // How fast do voices fade?
-    double getBeta() const { return beta_; }              // What's the pull changer?
+    // Getters: Retrieve current parameter values.
+    double getInfluence() const { return kInfluence_; }
+    double getWeak() const { return kWeak_; }
+    double getCollapse() const { return kCollapse_; }
+    double getTwoD() const { return kTwoD_; }
+    double getPermeation() const { return kPermeation_; }
+    double getAlpha() const { return alpha_; }
+    double getBeta() const { return beta_; }
 
-    // DimensionData: This is like a little note card about a dimension friend we're chatting with.
+    // DimensionData: Stores data for interacting dimensions.
     struct DimensionData {
-        int dPrime;       // The friend dimension (like 4D if we're in 5D)
-        double distance;  // How many steps apart the dimensions are
+        int dPrime;       // Interacting dimension
+        double distance;  // Dimensional separation
     };
 
-    // calculateInfluenceTerm: This figures out how loudly two dimensions talk.
-    // Close friends shout, far friends whisper, and 1D talking to itself is a big hug!
+    // calculateInfluenceTerm: Computes the interaction strength between dimensions d and dPrime.
+    // 1D has a dominant influence when interacting with itself. Other interactions decay with distance.
     double calculateInfluenceTerm(int d, int dPrime) const {
-        if (d == 1 && dPrime == 1) return kInfluence_; // 1D's big hug to itself!
-        double distance = std::abs(d - dPrime); // How many steps between the dimensions?
-        double modifier = (d > 3 && dPrime > 3) ? kWeak_ : 1.0; // Big dimensions talk softer
-        // The talk strength depends on distance and a big number
-        return kInfluence_ * (distance / std::pow(d, dPrime)) * modifier;
+        if (d == 1 && dPrime == 1) return kInfluence_;
+        double distance = std::abs(d - dPrime);
+        double denominator = std::pow(std::min(d, 10), std::min(dPrime, 10)); // Cap for stability
+        double modifier = (d > 3 && dPrime > 3) ? kWeak_ : 1.0;
+        if (denominator < 1e-10) return 0.0; // Prevent numerical instability
+        return kInfluence_ * (distance / denominator) * modifier;
     }
 
-    // calculatePermeationFactor: This makes a dimension talk extra loud to the one below it.
-    // Like 3D spreading all over 2D or 4D filling 3D, because they live inside each other!
+    // calculatePermeationFactor: Amplifies interactions from a higher dimension to the one below
+    // or from higher dimensions to 2D (the boundary).
     double calculatePermeationFactor(int d, int dPrime) const {
-        if (d >= 3 && dPrime == d - 1) return kPermeation_; // Extra loud to the dimension below
-        if (dPrime == 2 && d >= 3) return kTwoD_;           // 2D's edge talks to higher dimensions
-        return 1.0; // Normal talk for other friends
+        if (d >= 3 && dPrime == d - 1) return kPermeation_;
+        if (dPrime == 2 && d >= 3) return kTwoD_;
+        return 1.0;
     }
 
-    // calculateCollapseTerm: This is like a magical pull that wiggles the energy up or down.
-    // It’s like a wave that gets softer for bigger dimensions.
+    // calculateCollapseTerm: Models oscillatory dynamics for dimensions >= 2, modulated by dimension size.
     double calculateCollapseTerm(int d) const {
-        static const double omega = 2.0 * M_PI / 19.0; // The wave speed, based on our 19-step dance
-        if (d == 1) return 0.0; // No pull for 1D, the infinite blanket
-        // The pull grows with the dimension, fades a bit, and wiggles
+        double omega = 2.0 * M_PI / (2 * maxDimensions_ - 1); // Dynamic cycle length
+        if (d == 1) return 0.0;
         return kCollapse_ * d * std::exp(-beta_ * (d - 1)) * std::abs(std::cos(omega * d));
     }
 
-    // compute: This is the fun part! It adds up all the dimension talks and gives two answers.
-    // Like a seesaw: one side goes up (plus), one goes down (minus), showing the energy waves!
+    // compute: Calculates the total dimensional influence for the current dimension, returning
+    // dual values (positive and negative) representing energy fluctuations.
     std::pair<double, double> compute() const {
-        // Start with 1D's big blanket hug, covering all dimensions
         double sphereInfluence = kInfluence_;
-        // If we're at 2D or higher, add 2D's edge wiggle, like a dance on the bubble's skin
         if (currentDimension_ >= 2) {
-            static const double omega = 2.0 * M_PI / 19.0; // Same wave speed
+            double omega = 2.0 * M_PI / (2 * maxDimensions_ - 1);
             sphereInfluence += kTwoD_ * std::cos(omega * currentDimension_);
         }
-        // Talk to nearby dimensions (like D-1, D, D+1)
         for (const auto& data : dimensionPairs_) {
-            // Each talk gets quieter if far apart (exp(-alpha * distance))
-            // And extra loud if filling the dimension below or talking to 2D's edge
-            sphereInfluence += calculateInfluenceTerm(currentDimension_, data.dPrime) * 
-                              std::exp(-alpha_ * data.distance) * 
-                              calculatePermeationFactor(currentDimension_, data.dPrime);
+            sphereInfluence += calculateInfluenceTerm(currentDimension_, data.dPrime) *
+                               std::exp(-alpha_ * data.distance) *
+                               calculatePermeationFactor(currentDimension_, data.dPrime);
         }
-        // Get the pull force (up or down)
         double collapse = calculateCollapseTerm(currentDimension_);
-        // Give two answers: one with a push up, one with a push down
         return {sphereInfluence + collapse, sphereInfluence - collapse};
     }
 
-    // setCurrentDimension: Pick which dimension to play with, like choosing a doll in the nest!
+    // setCurrentDimension: Sets the active dimension for computation.
     void setCurrentDimension(int dimension) {
         if (dimension >= 1 && dimension <= maxDimensions_) {
-            currentDimension_ = dimension; // Set the current dimension
-            updateDimensionPairs();        // Find its nearby friends
+            currentDimension_ = dimension;
+            updateDimensionPairs();
         }
     }
 
-    // getCurrentDimension: Tells us which doll we're playing with now.
+    // getCurrentDimension: Returns the active dimension.
     int getCurrentDimension() const { return currentDimension_; }
 
-    // getMaxDimensions: Tells us the biggest doll we can play with (like 9D).
+    // getMaxDimensions: Returns the maximum dimension.
     int getMaxDimensions() const { return maxDimensions_; }
 
 private:
-    // These are the playground's tools and settings
-    int maxDimensions_;       // The biggest dimension (e.g., 9D)
-    int currentDimension_;    // The dimension we're playing with now (e.g., 3D)
-    double kInfluence_;       // How strong 1D's blanket hug is
-    double kWeak_;            // Softer voice for big dimensions (above 3D)
-    double kCollapse_;        // How strong the pull force is
-    double kTwoD_;            // How strong 2D's edge wiggle is
-    double kPermeation_;      // How much a dimension fills the one below
-    double alpha_;            // How fast voices fade when far apart
-    double beta_;             // How the pull changes for bigger dimensions
-    std::vector<DimensionData> dimensionPairs_; // List of nearby dimension friends
+    // Model parameters
+    int maxDimensions_;       // Maximum dimension
+    int currentDimension_;    // Active dimension
+    double kInfluence_;       // 1D influence strength
+    double kWeak_;            // Attenuation for dimensions > 3
+    double kCollapse_;        // Collapse term amplitude
+    double kTwoD_;            // 2D boundary interaction strength
+    double kPermeation_;      // Amplification for higher-to-lower dimension interactions
+    double alpha_;            // Exponential decay rate
+    double beta_;             // Collapse modulation factor
+    std::vector<DimensionData> dimensionPairs_; // Nearby dimensions for interaction
 
-    // initializeDimensions: Sets up our playground with the dimension friends.
+    // initializeDimensions: Initializes the dimensional interaction data.
     void initializeDimensions() {
-        updateDimensionPairs(); // Make the friend list
+        updateDimensionPairs();
     }
 
-    // updateDimensionPairs: Finds the nearby dimensions (D-1, D, D+1) to chat with.
-    // Like making a list of friends who live next door in the doll nest.
+    // updateDimensionPairs: Updates the list of interacting dimensions (D-1, D, D+1, and 2D for d >= 3).
     void updateDimensionPairs() {
-        dimensionPairs_.clear(); // Clear the old friend list
-        int start = std::max(1, currentDimension_ - 1); // Start at the dimension below, but not below 1D
-        int end = std::min(maxDimensions_, currentDimension_ + 1); // End at the dimension above, but not above 9D
+        dimensionPairs_.clear();
+        int start = std::max(1, currentDimension_ - 1);
+        int end = std::min(maxDimensions_, currentDimension_ + 1);
         for (int dPrime = start; dPrime <= end; ++dPrime) {
-            // Add each friend and how far they are
             dimensionPairs_.push_back({dPrime, static_cast<double>(std::abs(currentDimension_ - dPrime))});
+        }
+        if (currentDimension_ >= 3 && currentDimension_ <= maxDimensions_) {
+            dimensionPairs_.push_back({2, static_cast<double>(currentDimension_ - 2)});
         }
     }
 };
