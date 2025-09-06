@@ -4,7 +4,7 @@ Welcome to the Dimensional Navigator, a sophisticated computational tool designe
 
 ## Note:
 This is currently needing more code and is not to be considered accurate to the theory or any aspect as of yet.<BR />
-I intend some mathematical deep diving in the future, expect updates.
+I intend some mathematical deep diving in the future, expect updates.<BR />
 The truly ambitious can look at the wip branch(s). They may not compile or execute currently.<BR />
 
 ## Overview
