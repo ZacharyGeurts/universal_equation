@@ -45,6 +45,6 @@ Run `make clean` between builds to ensure a fresh compilation.
 `make`
 
 # Run the navigator
-`./dimensional_navigator`
+`./Navigator`
 
 
