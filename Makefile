@@ -12,7 +12,7 @@ CFLAGS = -std=c++17 -Wall -Wextra -g
 LIBS = -lSDL3 -lSDL3_ttf -lvulkan
 
 # Target executable (the finished game!)
-TARGET = dimension_dance
+TARGET = Navigator
 
 # Source files (the ingredients)
 SOURCES = main.cpp

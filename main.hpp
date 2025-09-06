@@ -21,7 +21,7 @@ struct DimensionData {
 class DimensionalNavigator {
 public:
     DimensionalNavigator(const char* title = "Dimensional Navigator",
-                        int width = 800, int height = 600,
+                        int width = 1920, int height = 1280,
                         const char* fontPath = "arial.ttf", int fontSize = 16)
         : window_(nullptr), renderer_(nullptr), font_(nullptr), vulkanInstance_(VK_NULL_HANDLE) {
         initializeSDL(title, width, height, fontPath, fontSize);
@@ -111,7 +111,7 @@ private:
         appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
         appInfo.pApplicationName = "Dimensional Navigator";
         appInfo.applicationVersion = VK_MAKE_VERSION(1, 0, 0);
-        appInfo.pEngineName = "No Engine";
+        appInfo.pEngineName = "Zac Engine";
         appInfo.engineVersion = VK_MAKE_VERSION(1, 0, 0);
         appInfo.apiVersion = VK_API_VERSION_1_0;
 
@@ -170,7 +170,7 @@ private:
         SDL_RenderClear(renderer_);
 
         // Graph parameters
-        const int width = 700, height = 500, xOffset = 50, yOffset = 50;
+        const int width = 1820, height = 1180, xOffset = 50, yOffset = 50;
         const float scale = 25.0f;
 
         // Draw wave-like background for 1D influence
