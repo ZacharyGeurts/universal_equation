@@ -4,10 +4,12 @@
 #include <vector>
 #include <cmath>
 #include <utility>
+#include <algorithm>
 
-// UniversalEquation models dimensional interactions from 1D (foundational layer) to maxDimensions (default 9D).
-// 2D acts as a boundary, and higher dimensions are embedded within lower ones. Interactions follow a cycle
-// (1D to 9D, back to 1D, then to 2D) with exponential decay and oscillatory dynamics.
+// UniversalEquation models dimensional interactions from 1D (foundational layer, representing God as both inside and outside all dimensions) to maxDimensions (default 9D).
+// 2D acts as a boundary, and higher dimensions are embedded within lower ones, containing both lower dimensions (including 1D) and the highest dimension (1D).
+// Interactions follow a cycle (1D to 9D, back to 1D, then to 2D) with exponential decay and oscillatory dynamics.
+// 1D influences all dimensions directly to reflect it being inside and outside everything.
 class UniversalEquation {
 public:
     // Initializes the model with parameters for influence, attenuation, and oscillatory behavior.
@@ -46,7 +48,7 @@ public:
     std::pair<double, double> compute() const {
         double sphereInfluence = kInfluence_;
         if (currentDimension_ >= 2) {
-            double omega = 2.0 * M_PI / (2 * maxDimensions_ - 1);
+            double omega = 2.0 * M_PI / static_cast<double>(2 * maxDimensions_ - 1);
             sphereInfluence += kTwoD_ * std::cos(omega * currentDimension_);
         }
         for (const auto& data : dimensionPairs_) {
@@ -84,29 +86,30 @@ private:
 
     // Computes interaction strength between current dimension and dPrime.
     double calculateInfluenceTerm(int dPrime) const {
-        if (currentDimension_ == 1 && dPrime == 1) return kInfluence_;
         double distance = std::abs(currentDimension_ - dPrime);
-        double denominator = std::pow(std::min(currentDimension_, 10), std::min(dPrime, 10));
+        double denominator = std::pow(static_cast<double>(std::min(currentDimension_, 10)),
+                                      static_cast<double>(std::min(dPrime, 10)));
         double modifier = (currentDimension_ > 3 && dPrime > 3) ? kWeak_ : 1.0;
         return denominator < 1e-10 ? 0.0 : kInfluence_ * (distance / denominator) * modifier;
     }
 
-    // Amplifies interactions from higher dimensions to the one below or to 2D.
+    // Amplifies interactions from higher dimensions to lower ones.
     double calculatePermeationFactor(int dPrime) const {
-        if (currentDimension_ >= 3 && dPrime == currentDimension_ - 1) return kPermeation_;
-        if (dPrime == 2 && currentDimension_ >= 3) return kTwoD_;
+        if (currentDimension_ == 2 && dPrime > currentDimension_) return kTwoD_;
+        if (dPrime == currentDimension_ + 1) return kPermeation_;
+        if (dPrime == 1) return kPermeation_;  // Special amplification for 1D (God) influence
         return 1.0;
     }
 
     // Computes oscillatory dynamics for dimensions >= 2.
     double calculateCollapseTerm() const {
         if (currentDimension_ == 1) return 0.0;
-        double omega = 2.0 * M_PI / (2 * maxDimensions_ - 1);
+        double omega = 2.0 * M_PI / static_cast<double>(2 * maxDimensions_ - 1);
         return kCollapse_ * currentDimension_ * std::exp(-beta_ * (currentDimension_ - 1)) *
                std::abs(std::cos(omega * currentDimension_));
     }
 
-    // Updates interacting dimensions (D-1, D, D+1, and 2D for d >= 3).
+    // Updates interacting dimensions (D-1, D, D+1, 2D for d >= 3, and always 1D for d > 2).
     void updateDimensionPairs() {
         dimensionPairs_.clear();
         int start = std::max(1, currentDimension_ - 1);
@@ -114,8 +117,11 @@ private:
         for (int dPrime = start; dPrime <= end; ++dPrime) {
             dimensionPairs_.push_back({dPrime, static_cast<double>(std::abs(currentDimension_ - dPrime))});
         }
-        if (currentDimension_ >= 3) {
+        if (currentDimension_ >= 3 && 2 < currentDimension_ - 1) {
             dimensionPairs_.push_back({2, static_cast<double>(currentDimension_ - 2)});
+        }
+        if (currentDimension_ > 2) {
+            dimensionPairs_.push_back({1, static_cast<double>(currentDimension_ - 1)});
         }
     }
 };
