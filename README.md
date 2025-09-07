@@ -22,7 +22,8 @@ Font Rendering: Uses arial.ttf with a fallback to DejaVuSans.ttf for robust text
 Vulkan Support: Includes a Vulkan instance for future 3D rendering enhancements, currently unused.<BR />
 <BR />
 ## Model Description
-The UniversalEquation class models dimensional interactions with the following structure:1D (God): The infinite universal base, a wave-like "fountain" that permeates all dimensions, both inside and outside, with a singular, omnipresent influence.<BR />
+The UniversalEquation class models dimensional interactions with the following structure:<BR />
+1D (God): The infinite universal base, a wave-like "fountain" that permeates all dimensions, both inside and outside, with a singular, omnipresent influence.<BR />
 2D: The boundary or "skin" of a cosmic bubble, enclosing higher dimensions.<BR />
 3D to 9D: Nested within and permeating the dimension below (e.g., 3D influences 2D, 4D influences 3D).<BR />
 Influence: Decays exponentially with dimensional separation (e.g., 5D has a strong influence on 4D, weaker on 3D).<BR />
