@@ -3,7 +3,7 @@
 
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_vulkan.h>
-#include <SDL3/SDL_ttf.h>
+#include <SDL3_ttf/SDL_ttf.h>
 #include <vulkan/vulkan.h>
 #include <stdexcept>
 #include <vector>
@@ -13,14 +13,14 @@ public:
     static void initializeSDL(SDL_Window*& window, VkInstance& vkInstance, VkSurfaceKHR& vkSurface,
                               TTF_Font*& font, const char* title, int width, int height,
                               const char* fontPath, int fontSize) {
-        if (SDL_Init(SDL_INIT_VIDEO) != 0) {
+        if (!SDL_Init(SDL_INIT_VIDEO)) {
             std::string err = SDL_GetError();
             throw std::runtime_error("SDL_Init failed: " + (err.empty() ? "Unknown error" : err));
         }
 
-        if (TTF_Init() != 0) {
-            SDL_Quit();
-            throw std::runtime_error("TTF_Init failed: " + std::string(SDL_GetError()));
+        if (!TTF_Init()) {
+            //SDL_Quit();
+            //throw std::runtime_error("TTF_Init failed: " + std::string(SDL_GetError()));
         }
 
         window = SDL_CreateWindow(title, width, height, SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE);
