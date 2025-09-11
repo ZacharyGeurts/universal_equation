@@ -4,6 +4,11 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <vector>
+#include <iostream>
+#include <SDL3/SDL.h>
+#include <SDL3/SDL_vulkan.h>
+#include <SDL3_ttf/SDL_ttf.h>
+#include <vulkan/vulkan.h>
 #include "SDL3_init.hpp"
 #include "Vulkan_init.hpp"
 #include "universal_equation.hpp"
@@ -22,18 +27,20 @@ public:
         : window_(nullptr), font_(nullptr), vulkanInstance_(VK_NULL_HANDLE), vulkanDevice_(VK_NULL_HANDLE),
           physicalDevice_(VK_NULL_HANDLE), surface_(VK_NULL_HANDLE), swapchain_(VK_NULL_HANDLE),
           mode_(1), wavePhase_(0.0f), waveSpeed_(0.1f), width_(width), height_(height) {
-        SDL3Initializer::initializeSDL(window_, vulkanInstance_, surface_, font_, title, width, height, fontPath, fontSize);
-        initializeVulkan();
-        initializeSphereGeometry();
-        initializeCalculator();
+        try {
+            SDL3Initializer::initializeSDL(window_, vulkanInstance_, surface_, font_, title, width, height, fontPath, fontSize);
+            initializeSphereGeometry();
+            initializeVulkan();
+            initializeCalculator();
+        } catch (const std::exception& e) {
+            std::cerr << "Initialization failed: " << e.what() << "\n";
+            cleanup();
+            throw;
+        }
     }
 
     ~DimensionalNavigator() {
-        VulkanInitializer::cleanupVulkan(vulkanInstance_, vulkanDevice_, surface_, swapchain_, swapchainImageViews_,
-                                         swapchainFramebuffers_, pipeline_, pipelineLayout_, renderPass_,
-                                         commandPool_, commandBuffers_, imageAvailableSemaphore_, renderFinishedSemaphore_,
-                                         inFlightFence_, vertexBuffer_, vertexBufferMemory_, indexBuffer_, indexBufferMemory_);
-        SDL3Initializer::cleanupSDL(window_, vulkanInstance_, surface_, font_);
+        cleanup();
     }
 
     void run() {
@@ -44,11 +51,21 @@ public:
                 if (event.type == SDL_EVENT_QUIT) {
                     running = false;
                 } else if (event.type == SDL_EVENT_WINDOW_RESIZED) {
-                    recreateSwapchain();
+                    try {
+                        recreateSwapchain();
+                    } catch (const std::exception& e) {
+                        std::cerr << "Swapchain recreation failed: " << e.what() << "\n";
+                        running = false;
+                    }
                 }
                 handleInput(event);
             }
-            render();
+            try {
+                render();
+            } catch (const std::exception& e) {
+                std::cerr << "Render failed: " << e.what() << "\n";
+                running = false;
+            }
             SDL_Delay(16);
         }
     }
@@ -106,16 +123,45 @@ private:
     }
 
     void recreateSwapchain() {
-        vkDeviceWaitIdle(vulkanDevice_);
-        VulkanInitializer::cleanupVulkan(vulkanInstance_, vulkanDevice_, surface_, swapchain_, swapchainImageViews_,
+        if (vulkanDevice_) vkDeviceWaitIdle(vulkanDevice_);
+        VulkanInitializer::cleanupVulkan(VK_NULL_HANDLE, vulkanDevice_, VK_NULL_HANDLE, swapchain_, swapchainImageViews_,
                                          swapchainFramebuffers_, pipeline_, pipelineLayout_, renderPass_,
                                          commandPool_, commandBuffers_, imageAvailableSemaphore_, renderFinishedSemaphore_,
                                          inFlightFence_, vertexBuffer_, vertexBufferMemory_, indexBuffer_, indexBufferMemory_);
+        vulkanDevice_ = VK_NULL_HANDLE;
+        swapchain_ = VK_NULL_HANDLE;
+        swapchainImages_.clear();
+        swapchainImageViews_.clear();
+        swapchainFramebuffers_.clear();
+        pipeline_ = VK_NULL_HANDLE;
+        pipelineLayout_ = VK_NULL_HANDLE;
+        renderPass_ = VK_NULL_HANDLE;
+        commandPool_ = VK_NULL_HANDLE;
+        commandBuffers_.clear();
+        imageAvailableSemaphore_ = VK_NULL_HANDLE;
+        renderFinishedSemaphore_ = VK_NULL_HANDLE;
+        inFlightFence_ = VK_NULL_HANDLE;
+        vertexBuffer_ = VK_NULL_HANDLE;
+        vertexBufferMemory_ = VK_NULL_HANDLE;
+        indexBuffer_ = VK_NULL_HANDLE;
+        indexBufferMemory_ = VK_NULL_HANDLE;
         int newWidth, newHeight;
         SDL_GetWindowSize(window_, &newWidth, &newHeight);
         width_ = newWidth;
         height_ = newHeight;
         initializeVulkan();
+    }
+
+    void cleanup() {
+        VulkanInitializer::cleanupVulkan(vulkanInstance_, vulkanDevice_, surface_, swapchain_, swapchainImageViews_,
+                                         swapchainFramebuffers_, pipeline_, pipelineLayout_, renderPass_,
+                                         commandPool_, commandBuffers_, imageAvailableSemaphore_, renderFinishedSemaphore_,
+                                         inFlightFence_, vertexBuffer_, vertexBufferMemory_, indexBuffer_, indexBufferMemory_);
+        SDL3Initializer::cleanupSDL(window_, vulkanInstance_, surface_, font_);
+        window_ = nullptr;
+        font_ = nullptr;
+        vulkanInstance_ = VK_NULL_HANDLE;
+        surface_ = VK_NULL_HANDLE;
     }
 
     void initializeSphereGeometry() {
@@ -134,6 +180,7 @@ private:
             3, 9, 4, 3, 4, 2, 3, 2, 6, 3, 6, 8, 3, 8, 9,
             4, 9, 5, 2, 4, 11, 6, 2, 10, 8, 6, 7, 9, 8, 1
         };
+        std::cerr << "Initialized sphere: " << sphereVertices_.size() << " vertices, " << sphereIndices_.size() << " indices\n";
     }
 
     void initializeCalculator() {
@@ -180,28 +227,18 @@ private:
             return;
         }
         if (result != VK_SUCCESS) {
-            throw std::runtime_error("Failed to acquire swapchain image");
+            throw std::runtime_error("Failed to acquire swapchain image: " + std::to_string(result));
         }
 
         vkResetCommandBuffer(commandBuffers_[imageIndex], 0);
 
-        VkCommandBufferBeginInfo beginInfo = {};
-        beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-
+        VkCommandBufferBeginInfo beginInfo = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO, nullptr, 0, nullptr };
         if (vkBeginCommandBuffer(commandBuffers_[imageIndex], &beginInfo) != VK_SUCCESS) {
             throw std::runtime_error("Failed to begin command buffer");
         }
 
         VkClearValue clearColor = {{{0.0f, 0.0f, 0.0f, 1.0f}}};
-        VkRenderPassBeginInfo renderPassInfo = {};
-        renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-        renderPassInfo.renderPass = renderPass_;
-        renderPassInfo.framebuffer = swapchainFramebuffers_[imageIndex];
-        renderPassInfo.renderArea.offset = {0, 0};
-        renderPassInfo.renderArea.extent = {(uint32_t)width_, (uint32_t)height_};
-        renderPassInfo.clearValueCount = 1;
-        renderPassInfo.pClearValues = &clearColor;
-
+        VkRenderPassBeginInfo renderPassInfo = { VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO, nullptr, renderPass_, swapchainFramebuffers_[imageIndex], {{0, 0}, {(uint32_t)width_, (uint32_t)height_}}, 1, &clearColor };
         vkCmdBeginRenderPass(commandBuffers_[imageIndex], &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
         vkCmdBindPipeline(commandBuffers_[imageIndex], VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_);
 
@@ -216,38 +253,20 @@ private:
             throw std::runtime_error("Failed to end command buffer");
         }
 
-        VkSubmitInfo submitInfo = {};
-        submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-        VkSemaphore waitSemaphores[] = {imageAvailableSemaphore_};
-        VkPipelineStageFlags waitStages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
-        submitInfo.waitSemaphoreCount = 1;
-        submitInfo.pWaitSemaphores = waitSemaphores;
-        submitInfo.pWaitDstStageMask = waitStages;
-        submitInfo.commandBufferCount = 1;
-        submitInfo.pCommandBuffers = &commandBuffers_[imageIndex];
-        VkSemaphore signalSemaphores[] = {renderFinishedSemaphore_};
-        submitInfo.signalSemaphoreCount = 1;
-        submitInfo.pSignalSemaphores = signalSemaphores;
-
+        VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
+        VkSubmitInfo submitInfo = { VK_STRUCTURE_TYPE_SUBMIT_INFO, nullptr, 1, &imageAvailableSemaphore_, waitStages, 1, &commandBuffers_[imageIndex], 1, &renderFinishedSemaphore_ };
         if (vkQueueSubmit(graphicsQueue_, 1, &submitInfo, inFlightFence_) != VK_SUCCESS) {
             throw std::runtime_error("Failed to submit queue");
         }
 
-        VkPresentInfoKHR presentInfo = {};
-        presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
-        presentInfo.waitSemaphoreCount = 1;
-        presentInfo.pWaitSemaphores = signalSemaphores;
-        presentInfo.swapchainCount = 1;
-        presentInfo.pSwapchains = &swapchain_;
-        presentInfo.pImageIndices = &imageIndex;
-
+        VkPresentInfoKHR presentInfo = { VK_STRUCTURE_TYPE_PRESENT_INFO_KHR, nullptr, 1, &renderFinishedSemaphore_, 1, &swapchain_, &imageIndex, nullptr };
         result = vkQueuePresentKHR(presentQueue_, &presentInfo);
         if (result == VK_ERROR_OUT_OF_DATE_KHR) {
             recreateSwapchain();
             return;
         }
         if (result != VK_SUCCESS) {
-            throw std::runtime_error("Failed to present queue");
+            throw std::runtime_error("Failed to present queue: " + std::to_string(result));
         }
 
         wavePhase_ += waveSpeed_;
