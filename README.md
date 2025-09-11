@@ -38,10 +38,10 @@ arial.ttf (font file in the project directory, with fallback to system fonts)<BR
 SDL3 and SDL3_ttf headers (assumed in system path, e.g., /usr/local/include)<BR />
 <BR />
 <BR />
-Run `make clean` between builds to ensure a fresh compilation.
+Run `make clean` between builds to ensure a fresh compilation.<BR />
 # Clone the repository
-`git clone https://github.com/ZacharyGeurts/universal_equation`
-`cd universal_equation`
-`make`
-`cd bin`
-`./Navigator`
+`git clone https://github.com/ZacharyGeurts/universal_equation`<BR />
+`cd universal_equation`<BR />
+`make`<BR />
+`cd bin`<BR />
+`./Navigator`<BR />
