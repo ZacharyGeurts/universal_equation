@@ -1,42 +1,66 @@
-# Makefile for compiling the Dimension Dance project
-# This is like a recipe book to build our playground game!
+# Compiler and flags
+CXX = g++
+CXXFLAGS = -std=c++17 -Wall -Wextra -g -Iinclude -I/usr/include/glm
+LDFLAGS = -lSDL3 -lSDL3_ttf -lvulkan
 
-# Compiler to use (like picking our cooking tool)
-CC = g++
+# Shader compiler
+GLSLC = glslc
 
-# Flags for the compiler (extra instructions for safety and fun)
-CFLAGS = -std=c++17 -Wall -Wextra -g
+# Directories
+SRC_DIR = src
+INCLUDE_DIR = include
+SHADER_DIR = shaders
+BUILD_DIR = build
+BIN_DIR = bin
 
-# Libraries to link (our playground tools)
-# Adjust paths if SDL3/SDL3_ttf are in a custom location
-LIBS = -lSDL3 -lSDL3_ttf -lvulkan
+# Files
+SOURCES = $(wildcard $(SRC_DIR)/*.cpp)
+OBJECTS = $(patsubst $(SRC_DIR)/%.cpp,$(BUILD_DIR)/%.o,$(SOURCES))
+EXECUTABLE = $(BIN_DIR)/Navigator
+FONT_FILE = arial.ttf
+FONT_DEST = $(BIN_DIR)/arial.ttf
+SHADER_SOURCES = $(wildcard $(SHADER_DIR)/*.vert) $(wildcard $(SHADER_DIR)/*.frag)
+SHADER_OBJECTS = $(patsubst $(SHADER_DIR)/%.vert,$(SHADER_DIR)/%.spv,$(SHADER_SOURCES:.frag=.spv))
 
-# Target executable (the finished game!)
-TARGET = Navigator
+# Default target
+all: directories $(EXECUTABLE) copy-shaders copy-font
 
-# Source files (the ingredients)
-SOURCES = main.cpp
+# Create build and bin directories
+directories:
+	@mkdir -p $(BUILD_DIR) $(BIN_DIR) $(SHADER_DIR)
 
-# Object files (the cooked ingredients)
-OBJECTS = $(SOURCES:.cpp=.o)
-
-# Default target (what to make when we say "make")
-all: $(TARGET)
-
-# Link object files to create the executable
-$(TARGET): $(OBJECTS)
-	@echo "Mixing all the ingredients to make the game!"
-	$(CC) $(OBJECTS) -o $(TARGET) $(LIBS)
+# Link object files to create executable
+$(EXECUTABLE): $(OBJECTS)
+	@echo "Linking the executable: $@"
+	$(CXX) $(OBJECTS) -o $@ $(LDFLAGS)
 
 # Compile source files to object files
-%.o: %.cpp
-	@echo "Cooking the source file: $<"
-	$(CC) $(CFLAGS) -c $< -o $@
+$(BUILD_DIR)/%.o: $(SRC_DIR)/%.cpp
+	@echo "Compiling source file: $<"
+	$(CXX) $(CXXFLAGS) -c $< -o $@
 
-# Clean up (tidy the kitchen!)
+# Compile shader files to SPIR-V
+$(SHADER_DIR)/%.spv: $(SHADER_DIR)/%.vert
+	@echo "Compiling vertex shader: $<"
+	$(GLSLC) $< -o $@
+
+$(SHADER_DIR)/%.spv: $(SHADER_DIR)/%.frag
+	@echo "Compiling fragment shader: $<"
+	$(GLSLC) $< -o $@
+
+# Copy shader files to bin directory
+copy-shaders: $(SHADER_OBJECTS)
+	@echo "Copying shader files to $(BIN_DIR)"
+	@cp $(SHADER_DIR)/*.spv $(BIN_DIR)/
+
+# Copy font file to bin directory
+copy-font: $(FONT_FILE)
+	@echo "Copying font file to $(BIN_DIR)"
+	@cp $(FONT_FILE) $(BIN_DIR)
+
+# Clean build artifacts
 clean:
-	@echo "Cleaning up the playground!"
-	rm -f $(OBJECTS) $(TARGET)
+	@echo "Cleaning build artifacts..."
+	@rm -rf $(BUILD_DIR) $(BIN_DIR) $(SHADER_DIR)/*.spv
 
-# Phony targets (not real files, just commands)
-.PHONY: all clean
+.PHONY: all directories copy-shaders copy-font clean
