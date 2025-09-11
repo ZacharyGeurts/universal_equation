@@ -272,53 +272,73 @@ private:
         wavePhase_ += waveSpeed_;
     }
 
-    void renderMode1(uint32_t imageIndex) {
-        struct PushConstants {
-            glm::mat4 model;
-            glm::mat4 view;
-            glm::mat4 proj;
-            float radius;
-            float wavePhase;
-        };
-        glm::mat4 ortho = glm::ortho(0.0f, (float)width_, (float)height_, 0.0f, -1.0f, 1.0f);
-        PushConstants pushConstants = {glm::mat4(1.0f), glm::mat4(1.0f), ortho, 1.0f, wavePhase_};
+void renderMode1(uint32_t imageIndex) {
+    struct PushConstants {
+        glm::mat4 model;
+        glm::mat4 view;
+        glm::mat4 proj;
+        float radius;
+        float wavePhase;
+    };
+
+    // Set current dimension to 2 for 2D rendering
+    ue_.setCurrentDimension(2);
+    auto [pos, neg] = ue_.compute();
+    float radius = 100.0f * (1.0f + static_cast<float>(pos) * 0.1f); // Scale radius based on positive influence
+
+    // Orthographic projection for 2D
+    glm::mat4 ortho = glm::ortho(0.0f, (float)width_, (float)height_, 0.0f, -1.0f, 1.0f);
+    // Center the object in the window
+    glm::mat4 model = glm::translate(glm::mat4(1.0f), glm::vec3(width_ / 2.0f, height_ / 2.0f, 0.0f));
+    model = glm::scale(model, glm::vec3(radius, radius, 1.0f)); // Scale uniformly in 2D
+    glm::mat4 view = glm::mat4(1.0f); // No view transformation for 2D
+
+    PushConstants pushConstants = {model, view, ortho, radius, wavePhase_};
+    vkCmdPushConstants(commandBuffers_[imageIndex], pipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                       0, sizeof(PushConstants), &pushConstants);
+
+    VkBuffer vertexBuffers[] = {vertexBuffer_};
+    VkDeviceSize offsets[] = {0};
+    vkCmdBindVertexBuffers(commandBuffers_[imageIndex], 0, 1, vertexBuffers, offsets);
+    vkCmdBindIndexBuffer(commandBuffers_[imageIndex], indexBuffer_, 0, VK_INDEX_TYPE_UINT32);
+    vkCmdDrawIndexed(commandBuffers_[imageIndex], static_cast<uint32_t>(sphereIndices_.size()), 1, 0, 0, 0);
+}
+
+void renderMode2(uint32_t imageIndex) {
+    struct PushConstants {
+        glm::mat4 model;
+        glm::mat4 view;
+        glm::mat4 proj;
+        float radius;
+        float wavePhase;
+    };
+
+    VkBuffer vertexBuffers[] = {vertexBuffer_};
+    VkDeviceSize offsets[] = {0};
+    vkCmdBindVertexBuffers(commandBuffers_[imageIndex], 0, 1, vertexBuffers, offsets);
+    vkCmdBindIndexBuffer(commandBuffers_[imageIndex], indexBuffer_, 0, VK_INDEX_TYPE_UINT32);
+
+    // 3D perspective projection
+    glm::mat4 proj = glm::perspective(glm::radians(45.0f), (float)width_ / height_, 0.1f, 100.0f);
+    glm::mat4 view = glm::lookAt(glm::vec3(0.0f, 0.0f, 5.0f), glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+
+    float baseRadius = 1.0f;
+    for (size_t i = 0; i < cache_.size(); ++i) {
+        // Use cached UniversalEquation data for each dimension
+        float radius = baseRadius * (1.0f + static_cast<float>(cache_[i].positive) * 0.1f);
+        // Add rotation for 3D effect
+        glm::mat4 model = glm::rotate(glm::mat4(1.0f), wavePhase_ * 0.5f, glm::vec3(0.0f, 1.0f, 0.0f));
+        model = glm::scale(model, glm::vec3(radius));
+        // Offset spheres slightly along z-axis for visibility
+        model = glm::translate(model, glm::vec3(0.0f, 0.0f, -i * 0.5f));
+
+        PushConstants pushConstants = {model, view, proj, radius, wavePhase_};
         vkCmdPushConstants(commandBuffers_[imageIndex], pipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
                            0, sizeof(PushConstants), &pushConstants);
-
-        VkBuffer vertexBuffers[] = {vertexBuffer_};
-        VkDeviceSize offsets[] = {0};
-        vkCmdBindVertexBuffers(commandBuffers_[imageIndex], 0, 1, vertexBuffers, offsets);
-        vkCmdBindIndexBuffer(commandBuffers_[imageIndex], indexBuffer_, 0, VK_INDEX_TYPE_UINT32);
         vkCmdDrawIndexed(commandBuffers_[imageIndex], static_cast<uint32_t>(sphereIndices_.size()), 1, 0, 0, 0);
+        baseRadius *= 0.8f; // Reduce radius for higher dimensions
     }
-
-    void renderMode2(uint32_t imageIndex) {
-        VkBuffer vertexBuffers[] = {vertexBuffer_};
-        VkDeviceSize offsets[] = {0};
-        vkCmdBindVertexBuffers(commandBuffers_[imageIndex], 0, 1, vertexBuffers, offsets);
-        vkCmdBindIndexBuffer(commandBuffers_[imageIndex], indexBuffer_, 0, VK_INDEX_TYPE_UINT32);
-
-        glm::mat4 view = glm::lookAt(glm::vec3(0.0f, 0.0f, 5.0f), glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
-        glm::mat4 proj = glm::perspective(glm::radians(45.0f), (float)width_ / height_, 0.1f, 100.0f);
-
-        float baseRadius = 1.0f;
-        for (size_t i = 0; i < cache_.size(); ++i) {
-            float radius = baseRadius * (1.0f + static_cast<float>(cache_[i].positive) * 0.1f);
-            glm::mat4 model = glm::scale(glm::mat4(1.0f), glm::vec3(radius));
-            struct PushConstants {
-                glm::mat4 model;
-                glm::mat4 view;
-                glm::mat4 proj;
-                float radius;
-                float wavePhase;
-            } pushConstants = {model, view, proj, radius, wavePhase_};
-
-            vkCmdPushConstants(commandBuffers_[imageIndex], pipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-                               0, sizeof(PushConstants), &pushConstants);
-            vkCmdDrawIndexed(commandBuffers_[imageIndex], static_cast<uint32_t>(sphereIndices_.size()), 1, 0, 0, 0);
-            baseRadius *= 0.8f;
-        }
-    }
+}
 };
 
 #endif // MAIN_HPP
