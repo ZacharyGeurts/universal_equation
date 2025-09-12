@@ -57,7 +57,7 @@ The `UniversalEquation` class models dimensional interactions with the following
   - **SDL3_ttf**: Development headers and libraries (`libsdl3-ttf-dev`).
   - **Vulkan**: Development headers and libraries (`libvulkan-dev`, `vulkan-tools` for validation).
   - **GLM**: OpenGL Mathematics library (`libglm-dev`).
-- **Font**: `arial.ttf` (included in `assets/` directory, with fallback to system fonts).
+- **Font**: `arial.ttf` (included).
 
 ## Files
 - `universal_equation.hpp`: Header for the `UniversalEquation` class, defining dimensional interactions.
