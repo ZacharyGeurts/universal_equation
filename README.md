@@ -28,7 +28,7 @@ It is free of cost. Installation is at the bottom.<BR />
 `4`: Mode 4 etc.<BR />
 <BR />
 ## Overview
-The **Dimensional Navigator** is a computational tool that visualizes a mathematical model of dimensional interactions using C++ with SDL3, SDL3_ttf, and Vulkan.<BR />
+The **Dimensional Navigator** is a computational tool that visualizes a mathematical model of dimensional interactions using C++ with SDL3, SDL3_ttf, and Vulkan. 
 It graphs the outputs of the `UniversalEquation` class, displaying symmetric ± energy fluctuations across dimensions 1 through 9, with dark matter and dark energy influencing the dynamics.<BR />
 <BR />
 The model conceptualizes the universe as:<BR />
