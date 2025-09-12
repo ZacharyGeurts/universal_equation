@@ -1,5 +1,15 @@
 # Dimensional Navigator Project
-Press 1-4 keys when running.
+Press:<BR />
+UP: adjustInfluence(0.1);<BR />
+DOWN: adjustInfluence(-0.1);<BR />
+LEFT: adjustDarkMatter(-0.05); // Adjust dark matter strength<BR />
+RIGHT: adjustDarkMatter(0.05);<BR />
+PAGEUP: adjustDarkEnergy(0.05); // Adjust dark energy scale<BR />
+PAGEDOWN: adjustDarkEnergy(-0.05);<BR />
+1: mode one<BR />
+2: mode two<BR />
+3: mode three<BR />
+4: mode four<BR />
 <BR />
 old<BR />
 ![image](https://github.com/ZacharyGeurts/universal_equation/blob/main/gifwip1.gif)
