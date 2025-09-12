@@ -7,10 +7,10 @@
 - `RIGHT`: Increase dark matter strength (`kDarkMatter_`) by 0.05
 - `PAGEUP`: Increase dark energy scale (`kDarkEnergy_`) by 0.05
 - `PAGEDOWN`: Decrease dark energy scale (`kDarkEnergy_`) by 0.05
-- `1`: Mode 1 (linear arrangement, dark matter amplifies pulsing)
-- `2`: Mode 2 (circular arrangement, dark energy affects spacing)
-- `3`: Mode 3 (linear with interaction spheres, modulated by dark matter and dark energy)
-- `4`: Mode 4 (combined fluctuations with 1D influence sphere)
+- `1`: Mode 1 Dimension 1? God?
+- `2`: Mode 2 Dimension 2
+- `3`: Mode 3 etc.
+- `4`: Mode 4 etc.
 
 **Video Clip**:
 https://github.com/user-attachments/assets/344232f5-e7b8-4485-af40-5a302873f88c
