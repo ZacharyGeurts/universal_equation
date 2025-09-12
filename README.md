@@ -1,8 +1,7 @@
 # Dimensional Navigator Project
 **Video Clip**:
 https://github.com/ZacharyGeurts/universal_equation/raw/refs/heads/main/wip2.mov<BR />
-**Video Clip**: (old)<BR />
-https://github.com/user-attachments/assets/344232f5-e7b8-4485-af40-5a302873f88c<BR />
+**Video Clip**: (old) https://github.com/user-attachments/assets/344232f5-e7b8-4485-af40-5a302873f88c<BR />
 <BR />
 WIP - Current designing and updating the program.<BR />
 Do not resize or it will crash. Not critical for me to fix yet<BR />
