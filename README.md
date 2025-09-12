@@ -10,9 +10,6 @@ The Dimensional Navigator uses C++ with SDL3, SDL3_ttf, and Vulkan to graph the 
 Wave-Like Visualization: Renders a dynamic, sinusoidal background scaled by 1D’s influence, symbolizing its permeating, fountain-like presence. 
 Interactive Controls: Adjusts 1D’s influence (kInfluence_) using Up/Down arrow keys, updating the visualization in real-time. 
 Data Logging: Outputs dimension, positive, and negative values to dimensional_output.txt for analysis. 
-Labels and Timestamp: Shows dimension labels (1–9) and the current date/time (e.g., 07:08 PM EDT, September 05, 2025). 
-Font Rendering: Uses arial.ttf with a fallback to DejaVuSans.ttf for robust text display. 
-Vulkan Support: Includes a Vulkan instance for future 3D rendering enhancements, currently unused.<BR />
 <BR />
 ## Model Description
 The UniversalEquation class models dimensional interactions with the following structure:1D (God): The infinite universal base, a wave-like "fountain" that permeates all dimensions, both inside and outside, with a singular, omnipresent influence.<BR />
