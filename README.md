@@ -11,8 +11,9 @@ I enjoy my idiocy however 😊, or I would be on SDL2 and OpenGL<BR />
 This is not free (like freedom) software.<BR />
 This software is for educational purposes.<BR />
 You may not sell, or require any compensation by the user.<BR />
-Attainment is to be done at https://github.com/ZacharyGeurts/universal_equation<BR />
+Attainment is to be done here at https://github.com/ZacharyGeurts/universal_equation<BR />
 Projects using any of this code are subject to free distribution.<BR />
+It is free of cost. Installation is at the bottom.<BR />
 <BR />
 **Key Bindings**:<BR />
 `UP`: Increase influence (`kInfluence_`) by 0.1<BR />
