@@ -8,6 +8,7 @@ Do not resize or it will crash. Not critical for me to fix yet<BR />
 Modify src/main.cpp if you need it bigger or smaller.<BR />
 Like an idiot I made a custom Vulkan backend instead of flat SDL3, so it has become more complicated than necessary.<BR />
 I enjoy my idiocy however 😊, or I would be on SDL2 and OpenGL<BR />
+This is for linux until I stabilize the gui and make a release.<BR />
 <BR />
 This is not free (like freedom) software.<BR />
 This software is for educational purposes.<BR />
