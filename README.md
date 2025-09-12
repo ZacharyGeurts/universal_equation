@@ -2,6 +2,8 @@
 <BR />
 WIP - Current designing and updating the program.<BR />
 Do not resize or it will crash. Not critical for me to fix yet<BR />
+Like an idiot I made a custom Vulkan backend instead of flat SDL3, so it has become more complicated than necessary.<BR />
+I enjoy my idiocy however 😊<BR />
 <BR />
 **Key Bindings**:<BR />
 `UP`: Increase influence (`kInfluence_`) by 0.1<BR />
