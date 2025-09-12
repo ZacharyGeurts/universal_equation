@@ -70,6 +70,12 @@ public:
           invMaxDim_(maxDimensions_ > 0 ? 1.0 / maxDimensions_ : 0.0) {
         if (maxDimensions_ == std::numeric_limits<int>::max()) {
             invMaxDim_ = 1e-10;  // Prevent division by zero for "infinite" dimensions
+			// I hold belief there are max 9 before it would be a dense collapse of nothing but God extending.
+			// Get buried with a garage door opener and maybe Spot will let you through.
+			// Batteries die long before you hit the end of 8th and without it you're stuck.
+			// The walk back would suuuuuuuuUck.
+			// String theory had gotten out to 11 or 12 before the floor fell out.
+			// It was proven flawed by others, and that I believe.
         }
         dimensionPairs_.reserve(std::min(maxDimensions_, 10));  // Limit reservation for practicality
         updateDimensionPairs();
