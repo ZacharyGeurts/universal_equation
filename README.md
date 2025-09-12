@@ -72,8 +72,8 @@ The `UniversalEquation` class models dimensional interactions with the following
 - `universal_equation.hpp`: Header for the `UniversalEquation` class, defining dimensional interactions.
 - `main.hpp`: Header for the `DimensionalNavigator` class, handling visualization and input.
 - `SDL3_init.hpp` and `Vulkan_init.hpp`: Utility headers for SDL3 and Vulkan initialization.
-- `assets/arial.ttf`: Font file for text rendering.
-- `assets/demo.mp4`: Video demo of the project.
+- `arial.ttf`: Font file for text rendering.
+- `main.cpp` Set window size here.
 - SDL3, SDL3_ttf, Vulkan, and GLM headers are assumed to be in the system path (e.g., `/usr/include` or `/usr/local/include`).
 
 ## Installation
