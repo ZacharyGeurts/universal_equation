@@ -1,5 +1,8 @@
 # Dimensional Navigator Project
-
+<BR />
+WIP - Current designing and updating the program.<BR />
+Do not resize or it will crash. Not critical for me to fix yet<BR />
+<BR />
 **Key Bindings**:
 - `UP`: Increase influence (`kInfluence_`) by 0.1
 - `DOWN`: Decrease influence (`kInfluence_`) by 0.1
