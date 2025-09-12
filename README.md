@@ -1,5 +1,8 @@
 # Dimensional Navigator Project
 <BR />
+**Video Clip**:<BR />
+https://github.com/user-attachments/assets/344232f5-e7b8-4485-af40-5a302873f88c<BR />
+<BR />
 WIP - Current designing and updating the program.<BR />
 Do not resize or it will crash. Not critical for me to fix yet<BR />
 Like an idiot I made a custom Vulkan backend instead of flat SDL3, so it has become more complicated than necessary.<BR />
@@ -22,9 +25,6 @@ Projects using any of this code are subject to free distribution.<BR />
 `2`: Mode 2 Dimension 2<BR />
 `3`: Mode 3 etc.<BR />
 `4`: Mode 4 etc.<BR />
-<BR />
-**Video Clip**:<BR />
-https://github.com/user-attachments/assets/344232f5-e7b8-4485-af40-5a302873f88c<BR />
 <BR />
 ## Overview
 The **Dimensional Navigator** is a computational tool that visualizes a mathematical model of dimensional interactions using C++ with SDL3, SDL3_ttf, and Vulkan.<BR />
