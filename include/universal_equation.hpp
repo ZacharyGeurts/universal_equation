@@ -3,134 +3,116 @@
 
 #include <vector>
 #include <cmath>
-#include <functional>
-#include <algorithm>
-#include <iostream>
 #include <string>
 #include <limits>
+#include <iostream>
 
-// UniversalEquation models dimensional interactions from 1D (foundational layer, a universal constant)
-// to maxDimensions (default 9D, supports up to infinity). 2D acts as a boundary, 3D has strong influence on 2D and 4D.
-// Incorporates dark matter with theoretical properties (gravitational and stabilizing effects) and dark energy as an expansion driver.
-// Modes 1–4 correspond to dimensions 1–4. Interactions follow a cycle (1D to maxD, back to 1D, then 2D) with exponential decay and oscillatory dynamics.
-// Optimized for performance with precomputed constants, minimal allocations, and modular design.
 class UniversalEquation {
 public:
-    // Structure to hold energy fluctuation results with interpretation.
-    struct EnergyFluctuations {
-        double positive;  // Observable energy
-        double negative;  // Potential energy sinks
-        double darkMatterContribution;  // Dark matter stabilization and gravitational effects
-        double darkEnergyContribution;  // Dark energy expansion effects
-        std::string interpretation() const {
-            return "Positive: " + std::to_string(positive) +
-                   ", Negative: " + std::to_string(negative) +
-                   ", Dark Matter: " + std::to_string(darkMatterContribution) +
-                   ", Dark Energy: " + std::to_string(darkEnergyContribution);
+    struct EnergyResult {
+        double observable;
+        double potential;
+        double darkMatter;
+        double darkEnergy;
+        std::string toString() const {
+            return "Observable: " + std::to_string(observable) +
+                   ", Potential: " + std::to_string(potential) +
+                   ", Dark Matter: " + std::to_string(darkMatter) +
+                   ", Dark Energy: " + std::to_string(darkEnergy);
         }
     };
 
-    // Structure to hold dimension interaction data.
-    struct DimensionData {
-        int dPrime;       // Interacting dimension
-        double distance;  // Effective dimensional separation, adjusted by dark energy
-        double darkMatterDensity;  // Dark matter influence for this interaction
+    struct DimensionInteraction {
+        int dimension;
+        double distance;
+        double darkMatterDensity;
     };
 
-    // Constructor with support for high dimensions and mode-based initialization.
-    UniversalEquation(int maxDimensions = 9,
-                     int mode = 1,
-                     double influence = 1.0,
-                     double weak = 0.5,
-                     double collapse = 0.5,
-                     double twoD = 0.5,
-                     double threeDAdjacency = 1.5,  // Stronger influence for 3D on 2D/4D
-                     double permeation = 2.0,
-                     double darkMatterStrength = 0.27,  // Based on ~27% of universe's mass-energy
-                     double darkEnergyScale = 0.68,     // Based on ~68% of universe's mass-energy
-                     double alpha = 5.0,
-                     double beta = 0.2,
-                     bool debug = false)
+    UniversalEquation(int maxDimensions = 9, int mode = 1, double influence = 1.0,
+                     double weak = 0.5, double collapse = 0.5, double twoD = 0.5,
+                     double threeDInfluence = 1.5, double oneDPermeation = 2.0,
+                     double darkMatterStrength = 0.27, double darkEnergyStrength = 0.68,
+                     double alpha = 5.0, double beta = 0.2, bool debug = false)
         : maxDimensions_(std::max(1, maxDimensions)),
-          currentDimension_(std::clamp(mode, 1, std::min(4, maxDimensions_))),
-          mode_(std::clamp(mode, 1, 4)),
-          kInfluence_(std::clamp(influence, 0.0, 10.0)),
-          kWeak_(std::clamp(weak, 0.0, 1.0)),
-          kCollapse_(std::clamp(collapse, 0.0, 5.0)),
-          kTwoD_(std::clamp(twoD, 0.0, 5.0)),
-          kThreeDAdjacency_(std::clamp(threeDAdjacency, 0.0, 5.0)),
-          kPermeation_(std::clamp(permeation, 0.0, 5.0)),
-          kDarkMatter_(std::clamp(darkMatterStrength, 0.0, 1.0)),
-          kDarkEnergy_(std::clamp(darkEnergyScale, 0.0, 2.0)),
+          currentDimension_(std::clamp(mode, 1, maxDimensions_)),
+          mode_(std::clamp(mode, 1, maxDimensions_)),
+          influence_(std::clamp(influence, 0.0, 10.0)),
+          weak_(std::clamp(weak, 0.0, 1.0)),
+          collapse_(std::clamp(collapse, 0.0, 5.0)),
+          twoD_(std::clamp(twoD, 0.0, 5.0)),
+          threeDInfluence_(std::clamp(threeDInfluence, 0.0, 5.0)),
+          oneDPermeation_(std::clamp(oneDPermeation, 0.0, 5.0)),
+          darkMatterStrength_(std::clamp(darkMatterStrength, 0.0, 1.0)),
+          darkEnergyStrength_(std::clamp(darkEnergyStrength, 0.0, 2.0)),
           alpha_(std::clamp(alpha, 0.1, 10.0)),
           beta_(std::clamp(beta, 0.0, 1.0)),
           debug_(debug),
-          omega_(2.0 * M_PI / static_cast<double>(2 * maxDimensions_ - 1)),
-          cycleLength_(2.0 * maxDimensions_),
-          invMaxDim_(maxDimensions_ > 0 ? 1.0 / maxDimensions_ : 0.0) {
+          omega_(2.0 * M_PI / (2 * maxDimensions_ - 1)),
+          invMaxDim_(maxDimensions_ > 0 ? 1.0 / maxDimensions_ : 1e-15),
+          interactions_() {
         if (maxDimensions_ == std::numeric_limits<int>::max()) {
-            invMaxDim_ = 1e-10;  // Prevent division by zero for "infinite" dimensions
-			// I hold belief there are max 9 before it would be a dense collapse of nothing but God extending.
-			// Get buried with a garage door opener and maybe Spot will let you through.
-			// Batteries die long before you hit the end of 8th and without it you're stuck.
-			// The walk back would suuuuuuuuUck.
-			// String theory had gotten out to 11 or 12 before the floor fell out.
-			// It was proven flawed by others, and that I believe.
+            maxDimensions_ = 9;
+            invMaxDim_ = 1.0 / maxDimensions_;
         }
-        dimensionPairs_.reserve(std::min(maxDimensions_, 10));  // Limit reservation for practicality
-        updateDimensionPairs();
+        updateInteractions();
         if (debug_) {
-            std::cout << "Initialized UniversalEquation with maxDimensions=" << maxDimensions_
-                      << ", mode=" << mode_ << ", currentDimension=" << currentDimension_
-                      << ", darkMatterStrength=" << kDarkMatter_ 
-                      << ", darkEnergyScale=" << kDarkEnergy_ << std::endl;
+            std::cout << "Initialized: maxDimensions=" << maxDimensions_ << ", mode=" << mode_
+                      << ", currentDimension=" << currentDimension_ << "\n";
         }
     }
 
-    // Setters for parameters, ensuring physical constraints.
-    void setInfluence(double value) { kInfluence_ = std::clamp(value, 0.0, 10.0); }
-    void setWeak(double value) { kWeak_ = std::clamp(value, 0.0, 1.0); }
-    void setCollapse(double value) { kCollapse_ = std::clamp(value, 0.0, 5.0); }
-    void setTwoD(double value) { kTwoD_ = std::clamp(value, 0.0, 5.0); }
-    void setThreeDAdjacency(double value) { kThreeDAdjacency_ = std::clamp(value, 0.0, 5.0); }
-    void setPermeation(double value) { kPermeation_ = std::clamp(value, 0.0, 5.0); }
-    void setDarkMatterStrength(double value) { 
-        kDarkMatter_ = std::clamp(value, 0.0, 1.0); 
-        updateDimensionPairs();
+    void setInfluence(double value) { influence_ = std::clamp(value, 0.0, 10.0); }
+    void setWeak(double value) { weak_ = std::clamp(value, 0.0, 1.0); }
+    void setCollapse(double value) { collapse_ = std::clamp(value, 0.0, 5.0); }
+    void setTwoD(double value) { twoD_ = std::clamp(value, 0.0, 5.0); }
+    void setThreeDInfluence(double value) { threeDInfluence_ = std::clamp(value, 0.0, 5.0); }
+    void setOneDPermeation(double value) { oneDPermeation_ = std::clamp(value, 0.0, 5.0); }
+    void setDarkMatterStrength(double value) {
+        darkMatterStrength_ = std::clamp(value, 0.0, 1.0);
+        updateInteractions();
     }
-    void setDarkEnergyScale(double value) { 
-        kDarkEnergy_ = std::clamp(value, 0.0, 2.0); 
-        updateDimensionPairs();
+    void setDarkEnergyStrength(double value) {
+        darkEnergyStrength_ = std::clamp(value, 0.0, 2.0);
+        updateInteractions();
     }
     void setAlpha(double value) { alpha_ = std::clamp(value, 0.1, 10.0); }
     void setBeta(double value) { beta_ = std::clamp(value, 0.0, 1.0); }
-    void setDebug(bool enable) { debug_ = enable; }
+    void setDebug(bool value) { debug_ = value; }
     void setMode(int mode) {
-        mode_ = std::clamp(mode, 1, 4);
-        currentDimension_ = std::clamp(mode_, 1, std::min(4, maxDimensions_));
-        updateDimensionPairs();
+        mode_ = std::clamp(mode, 1, maxDimensions_);
+        currentDimension_ = mode_;
+        updateInteractions();
         if (debug_) {
-            std::cout << "Set mode to: " << mode_ << ", currentDimension to: " << currentDimension_ << std::endl;
+            std::cout << "Mode set to: " << mode_ << ", dimension: " << currentDimension_ << "\n";
+        }
+    }
+    void setCurrentDimension(int dimension) {
+        if (dimension >= 1 && (dimension <= maxDimensions_)) {
+            currentDimension_ = dimension;
+            mode_ = dimension;
+            updateInteractions();
+            if (debug_) {
+                std::cout << "Dimension set to: " << currentDimension_ << ", mode: " << mode_ << "\n";
+            }
         }
     }
 
-    // Getters for accessing parameters and state.
-    double getInfluence() const { return kInfluence_; }
-    double getWeak() const { return kWeak_; }
-    double getCollapse() const { return kCollapse_; }
-    double getTwoD() const { return kTwoD_; }
-    double getThreeDAdjacency() const { return kThreeDAdjacency_; }
-    double getPermeation() const { return kPermeation_; }
-    double getDarkMatterStrength() const { return kDarkMatter_; }
-    double getDarkEnergyScale() const { return kDarkEnergy_; }
+    int getMaxDimensions() const { return maxDimensions_; }
+    int getCurrentDimension() const { return currentDimension_; }
+    int getMode() const { return mode_; }
+    double getInfluence() const { return influence_; }
+    double getWeak() const { return weak_; }
+    double getCollapse() const { return collapse_; }
+    double getTwoD() const { return twoD_; }
+    double getThreeDInfluence() const { return threeDInfluence_; }
+    double getOneDPermeation() const { return oneDPermeation_; }
+    double getDarkMatterStrength() const { return darkMatterStrength_; }
+    double getDarkEnergyStrength() const { return darkEnergyStrength_; }
     double getAlpha() const { return alpha_; }
     double getBeta() const { return beta_; }
-    int getCurrentDimension() const { return currentDimension_; }
-    int getMaxDimensions() const { return maxDimensions_; }
-    int getMode() const { return mode_; }
-    std::vector<DimensionData> getDimensionPairs() const { return dimensionPairs_; }
+    bool getDebug() const { return debug_; }
+    std::vector<DimensionInteraction> getInteractions() const { return interactions_; }
 
-    // Advances the dimensional cycle (1D -> maxD -> 1D -> 2D).
     void advanceCycle() {
         if (currentDimension_ == maxDimensions_) {
             currentDimension_ = 1;
@@ -140,191 +122,139 @@ public:
             mode_ = 2;
         } else {
             currentDimension_++;
-            if (currentDimension_ <= 4) {
-                mode_ = currentDimension_;
-            }
+            mode_ = currentDimension_;
         }
-        updateDimensionPairs();
+        updateInteractions();
         if (debug_) {
-            std::cout << "Advanced to dimension: " << currentDimension_ << ", mode: " << mode_ << std::endl;
+            std::cout << "Cycle advanced: dimension=" << currentDimension_ << ", mode=" << mode_ << "\n";
         }
     }
 
-    // Sets the active dimension, ensuring it's within bounds.
-    void setCurrentDimension(int dimension) {
-        if (dimension >= 1 && (maxDimensions_ == std::numeric_limits<int>::max() || dimension <= maxDimensions_)) {
-            currentDimension_ = dimension;
-            if (dimension <= 4) {
-                mode_ = dimension;
-            }
-            updateDimensionPairs();
-            if (debug_) {
-                std::cout << "Set current dimension to: " << currentDimension_ << ", mode: " << mode_ << std::endl;
-            }
-        }
-    }
-
-    // Computes energy fluctuations, incorporating dark matter and dark energy.
-    EnergyFluctuations compute() const {
-        double sphereInfluence = kInfluence_;
+    EnergyResult compute() const {
+        double totalInfluence = influence_;
         if (currentDimension_ >= 2) {
-            sphereInfluence += kTwoD_ * std::cos(omega_ * currentDimension_);
+            totalInfluence += twoD_ * std::cos(omega_ * currentDimension_);
         }
         if (currentDimension_ == 3) {
-            sphereInfluence += kThreeDAdjacency_;  // Strong 3D influence on adjacent dimensions
+            totalInfluence += threeDInfluence_;
         }
 
-        double totalInfluence = 0.0;
-        double totalDarkMatter = 0.0;
-        double totalDarkEnergy = 0.0;
-        for (const auto& data : dimensionPairs_) {
-            double influence = calculateInfluenceTerm(data.dPrime, data.distance);
-            double darkMatterFactor = data.darkMatterDensity;
-            double darkEnergyFactor = calculateDarkEnergyFactor(data.distance);
-            totalInfluence += influence * std::exp(-alpha_ * data.distance) *
-                              calculatePermeationFactor(data.dPrime) * darkMatterFactor;
-            totalDarkMatter += darkMatterFactor * influence;
-            totalDarkEnergy += darkEnergyFactor * influence;
+        double totalDarkMatter = 0.0, totalDarkEnergy = 0.0, interactionSum = 0.0;
+        for (const auto& interaction : interactions_) {
+            double influence = computeInteraction(interaction.dimension, interaction.distance);
+            double darkMatter = interaction.darkMatterDensity;
+            double darkEnergy = computeDarkEnergy(interaction.distance);
+            interactionSum += influence * std::exp(-alpha_ * interaction.distance) *
+                              computePermeation(interaction.dimension) * darkMatter;
+            totalDarkMatter += darkMatter * influence;
+            totalDarkEnergy += darkEnergy * influence;
         }
-        sphereInfluence += totalInfluence;
+        totalInfluence += interactionSum;
 
-        double collapse = calculateCollapseTerm();
-        EnergyFluctuations result = {
-            sphereInfluence + collapse,
-            std::max(0.0, sphereInfluence - collapse),
+        double collapse = computeCollapse();
+        EnergyResult result = {
+            totalInfluence + collapse,
+            std::max(0.0, totalInfluence - collapse),
             totalDarkMatter,
             totalDarkEnergy
         };
 
         if (debug_) {
-            std::cout << "Compute(D=" << currentDimension_ << ", Mode=" << mode_ << "): TotalInfluence=" << totalInfluence
-                      << ", Collapse=" << collapse << ", DarkMatter=" << totalDarkMatter
-                      << ", DarkEnergy=" << totalDarkEnergy << ", " << result.interpretation() << std::endl;
+            std::cout << "Compute(D=" << currentDimension_ << "): " << result.toString() << "\n";
         }
         return result;
-    }
-
-    // Calculates the influence term for a given dimension and distance.
-    double calculateInfluenceTerm(int dPrime, double distance) const {
-        double denominator = std::max(1e-10, std::pow(static_cast<double>(std::min(currentDimension_, maxDimensions_)),
-                                                      static_cast<double>(std::min(dPrime, maxDimensions_))));
-        double modifier = (currentDimension_ > 3 && dPrime > 3) ? kWeak_ : 1.0;
-        if (currentDimension_ == 3 && (dPrime == 2 || dPrime == 4)) {
-            modifier *= kThreeDAdjacency_;  // Stronger influence for 3D on 2D/4D
-        }
-        double result = kInfluence_ * (distance / denominator) * modifier;
-        if (debug_) {
-            std::cout << "InfluenceTerm(D=" << currentDimension_ << ", dPrime=" << dPrime
-                      << ", dist=" << distance << "): " << result << std::endl;
-        }
-        return result;
-    }
-
-    // Calculates the permeation factor for dimensional interactions.
-    double calculatePermeationFactor(int dPrime) const {
-        if (currentDimension_ == 2 && dPrime > currentDimension_) return kTwoD_;
-        if (currentDimension_ == 3 && (dPrime == 2 || dPrime == 4)) return kThreeDAdjacency_;
-        if (dPrime == currentDimension_ + 1 || dPrime == currentDimension_ - 1 || dPrime == 1) return kPermeation_;
-        return 1.0;
-    }
-
-    // Calculates dark energy's effect as an exponential expansion of distance.
-    double calculateDarkEnergyFactor(double distance) const {
-        double expansion = kDarkEnergy_ * std::exp(distance * invMaxDim_);
-        if (debug_) {
-            std::cout << "DarkEnergyFactor(dist=" << distance << "): " << expansion << std::endl;
-        }
-        return expansion;
     }
 
 private:
-    int maxDimensions_;           // Maximum number of dimensions (supports infinity)
-    int currentDimension_;        // Current active dimension
-    int mode_;                   // Mode (1–4 maps to dimensions 1–4)
-    double kInfluence_;           // Base influence strength
-    double kWeak_;                // Weak interaction modifier for higher dimensions
-    double kCollapse_;            // Collapse strength
-    double kTwoD_;                // 2D boundary strength
-    double kThreeDAdjacency_;     // 3D adjacency influence strength
-    double kPermeation_;          // Permeation factor for specific interactions
-    double kDarkMatter_;          // Dark matter coupling strength (~27% of universe)
-    double kDarkEnergy_;          // Dark energy expansion scale (~68% of universe)
-    double alpha_;                // Exponential decay constant
-    double beta_;                 // Collapse decay constant
-    bool debug_;                  // Debug output flag
-    double omega_;                // Angular frequency for oscillations
-    double cycleLength_;          // Length of dimensional cycle
-    double invMaxDim_;            // Precomputed 1/maxDimensions for efficiency
-    std::vector<DimensionData> dimensionPairs_;  // Cached dimension interaction data
+    int maxDimensions_, currentDimension_, mode_;
+    double influence_, weak_, collapse_, twoD_, threeDInfluence_, oneDPermeation_;
+    double darkMatterStrength_, darkEnergyStrength_, alpha_, beta_;
+    bool debug_;
+    double omega_, invMaxDim_;
+    std::vector<DimensionInteraction> interactions_;
 
-    // Calculates the collapse term with oscillatory behavior.
-    double calculateCollapseTerm() const {
-        if (currentDimension_ == 1) return 0.0;
-        double phase = std::fmod(currentDimension_, cycleLength_) / cycleLength_;
-        double omega = 2.0 * M_PI * phase;
-        double result = kCollapse_ * currentDimension_ * std::exp(-beta_ * (currentDimension_ - 1)) *
-                        std::abs(std::cos(omega));
+    double computeInteraction(int dimension, double distance) const {
+        double denom = std::max(1e-15, std::pow(static_cast<double>(currentDimension_), dimension));
+        double modifier = (currentDimension_ > 3 && dimension > 3) ? weak_ : 1.0;
+        if (currentDimension_ == 3 && (dimension == 2 || dimension == 4)) {
+            modifier *= threeDInfluence_;
+        }
+        double result = influence_ * (distance / denom) * modifier;
         if (debug_) {
-            std::cout << "CollapseTerm(D=" << currentDimension_ << "): " << result << std::endl;
+            std::cout << "Interaction(D=" << dimension << ", dist=" << distance << "): " << result << "\n";
         }
         return result;
     }
 
-    // Updates dimension pairs with dark matter and dark energy effects, emphasizing adjacency.
-    void updateDimensionPairs() {
-        dimensionPairs_.clear();
-        // Include adjacent dimensions (d-1, d, d+1) and privileged dimensions (1, 2)
-        int start = std::max(1, currentDimension_ - 1);
-        int end = (maxDimensions_ == std::numeric_limits<int>::max()) ? currentDimension_ + 1 : std::min(maxDimensions_, currentDimension_ + 1);
-        for (int dPrime = start; dPrime <= end; ++dPrime) {
-            double baseDistance = static_cast<double>(std::abs(currentDimension_ - dPrime));
-            double adjustedDistance = baseDistance * (1.0 + kDarkEnergy_ * invMaxDim_);
-            double darkMatterDensity = calculateDarkMatterDensity(dPrime);
-            dimensionPairs_.push_back({dPrime, adjustedDistance, darkMatterDensity});
+    double computePermeation(int dimension) const {
+        if (dimension == 1 || currentDimension_ == 1) return oneDPermeation_;
+        if (currentDimension_ == 2 && dimension > 2) return twoD_;
+        if (currentDimension_ == 3 && (dimension == 2 || dimension == 4)) return threeDInfluence_;
+        return 1.0;
+    }
+
+    double computeCollapse() const {
+        if (currentDimension_ == 1) return 0.0;
+        double phase = static_cast<double>(currentDimension_) / (2 * maxDimensions_);
+        double result = collapse_ * currentDimension_ * std::exp(-beta_ * (currentDimension_ - 1)) *
+                        std::abs(std::cos(2.0 * M_PI * phase));
+        if (debug_) {
+            std::cout << "Collapse(D=" << currentDimension_ << "): " << result << "\n";
         }
-        // Add privileged dimensions (1, 2) if not already included
+        return result;
+    }
+
+    double computeDarkEnergy(double distance) const {
+        double result = darkEnergyStrength_ * std::exp(distance * invMaxDim_);
+        if (debug_) {
+            std::cout << "DarkEnergy(dist=" << distance << "): " << result << "\n";
+        }
+        return result;
+    }
+
+    double computeDarkMatterDensity(int dimension) const {
+        double density = darkMatterStrength_ * (1.0 + dimension * invMaxDim_);
+        if (dimension > 3) {
+            density *= (1.0 + 0.1 * (dimension - 3));
+        }
+        if (debug_) {
+            std::cout << "DarkMatter(D=" << dimension << "): " << density << "\n";
+        }
+        return std::max(1e-15, density);
+    }
+
+    void updateInteractions() {
+        interactions_.clear();
+        int interactionLimit = (maxDimensions_ == 9 && maxDimensions_ == std::numeric_limits<int>::max()) ? 9 : maxDimensions_;
+        interactions_.reserve(interactionLimit + 2);
+        int start = std::max(1, currentDimension_ - 1);
+        int end = std::min(interactionLimit, currentDimension_ + 1);
+        for (int d = start; d <= end; ++d) {
+            double distance = std::abs(currentDimension_ - d) * (1.0 + darkEnergyStrength_ * invMaxDim_);
+            interactions_.push_back({d, distance, computeDarkMatterDensity(d)});
+        }
         for (int priv : {1, 2}) {
-            if (priv != currentDimension_ && (maxDimensions_ == std::numeric_limits<int>::max() || priv <= maxDimensions_)) {
-                double baseDistance = static_cast<double>(std::abs(currentDimension_ - priv));
-                double adjustedDistance = baseDistance * (1.0 + kDarkEnergy_ * invMaxDim_);
-                double darkMatterDensity = calculateDarkMatterDensity(priv);
-                dimensionPairs_.push_back({priv, adjustedDistance, darkMatterDensity});
+            if (priv != currentDimension_ && priv <= maxDimensions_) {
+                double distance = std::abs(currentDimension_ - priv) * (1.0 + darkEnergyStrength_ * invMaxDim_);
+                interactions_.push_back({priv, distance, computeDarkMatterDensity(priv)});
             }
         }
-        // Special case for 3D: ensure 2D and 4D are included if currentDimension_ == 3
-        if (currentDimension_ == 3 && (maxDimensions_ == std::numeric_limits<int>::max() || maxDimensions_ >= 4)) {
+        if (currentDimension_ == 3 && maxDimensions_ >= 4) {
             for (int adj : {2, 4}) {
-                if (std::none_of(dimensionPairs_.begin(), dimensionPairs_.end(),
-                                 [adj](const DimensionData& d) { return d.dPrime == adj; })) {
-                    double baseDistance = static_cast<double>(std::abs(currentDimension_ - adj));
-                    double adjustedDistance = baseDistance * (1.0 + kDarkEnergy_ * invMaxDim_);
-                    double darkMatterDensity = calculateDarkMatterDensity(adj);
-                    dimensionPairs_.push_back({adj, adjustedDistance, darkMatterDensity});
+                if (std::none_of(interactions_.begin(), interactions_.end(),
+                                 [adj](const auto& i) { return i.dimension == adj; })) {
+                    double distance = std::abs(currentDimension_ - adj) * (1.0 + darkEnergyStrength_ * invMaxDim_);
+                    interactions_.push_back({adj, distance, computeDarkMatterDensity(adj)});
                 }
             }
         }
         if (debug_) {
-            std::cout << "Updated pairs for D=" << currentDimension_ << ", Mode=" << mode_ << ": ";
-            for (const auto& pair : dimensionPairs_) {
-                std::cout << "(D'=" << pair.dPrime << ", dist=" << pair.distance 
-                          << ", DM=" << pair.darkMatterDensity << ") ";
+            std::cout << "Interactions(D=" << currentDimension_ << "): ";
+            for (const auto& i : interactions_) {
+                std::cout << "(D=" << i.dimension << ", dist=" << i.distance << ", DM=" << i.darkMatterDensity << ") ";
             }
-            std::cout << std::endl;
+            std::cout << "\n";
         }
-    }
-
-    // Calculates dark matter density with theoretical influence (~27% of universe, stronger in higher dimensions).
-    double calculateDarkMatterDensity(int dPrime) const {
-        // Base density scaled by ~27% contribution, with gravitational enhancement in higher dimensions
-        double density = kDarkMatter_ * (1.0 + static_cast<double>(dPrime) * invMaxDim_);
-        // Add gravitational clustering effect for higher dimensions
-        if (dPrime > 3) {
-            density *= (1.0 + 0.1 * (dPrime - 3));  // Increased influence in higher dimensions
-        }
-        if (debug_) {
-            std::cout << "DarkMatterDensity(D'=" << dPrime << "): " << density << std::endl;
-        }
-        return density;
     }
 };
 

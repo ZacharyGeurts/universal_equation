@@ -17,15 +17,14 @@
 // Structure to hold dimension data, including dark matter and dark energy contributions.
 struct DimensionData {
     int dimension;                // Dimension number
-    double positive;              // Positive energy fluctuation
-    double negative;              // Negative energy fluctuation
+    double observable;            // Observable energy fluctuation
+    double potential;             // Potential energy fluctuation
     double darkMatter;            // Dark matter contribution
     double darkEnergy;            // Dark energy contribution
 };
 
 class DimensionalNavigator {
 public:
-    // Constructor initializes SDL, Vulkan, and the UniversalEquation with dark matter and dark energy.
     DimensionalNavigator(const char* title = "Dimensional Navigator",
                         int width = 1280, int height = 720,
                         const char* fontPath = "arial.ttf", int fontSize = 24)
@@ -45,12 +44,10 @@ public:
         }
     }
 
-    // Destructor ensures proper cleanup of resources.
     ~DimensionalNavigator() {
         cleanup();
     }
 
-    // Main loop handling events and rendering.
     void run() {
         bool running = true;
         SDL_Event event;
@@ -74,86 +71,81 @@ public:
                 std::cerr << "Render failed: " << e.what() << "\n";
                 running = false;
             }
-            SDL_Delay(16); // Cap frame rate to ~60 FPS
+            SDL_Delay(16);
         }
     }
 
-    // Adjusts the influence parameter of the UniversalEquation.
     void adjustInfluence(double delta) {
         ue_.setInfluence(std::max(0.0, ue_.getInfluence() + delta));
         updateCache();
     }
 
-    // Adjusts the dark matter strength parameter.
     void adjustDarkMatter(double delta) {
         ue_.setDarkMatterStrength(std::max(0.0, ue_.getDarkMatterStrength() + delta));
         updateCache();
     }
 
-    // Adjusts the dark energy scale parameter.
     void adjustDarkEnergy(double delta) {
-        ue_.setDarkEnergyScale(std::max(0.0, ue_.getDarkEnergyScale() + delta));
+        ue_.setDarkEnergyStrength(std::max(0.0, ue_.getDarkEnergyStrength() + delta));
         updateCache();
     }
 
 private:
-    SDL_Window* window_;                         // SDL window
-    TTF_Font* font_;                            // SDL_ttf font for text rendering
-    VkInstance vulkanInstance_;                 // Vulkan instance
-    VkDevice vulkanDevice_;                     // Vulkan logical device
-    VkPhysicalDevice physicalDevice_;           // Vulkan physical device
-    VkQueue graphicsQueue_;                    // Vulkan graphics queue
-    VkQueue presentQueue_;                     // Vulkan present queue
-    VkSurfaceKHR surface_;                     // Vulkan surface
-    VkSwapchainKHR swapchain_;                 // Vulkan swapchain
-    std::vector<VkImage> swapchainImages_;     // Swapchain images
-    std::vector<VkImageView> swapchainImageViews_; // Swapchain image views
-    std::vector<VkFramebuffer> swapchainFramebuffers_; // Swapchain framebuffers
-    VkPipeline pipeline_;                      // Vulkan graphics pipeline
-    VkPipelineLayout pipelineLayout_;          // Vulkan pipeline layout
-    VkRenderPass renderPass_;                  // Vulkan render pass
-    VkCommandPool commandPool_;                // Vulkan command pool
-    std::vector<VkCommandBuffer> commandBuffers_; // Vulkan command buffers
-    VkSemaphore imageAvailableSemaphore_;      // Semaphore for image acquisition
-    VkSemaphore renderFinishedSemaphore_;      // Semaphore for render completion
-    VkFence inFlightFence_;                    // Fence for frame synchronization
-    VkBuffer vertexBuffer_;                    // Vertex buffer for sphere
-    VkDeviceMemory vertexBufferMemory_;        // Memory for sphere vertex buffer
-    VkBuffer indexBuffer_;                     // Index buffer for sphere
-    VkDeviceMemory indexBufferMemory_;         // Memory for sphere index buffer
-    VkBuffer quadVertexBuffer_;                // Vertex buffer for quad
-    VkDeviceMemory quadVertexBufferMemory_;    // Memory for quad vertex buffer
-    VkBuffer quadIndexBuffer_;                 // Index buffer for quad
-    VkDeviceMemory quadIndexBufferMemory_;     // Memory for quad index buffer
-    UniversalEquation ue_;                      // UniversalEquation instance
-    std::vector<DimensionData> cache_;         // Cache for dimension data
-    int mode_;                                 // Current rendering mode (1-4)
-    float wavePhase_;                          // Animation phase for pulsing effects
-    const float waveSpeed_;                    // Speed of animation
-    int width_;                                // Window width
-    int height_;                               // Window height
-    std::vector<glm::vec3> sphereVertices_;    // Sphere vertex data
-    std::vector<uint32_t> sphereIndices_;      // Sphere index data
-    std::vector<glm::vec3> quadVertices_;      // Quad vertex data
-    std::vector<uint32_t> quadIndices_;        // Quad index data
-    uint32_t graphicsFamily_ = UINT32_MAX;     // Graphics queue family index
-    uint32_t presentFamily_ = UINT32_MAX;      // Present queue family index
-    static constexpr int kMaxRenderedDimensions = 4; // Current limit for dimensions (1-4)
+    SDL_Window* window_;
+    TTF_Font* font_;
+    VkInstance vulkanInstance_;
+    VkDevice vulkanDevice_;
+    VkPhysicalDevice physicalDevice_;
+    VkQueue graphicsQueue_;
+    VkQueue presentQueue_;
+    VkSurfaceKHR surface_;
+    VkSwapchainKHR swapchain_;
+    std::vector<VkImage> swapchainImages_;
+    std::vector<VkImageView> swapchainImageViews_;
+    std::vector<VkFramebuffer> swapchainFramebuffers_;
+    VkPipeline pipeline_;
+    VkPipelineLayout pipelineLayout_;
+    VkRenderPass renderPass_;
+    VkCommandPool commandPool_;
+    std::vector<VkCommandBuffer> commandBuffers_;
+    VkSemaphore imageAvailableSemaphore_;
+    VkSemaphore renderFinishedSemaphore_;
+    VkFence inFlightFence_;
+    VkBuffer vertexBuffer_;
+    VkDeviceMemory vertexBufferMemory_;
+    VkBuffer indexBuffer_;
+    VkDeviceMemory indexBufferMemory_;
+    VkBuffer quadVertexBuffer_;
+    VkDeviceMemory quadVertexBufferMemory_;
+    VkBuffer quadIndexBuffer_;
+    VkDeviceMemory quadIndexBufferMemory_;
+    UniversalEquation ue_;
+    std::vector<DimensionData> cache_;
+    int mode_;
+    float wavePhase_;
+    const float waveSpeed_;
+    int width_;
+    int height_;
+    std::vector<glm::vec3> sphereVertices_;
+    std::vector<uint32_t> sphereIndices_;
+    std::vector<glm::vec3> quadVertices_;
+    std::vector<uint32_t> quadIndices_;
+    uint32_t graphicsFamily_ = UINT32_MAX;
+    uint32_t presentFamily_ = UINT32_MAX;
+    static constexpr int kMaxRenderedDimensions = 4;
 
-    // Push constants for shader communication, extended for dark matter and dark energy.
     struct PushConstants {
-        glm::mat4 model;           // Model transformation matrix
-        glm::mat4 view;            // View transformation matrix
-        glm::mat4 proj;            // Projection transformation matrix
-        float value;               // Energy fluctuation value
-        float dimension;           // Dimension number
-        float wavePhase;           // Animation phase
-        float cycleProgress;        // Cycle progress
-        float darkMatter;          // Dark matter contribution
-        float darkEnergy;          // Dark energy contribution
+        glm::mat4 model;
+        glm::mat4 view;
+        glm::mat4 proj;
+        float value;
+        float dimension;
+        float wavePhase;
+        float cycleProgress;
+        float darkMatter;
+        float darkEnergy;
     };
 
-    // Initializes Vulkan resources (unchanged).
     void initializeVulkan() {
         VulkanInitializer::initializeVulkan(vulkanInstance_, physicalDevice_, vulkanDevice_, surface_,
                                             graphicsQueue_, presentQueue_, graphicsFamily_, presentFamily_,
@@ -167,7 +159,6 @@ private:
                                                 quadIndexBufferMemory_, quadVertices_, quadIndices_);
     }
 
-    // Recreates the swapchain when the window is resized (unchanged).
     void recreateSwapchain() {
         if (vulkanDevice_) vkDeviceWaitIdle(vulkanDevice_);
         VulkanInitializer::cleanupVulkan(vulkanInstance_, vulkanDevice_, surface_, swapchain_, swapchainImageViews_,
@@ -203,7 +194,6 @@ private:
         initializeVulkan();
     }
 
-    // Cleans up all Vulkan and SDL resources (unchanged).
     void cleanup() {
         VulkanInitializer::cleanupVulkan(vulkanInstance_, vulkanDevice_, surface_, swapchain_, swapchainImageViews_,
                                          swapchainFramebuffers_, pipeline_, pipelineLayout_, renderPass_,
@@ -217,10 +207,9 @@ private:
         surface_ = VK_NULL_HANDLE;
     }
 
-    // Initializes sphere geometry for rendering dimensions (unchanged).
     void initializeSphereGeometry() {
-        const int stacks = 16; // Vertical resolution
-        const int slices = 16; // Horizontal resolution
+        const int stacks = 16;
+        const int slices = 16;
         sphereVertices_.clear();
         sphereIndices_.clear();
 
@@ -249,7 +238,6 @@ private:
         std::cerr << "Initialized sphere: " << sphereVertices_.size() << " vertices, " << sphereIndices_.size() << " indices\n";
     }
 
-    // Initializes quad geometry for 2D rendering (unchanged).
     void initializeQuadGeometry() {
         quadVertices_ = {
             {-1.0f, -1.0f, 0.0f}, {1.0f, -1.0f, 0.0f}, {1.0f, 1.0f, 0.0f}, {-1.0f, 1.0f, 0.0f}
@@ -258,24 +246,21 @@ private:
         std::cerr << "Initialized quad: " << quadVertices_.size() << " vertices, " << quadIndices_.size() << " indices\n";
     }
 
-    // Initializes the UniversalEquation with default parameters, including dark matter and dark energy.
     void initializeCalculator() {
-        ue_ = UniversalEquation(9, 1.0, 0.5, 0.5, 0.5, 2.0, 0.3, 0.7, 5.0, 0.2, false);
+        ue_ = UniversalEquation(9, 1, 1.0, 0.5, 0.5, 0.5, 1.5, 2.0, 0.27, 0.68, 5.0, 0.2, false);
         updateCache();
     }
 
-    // Updates the cache with energy fluctuations for dimensions 1-4.
     void updateCache() {
         cache_.clear();
-        cache_.reserve(kMaxRenderedDimensions); // Pre-allocate for efficiency
+        cache_.reserve(kMaxRenderedDimensions);
         for (int d = 1; d <= kMaxRenderedDimensions; ++d) {
             ue_.setCurrentDimension(d);
             auto result = ue_.compute();
-            cache_.push_back({d, result.positive, result.negative, result.darkMatterContribution, result.darkEnergyContribution});
+            cache_.push_back({d, result.observable, result.potential, result.darkMatter, result.darkEnergy});
         }
     }
 
-    // Handles user input for adjusting parameters and switching modes.
     void handleInput(const SDL_Event& event) {
         if (event.type == SDL_EVENT_KEY_DOWN) {
             switch (event.key.key) {
@@ -313,7 +298,6 @@ private:
         }
     }
 
-    // Renders the scene based on the current mode.
     void render() {
         vkWaitForFences(vulkanDevice_, 1, &inFlightFence_, VK_TRUE, UINT64_MAX);
         vkResetFences(vulkanDevice_, 1, &inFlightFence_);
@@ -340,7 +324,7 @@ private:
         vkCmdBeginRenderPass(commandBuffers_[imageIndex], &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
         vkCmdBindPipeline(commandBuffers_[imageIndex], VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_);
 
-        updateCache(); // Ensure cache is fresh for animations
+        updateCache();
         if (mode_ == 1) {
             renderMode1(imageIndex);
         } else if (mode_ == 2) {
@@ -375,7 +359,6 @@ private:
         wavePhase_ += waveSpeed_;
     }
 
-    // Mode 1: Emphasize dimension 1 (1D) with a central, large sphere; others smaller and offset.
     void renderMode1(uint32_t imageIndex) {
         VkBuffer vertexBuffers[] = {vertexBuffer_};
         VkDeviceSize offsets[] = {0};
@@ -388,23 +371,22 @@ private:
         constexpr float baseRadius = 0.5f;
         float cycleProgress = std::fmod(wavePhase_ / (2.0f * kMaxRenderedDimensions), 1.0f);
         for (size_t i = 0; i < kMaxRenderedDimensions; ++i) {
-            // Emphasize dimension 1: larger scale, more intense pulsing
-            float emphasis = (i == 0) ? 2.0f : 0.5f; // 2x for dim 1, 0.5x for others
-            float radius = baseRadius * emphasis * (1.0f + static_cast<float>(cache_[i].positive) * 0.2f) *
+            float emphasis = (i == 0) ? 2.0f : 0.5f;
+            float radius = baseRadius * emphasis * (1.0f + static_cast<float>(cache_[i].observable) * 0.2f) *
                            (1.0f + 0.1f * sin(wavePhase_ + i) * (1.0f + static_cast<float>(cache_[i].darkMatter) * 0.5f));
             glm::mat4 model = glm::rotate(glm::mat4(1.0f), wavePhase_ * 0.2f, glm::vec3(0.0f, 1.0f, 0.0f));
-            if (i == 0) { // Dimension 1: Centered, prominent
+            if (i == 0) {
                 model = glm::scale(model, glm::vec3(radius));
-            } else if (i == 1) { // Dimension 2: Offset in y
+            } else if (i == 1) {
                 model = glm::translate(model, glm::vec3(0.0f, 1.5f * (1.0f + static_cast<float>(cache_[i].darkEnergy) * 0.2f), -i * 1.0f));
                 model = glm::scale(model, glm::vec3(radius));
-            } else { // Dimensions 3-4: Linear arrangement
+            } else {
                 model = glm::translate(model, glm::vec3(0.0f, 0.0f, -i * 1.0f * (1.0f + static_cast<float>(cache_[i].darkEnergy) * 0.2f)));
                 model = glm::scale(model, glm::vec3(radius));
             }
 
             float dimValue = static_cast<float>(i + 1);
-            PushConstants pushConstants = {model, view, proj, static_cast<float>(cache_[i].positive), dimValue, wavePhase_, cycleProgress,
+            PushConstants pushConstants = {model, view, proj, static_cast<float>(cache_[i].observable), dimValue, wavePhase_, cycleProgress,
                                           static_cast<float>(cache_[i].darkMatter), static_cast<float>(cache_[i].darkEnergy)};
             vkCmdPushConstants(commandBuffers_[imageIndex], pipelineLayout_, 
                               VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
@@ -413,7 +395,6 @@ private:
         }
     }
 
-    // Mode 2: Emphasize dimension 2 (2D) with a prominent sphere in a circular arrangement.
     void renderMode2(uint32_t imageIndex) {
         VkBuffer vertexBuffers[] = {vertexBuffer_};
         VkDeviceSize offsets[] = {0};
@@ -426,29 +407,28 @@ private:
         constexpr float baseRadius = 0.5f;
         float cycleProgress = std::fmod(wavePhase_ / (2.0f * kMaxRenderedDimensions), 1.0f);
         for (size_t i = 0; i < kMaxRenderedDimensions; ++i) {
-            // Emphasize dimension 2: larger scale, more intense pulsing
             float emphasis = (i == 1) ? 2.0f : 0.5f;
-            float radius = baseRadius * emphasis * (1.0f + static_cast<float>(cache_[i].positive) * 0.2f) *
+            float radius = baseRadius * emphasis * (1.0f + static_cast<float>(cache_[i].observable) * 0.2f) *
                            (1.0f + 0.1f * sin(wavePhase_ + i) * (1.0f + static_cast<float>(cache_[i].darkMatter) * 0.5f));
             glm::mat4 model = glm::mat4(1.0f);
             float angle = wavePhase_ + (i + 1) * 2.0f * glm::pi<float>() / kMaxRenderedDimensions;
-            float spacing = 1.5f * (1.0f + static_cast<float>(cache_[i].darkEnergy) * 0.5f); // Dark energy affects spacing
+            float spacing = 1.5f * (1.0f + static_cast<float>(cache_[i].darkEnergy) * 0.5f);
             float x = cos(angle) * spacing;
             float y = sin(angle) * spacing;
-            float z = -i * 0.5f; // Closer together for circular view
-            if (i == 1) { // Dimension 2: Larger, prominent in circle
+            float z = -i * 0.5f;
+            if (i == 1) {
                 model = glm::translate(model, glm::vec3(x * 1.5f, y * 1.5f, z));
                 model = glm::scale(model, glm::vec3(radius));
-            } else if (i == 0) { // Dimension 1: Centered but smaller
+            } else if (i == 0) {
                 model = glm::translate(model, glm::vec3(0.0f, 0.0f, 0.0f));
                 model = glm::scale(model, glm::vec3(radius));
-            } else { // Dimensions 3-4: Circular arrangement
+            } else {
                 model = glm::translate(model, glm::vec3(x, y, z));
                 model = glm::scale(model, glm::vec3(radius));
             }
 
             float dimValue = static_cast<float>(i + 1);
-            PushConstants pushConstants = {model, view, proj, static_cast<float>(cache_[i].positive), dimValue, wavePhase_, cycleProgress,
+            PushConstants pushConstants = {model, view, proj, static_cast<float>(cache_[i].observable), dimValue, wavePhase_, cycleProgress,
                                           static_cast<float>(cache_[i].darkMatter), static_cast<float>(cache_[i].darkEnergy)};
             vkCmdPushConstants(commandBuffers_[imageIndex], pipelineLayout_, 
                               VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
@@ -457,7 +437,6 @@ private:
         }
     }
 
-    // Mode 3: Emphasize dimension 3 with interaction spheres, modulated by dark matter and dark energy.
     void renderMode3(uint32_t imageIndex) {
         VkBuffer vertexBuffers[] = {vertexBuffer_};
         VkDeviceSize offsets[] = {0};
@@ -470,47 +449,45 @@ private:
         constexpr float baseRadius = 0.5f;
         float cycleProgress = std::fmod(wavePhase_ / (2.0f * kMaxRenderedDimensions), 1.0f);
         for (size_t i = 0; i < kMaxRenderedDimensions; ++i) {
-            // Emphasize dimension 3: larger scale, more intense pulsing
             float emphasis = (i == 2) ? 2.0f : 0.5f;
-            float radius = baseRadius * emphasis * (1.0f + static_cast<float>(cache_[i].positive) * 0.2f) *
+            float radius = baseRadius * emphasis * (1.0f + static_cast<float>(cache_[i].observable) * 0.2f) *
                            (1.0f + 0.1f * sin(wavePhase_ + i) * (1.0f + static_cast<float>(cache_[i].darkMatter) * 0.5f));
             glm::mat4 model = glm::mat4(1.0f);
-            if (i == 2) { // Dimension 3: Centered, prominent
+            if (i == 2) {
                 model = glm::translate(model, glm::vec3(0.0f, 0.0f, 0.0f));
                 model = glm::scale(model, glm::vec3(radius));
-            } else { // Other dimensions: Linear arrangement
-                float offsetX = (i == 0) ? -1.5f : (i == 1) ? 0.0f : 1.5f; // Spread out 1, 2, 4
+            } else {
+                float offsetX = (i == 0) ? -1.5f : (i == 1) ? 0.0f : 1.5f;
                 model = glm::translate(model, glm::vec3(offsetX * (1.0f + static_cast<float>(cache_[i].darkEnergy) * 0.2f), 0.0f, -i * 1.0f));
                 model = glm::scale(model, glm::vec3(radius));
             }
 
             float dimValue = static_cast<float>(i + 1);
-            PushConstants pushConstants = {model, view, proj, static_cast<float>(cache_[i].positive), dimValue, wavePhase_, cycleProgress,
+            PushConstants pushConstants = {model, view, proj, static_cast<float>(cache_[i].observable), dimValue, wavePhase_, cycleProgress,
                                           static_cast<float>(cache_[i].darkMatter), static_cast<float>(cache_[i].darkEnergy)};
             vkCmdPushConstants(commandBuffers_[imageIndex], pipelineLayout_, 
                               VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
                               0, sizeof(PushConstants), &pushConstants);
             vkCmdDrawIndexed(commandBuffers_[imageIndex], static_cast<uint32_t>(sphereIndices_.size()), 1, 0, 0, 0);
 
-            // Interaction spheres for dimension 3 only
             if (i == 2) {
                 ue_.setCurrentDimension(3);
-                auto pairs = ue_.getDimensionPairs();
+                auto pairs = ue_.getInteractions();
                 for (const auto& pair : pairs) {
-                    if (pair.dPrime > kMaxRenderedDimensions) continue; // Skip interactions with dimensions > 4
+                    if (pair.dimension > kMaxRenderedDimensions) continue;
                     float interactionStrength = static_cast<float>(
-                        ue_.calculateInfluenceTerm(pair.dPrime, pair.distance) *
+                        computeInteraction(pair.dimension, pair.distance) *
                         std::exp(-ue_.getAlpha() * pair.distance) *
-                        ue_.calculatePermeationFactor(pair.dPrime) *
+                        computePermeation(pair.dimension) *
                         pair.darkMatterDensity);
                     float interactionRadius = baseRadius * 0.3f * interactionStrength * (1.0f + 0.1f * sin(wavePhase_));
                     if (interactionRadius > 0.01f) {
                         glm::mat4 interactionModel = glm::translate(glm::mat4(1.0f), 
-                                                                   glm::vec3(0.5f * (pair.dPrime - 3) * (1.0f + static_cast<float>(pair.distance) * 0.5f), 
+                                                                   glm::vec3(0.5f * (pair.dimension - 3) * (1.0f + static_cast<float>(pair.distance) * 0.5f), 
                                                                              0.0f, 0.0f));
                         interactionModel = glm::scale(interactionModel, glm::vec3(interactionRadius));
-                        pushConstants = {interactionModel, view, proj, interactionStrength, static_cast<float>(pair.dPrime), wavePhase_, cycleProgress,
-                                         static_cast<float>(pair.darkMatterDensity), static_cast<float>(ue_.calculateDarkEnergyFactor(pair.distance))};
+                        pushConstants = {interactionModel, view, proj, interactionStrength, static_cast<float>(pair.dimension), wavePhase_, cycleProgress,
+                                        static_cast<float>(pair.darkMatterDensity), static_cast<float>(computeDarkEnergy(pair.distance))};
                         vkCmdPushConstants(commandBuffers_[imageIndex], pipelineLayout_, 
                                           VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
                                           0, sizeof(PushConstants), &pushConstants);
@@ -521,7 +498,6 @@ private:
         }
     }
 
-    // Mode 4: Emphasize dimension 4 with combined positive/negative fluctuations and a 1D influence sphere.
     void renderMode4(uint32_t imageIndex) {
         VkBuffer vertexBuffers[] = {vertexBuffer_};
         VkDeviceSize offsets[] = {0};
@@ -534,24 +510,23 @@ private:
         constexpr float baseRadius = 0.5f;
         float cycleProgress = std::fmod(wavePhase_ / (2.0f * kMaxRenderedDimensions), 1.0f);
         for (size_t i = 0; i < kMaxRenderedDimensions; ++i) {
-            // Emphasize dimension 4: larger scale, combined fluctuations
             float emphasis = (i == 3) ? 2.0f : 0.5f;
-            float positiveRadius = baseRadius * (1.0f + static_cast<float>(cache_[i].positive) * 0.2f);
-            float negativeRadius = baseRadius * (1.0f + static_cast<float>(cache_[i].negative) * 0.2f);
-            float pulse = 0.5f * (positiveRadius + negativeRadius) * emphasis *
+            float observableRadius = baseRadius * (1.0f + static_cast<float>(cache_[i].observable) * 0.2f);
+            float potentialRadius = baseRadius * (1.0f + static_cast<float>(cache_[i].potential) * 0.2f);
+            float pulse = 0.5f * (observableRadius + potentialRadius) * emphasis *
                           (1.0f + 0.2f * sin(wavePhase_ + i) * (1.0f + static_cast<float>(cache_[i].darkMatter) * 0.5f));
             glm::mat4 model = glm::mat4(1.0f);
-            if (i == 3) { // Dimension 4: Centered, prominent
+            if (i == 3) {
                 model = glm::translate(model, glm::vec3(0.0f, 0.0f, 0.0f));
                 model = glm::scale(model, glm::vec3(pulse));
-            } else { // Other dimensions: Offset with dark energy influence
-                float offsetX = (i == 0) ? -1.5f : (i == 1) ? 0.0f : 1.5f; // Spread out 1, 2, 3
+            } else {
+                float offsetX = (i == 0) ? -1.5f : (i == 1) ? 0.0f : 1.5f;
                 model = glm::translate(model, glm::vec3(offsetX * (1.0f + static_cast<float>(cache_[i].darkEnergy) * 0.2f), 
                                                         0.0f, -i * 1.0f));
                 model = glm::scale(model, glm::vec3(pulse));
             }
 
-            float fluctuationRatio = cache_[i].negative > 0 ? static_cast<float>(cache_[i].positive / cache_[i].negative) : 1.0f;
+            float fluctuationRatio = cache_[i].potential > 0 ? static_cast<float>(cache_[i].observable / cache_[i].potential) : 1.0f;
             float dimValue = static_cast<float>(i + 1);
             PushConstants pushConstants = {model, view, proj, fluctuationRatio, dimValue, wavePhase_, cycleProgress,
                                           static_cast<float>(cache_[i].darkMatter), static_cast<float>(cache_[i].darkEnergy)};
@@ -561,17 +536,46 @@ private:
             vkCmdDrawIndexed(commandBuffers_[imageIndex], static_cast<uint32_t>(sphereIndices_.size()), 1, 0, 0, 0);
         }
 
-        // 1D influence sphere, modulated by dark matter and dark energy
-        float radius1D = baseRadius * (1.0f + static_cast<float>(ue_.getInfluence() * ue_.getPermeation()) * 0.2f) *
+        float radius1D = baseRadius * (1.0f + static_cast<float>(ue_.getInfluence() * ue_.getOneDPermeation()) * 0.2f) *
                          (1.0f + 0.3f * sin(wavePhase_) * (1.0f + static_cast<float>(ue_.getDarkMatterStrength()) * 0.5f));
-        glm::mat4 model = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 1.5f, 0.0f)); // Slightly offset to avoid overlap
+        glm::mat4 model = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 1.5f, 0.0f));
         model = glm::scale(model, glm::vec3(radius1D * 1.5f));
         PushConstants pushConstants = {model, view, proj, 1.0f, 1.0f, wavePhase_, cycleProgress,
-                                      static_cast<float>(ue_.getDarkMatterStrength()), static_cast<float>(ue_.getDarkEnergyScale())};
+                                      static_cast<float>(ue_.getDarkMatterStrength()), static_cast<float>(ue_.getDarkEnergyStrength())};
         vkCmdPushConstants(commandBuffers_[imageIndex], pipelineLayout_, 
                           VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
                           0, sizeof(PushConstants), &pushConstants);
         vkCmdDrawIndexed(commandBuffers_[imageIndex], static_cast<uint32_t>(sphereIndices_.size()), 1, 0, 0, 0);
+    }
+
+private:
+    // Moved from UniversalEquation to allow access in renderMode3
+    double computeInteraction(int dimension, double distance) const {
+        double denom = std::max(1e-15, std::pow(static_cast<double>(ue_.getCurrentDimension()), dimension));
+        double modifier = (ue_.getCurrentDimension() > 3 && dimension > 3) ? ue_.getWeak() : 1.0;
+        if (ue_.getCurrentDimension() == 3 && (dimension == 2 || dimension == 4)) {
+            modifier *= ue_.getThreeDInfluence();
+        }
+        double result = ue_.getInfluence() * (distance / denom) * modifier;
+        if (ue_.getDebug()) {
+            std::cout << "Interaction(D=" << dimension << ", dist=" << distance << "): " << result << "\n";
+        }
+        return result;
+    }
+
+    double computePermeation(int dimension) const {
+        if (dimension == 1 || ue_.getCurrentDimension() == 1) return ue_.getOneDPermeation();
+        if (ue_.getCurrentDimension() == 2 && dimension > 2) return ue_.getTwoD();
+        if (ue_.getCurrentDimension() == 3 && (dimension == 2 || dimension == 4)) return ue_.getThreeDInfluence();
+        return 1.0;
+    }
+
+    double computeDarkEnergy(double distance) const {
+        double result = ue_.getDarkEnergyStrength() * std::exp(distance * (ue_.getMaxDimensions() > 0 ? 1.0 / ue_.getMaxDimensions() : 1e-15));
+        if (ue_.getDebug()) {
+            std::cout << "DarkEnergy(dist=" << distance << "): " << result << "\n";
+        }
+        return result;
     }
 };
 
