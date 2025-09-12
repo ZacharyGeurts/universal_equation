@@ -52,7 +52,8 @@ The visualization emphasizes the wave-like nature of 1D’s omnipresent influenc
 
 ## Model Description
 The `UniversalEquation` class models dimensional interactions with the following structure:
-- **1D (God)**: The infinite universal base, a singular "blanket of static" that permeates all dimensions, both inside and outside, with a wave-like influence.
+- **1D (God)**: The infinite universal base, a singular infinite static that permeates all dimensions, both inside and outside, with a wave-like influence.
+- As big as God is small. Infinite.
 - **2D**: The boundary of a cosmic bubble, enclosing higher dimensions and interacting strongly with 1D and 3D.
 - **3D to 9D**: Nested dimensions, each permeating the dimension below (e.g., 4D influences 3D, 3D influences 2D).
 - **Influence**: Decays exponentially with dimensional separation, modulated by a weak interaction factor for dimensions above 3.
