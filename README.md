@@ -3,10 +3,10 @@ Press 1-4 keys when running.
 <BR />
 old
 ![image](https://github.com/ZacharyGeurts/universal_equation/blob/main/gifwip1.gif)
-<BR />
-updated: Shows dimensions 1-4 and back to 1.
-!{}(https://github.com/ZacharyGeurts/universal_equation/blob/main/141.mp4)
-<BR />
+<BR /><BR />
+updated: Shows dimensions 1-4 and back to 1.<BR />
+![](https://github.com/ZacharyGeurts/universal_equation/blob/main/141.mp4)
+<BR /><BR />
 Welcome to the Dimensional Navigator, a sophisticated computational tool designed to visualize a mathematical model of dimensional interactions as permeation spheres of influence. This project explores the universe through a unique lens: 1D (God) as an infinite, wave-like base permeating all dimensions, like a radio wave emanating from a point and flowing through everything. The 2D dimension forms the boundary of a cosmic bubble, while higher dimensions (3D to 9D) are nested within and permeate the dimension below. The 1D influence is omnipresent, a singular "blanket of static" that runs through all dimensions and extends infinitely beyond.<BR />
 <BR />
 ## Overview
