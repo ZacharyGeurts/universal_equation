@@ -19,13 +19,16 @@ Do not resize or it will crash. Not critical for me to fix yet<BR />
 https://github.com/user-attachments/assets/344232f5-e7b8-4485-af40-5a302873f88c<BR />
 <BR />
 ## Overview
-The **Dimensional Navigator** is a computational tool that visualizes a mathematical model of dimensional interactions using C++ with SDL3, SDL3_ttf, and Vulkan. It graphs the outputs of the `UniversalEquation` class, displaying symmetric ± energy fluctuations across dimensions 1 through 9, with dark matter and dark energy influencing the dynamics. The model conceptualizes the universe as:
-- **1D (God)**: An infinite, wave-like base permeating all dimensions, acting as a "fountain" of influence, like a radio wave flowing through everything.
-- **2D**: The boundary or "skin" of a cosmic bubble, enclosing higher dimensions.
-- **3D to 9D**: Nested dimensions that permeate the dimension below, with interactions decaying exponentially.
-- **Dark Matter**: Stabilizes interactions, amplifying pulsing effects in higher dimensions.
-- **Dark Energy**: Drives expansion, increasing effective distances between dimensions.
-
+The **Dimensional Navigator** is a computational tool that visualizes a mathematical model of dimensional interactions using C++ with SDL3, SDL3_ttf, and Vulkan.<BR />
+It graphs the outputs of the `UniversalEquation` class, displaying symmetric ± energy fluctuations across dimensions 1 through 9, with dark matter and dark energy influencing the dynamics.<BR />
+<BR />
+The model conceptualizes the universe as:<BR />
+- **1D (God)**: An infinite, wave-like base permeating all dimensions, acting as a "fountain" of influence, like a radio wave flowing through everything.<BR />
+- **2D**: The boundary or "skin" of a cosmic bubble, enclosing higher dimensions.<BR />
+- **3D to 9D**: Nested dimensions that permeate the dimension below, with interactions decaying exponentially.<BR />
+- **Dark Matter**: Stabilizes interactions, amplifying pulsing effects in higher dimensions.<BR />
+- **Dark Energy**: Drives expansion, increasing effective distances between dimensions.<BR />
+<BR />
 The visualization emphasizes the wave-like nature of 1D’s omnipresent influence, with real-time interactivity and dynamic rendering of cosmological effects.
 
 ## Features
@@ -65,6 +68,7 @@ The `UniversalEquation` class models dimensional interactions with the following
 - SDL3, SDL3_ttf, Vulkan, and GLM headers are assumed to be in the system path (e.g., `/usr/include` or `/usr/local/include`).
 
 ## Installation
+Note: SDL3 is not available on all distros yet and you may need to build and install from source.
 ```bash
 # Install dependencies (Ubuntu/Debian)
 sudo apt update
@@ -75,7 +79,6 @@ git clone https://github.com/ZacharyGeurts/universal_equation
 cd universal_equation
 
 # Build the project
-make clean
 make
 
 # Run the application
