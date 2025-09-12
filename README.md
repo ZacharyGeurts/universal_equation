@@ -1,5 +1,6 @@
 # Dimensional Navigator Project
-![](https://github.com/ZacharyGeurts/universal_equation/raw/refs/heads/main/wip2.mov)<BR />
+**Video Clip**:
+https://github.com/ZacharyGeurts/universal_equation/raw/refs/heads/main/wip2.mov<BR />
 **Video Clip**: (old)<BR />
 https://github.com/user-attachments/assets/344232f5-e7b8-4485-af40-5a302873f88c<BR />
 <BR />
