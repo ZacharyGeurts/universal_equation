@@ -3,21 +3,21 @@
 WIP - Current designing and updating the program.<BR />
 Do not resize or it will crash. Not critical for me to fix yet<BR />
 <BR />
-**Key Bindings**:
-- `UP`: Increase influence (`kInfluence_`) by 0.1
-- `DOWN`: Decrease influence (`kInfluence_`) by 0.1
-- `LEFT`: Decrease dark matter strength (`kDarkMatter_`) by 0.05
-- `RIGHT`: Increase dark matter strength (`kDarkMatter_`) by 0.05
-- `PAGEUP`: Increase dark energy scale (`kDarkEnergy_`) by 0.05
-- `PAGEDOWN`: Decrease dark energy scale (`kDarkEnergy_`) by 0.05
-- `1`: Mode 1 Dimension 1? God?
-- `2`: Mode 2 Dimension 2
-- `3`: Mode 3 etc.
-- `4`: Mode 4 etc.
-
-**Video Clip**:
-https://github.com/user-attachments/assets/344232f5-e7b8-4485-af40-5a302873f88c
-
+**Key Bindings**:<BR />
+- `UP`: Increase influence (`kInfluence_`) by 0.1<BR />
+- `DOWN`: Decrease influence (`kInfluence_`) by 0.1<BR />
+- `LEFT`: Decrease dark matter strength (`kDarkMatter_`) by 0.05<BR />
+- `RIGHT`: Increase dark matter strength (`kDarkMatter_`) by 0.05<BR />
+- `PAGEUP`: Increase dark energy scale (`kDarkEnergy_`) by 0.05<BR />
+- `PAGEDOWN`: Decrease dark energy scale (`kDarkEnergy_`) by 0.05<BR />
+- `1`: Mode 1 Dimension 1? God?<BR />
+- `2`: Mode 2 Dimension 2<BR />
+- `3`: Mode 3 etc.<BR />
+- `4`: Mode 4 etc.<BR />
+<BR />
+**Video Clip**:<BR />
+https://github.com/user-attachments/assets/344232f5-e7b8-4485-af40-5a302873f88c<BR />
+<BR />
 ## Overview
 The **Dimensional Navigator** is a computational tool that visualizes a mathematical model of dimensional interactions using C++ with SDL3, SDL3_ttf, and Vulkan. It graphs the outputs of the `UniversalEquation` class, displaying symmetric ± energy fluctuations across dimensions 1 through 9, with dark matter and dark energy influencing the dynamics. The model conceptualizes the universe as:
 - **1D (God)**: An infinite, wave-like base permeating all dimensions, acting as a "fountain" of influence, like a radio wave flowing through everything.
