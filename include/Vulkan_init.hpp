@@ -36,6 +36,14 @@ public:
         createIndexBuffer(device, physicalDevice, commandPool, graphicsQueue, indexBuffer, indexBufferMemory, sphereIndices);
     }
 
+    static void initializeQuadBuffers(VkDevice device, VkPhysicalDevice physicalDevice, VkCommandPool commandPool, VkQueue graphicsQueue,
+                                     VkBuffer& vertexBuffer, VkDeviceMemory& vertexBufferMemory, VkBuffer& indexBuffer,
+                                     VkDeviceMemory& indexBufferMemory, const std::vector<glm::vec3>& vertices,
+                                     const std::vector<uint32_t>& indices) {
+        createVertexBuffer(device, physicalDevice, commandPool, graphicsQueue, vertexBuffer, vertexBufferMemory, vertices);
+        createIndexBuffer(device, physicalDevice, commandPool, graphicsQueue, indexBuffer, indexBufferMemory, indices);
+    }
+
     static void cleanupVulkan(VkInstance instance, VkDevice device, VkSurfaceKHR surface, VkSwapchainKHR swapchain,
                               std::vector<VkImageView>& swapchainImageViews, std::vector<VkFramebuffer>& swapchainFramebuffers,
                               VkPipeline pipeline, VkPipelineLayout pipelineLayout, VkRenderPass renderPass, VkCommandPool commandPool,
@@ -63,6 +71,17 @@ public:
         }
         if (instance && surface) vkDestroySurfaceKHR(instance, surface, nullptr);
         if (instance) vkDestroyInstance(instance, nullptr);
+    }
+
+    static void cleanupQuadBuffers(VkDevice device, VkBuffer vertexBuffer, VkDeviceMemory vertexBufferMemory,
+                                  VkBuffer indexBuffer, VkDeviceMemory indexBufferMemory) {
+        if (device) {
+            vkDeviceWaitIdle(device);
+            if (vertexBuffer != VK_NULL_HANDLE) vkDestroyBuffer(device, vertexBuffer, nullptr);
+            if (vertexBufferMemory != VK_NULL_HANDLE) vkFreeMemory(device, vertexBufferMemory, nullptr);
+            if (indexBuffer != VK_NULL_HANDLE) vkDestroyBuffer(device, indexBuffer, nullptr);
+            if (indexBufferMemory != VK_NULL_HANDLE) vkFreeMemory(device, indexBufferMemory, nullptr);
+        }
     }
 
 private:
@@ -202,9 +221,17 @@ private:
         VkPipelineViewportStateCreateInfo viewportState = { VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO, nullptr, 0, 1, &viewport, 1, &scissor };
         VkPipelineRasterizationStateCreateInfo rasterizer = { VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO, nullptr, 0, VK_FALSE, VK_FALSE, VK_POLYGON_MODE_FILL, VK_CULL_MODE_BACK_BIT, VK_FRONT_FACE_COUNTER_CLOCKWISE, VK_FALSE, 0, 0, 0, 1.0f };
         VkPipelineMultisampleStateCreateInfo multisampling = { VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO, nullptr, 0, VK_SAMPLE_COUNT_1_BIT, VK_FALSE, 0, nullptr, VK_FALSE, VK_FALSE };
-        VkPipelineColorBlendAttachmentState blendAttachment = { VK_FALSE, {}, {}, {}, {}, {}, {}, VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT };
+        VkPipelineColorBlendAttachmentState blendAttachment = { VK_TRUE, VK_BLEND_FACTOR_SRC_ALPHA, VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA, VK_BLEND_OP_ADD, VK_BLEND_FACTOR_SRC_ALPHA, VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA, VK_BLEND_OP_ADD, VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT };
         VkPipelineColorBlendStateCreateInfo blending = { VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO, nullptr, 0, VK_FALSE, VK_LOGIC_OP_COPY, 1, &blendAttachment, {0} };
-        struct PushConstants { glm::mat4 model, view, proj; float radius, wavePhase; };
+        struct PushConstants {
+            glm::mat4 model;
+            glm::mat4 view;
+            glm::mat4 proj;
+            float value;
+            float dimension;
+            float wavePhase;
+            float cycleProgress;
+        };
         VkPushConstantRange pushConstant = { VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(PushConstants) };
         VkPipelineLayoutCreateInfo layoutInfo = { VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO, nullptr, 0, 0, nullptr, 1, &pushConstant };
         if (vkCreatePipelineLayout(device, &layoutInfo, nullptr, &pipelineLayout) != VK_SUCCESS) throw std::runtime_error("Pipeline layout creation failed");
