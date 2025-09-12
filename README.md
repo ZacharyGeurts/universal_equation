@@ -2,6 +2,10 @@
 Press 1-4 keys when running.
 <BR />
 old<BR />
+
+https://github.com/user-attachments/assets/aac4c5b7-0ae1-4e96-9333-a54e0dfb2d06
+
+
 ![image](https://github.com/ZacharyGeurts/universal_equation/blob/main/gifwip1.gif)
 <BR /><BR />
 updated: Shows dimensions 1-4 and back to 1.<BR />
