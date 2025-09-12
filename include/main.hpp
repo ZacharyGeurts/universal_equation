@@ -5,6 +5,7 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <vector>
 #include <iostream>
+#include <map>
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_vulkan.h>
 #include <SDL3_ttf/SDL_ttf.h>
@@ -190,24 +191,36 @@ private:
         surface_ = VK_NULL_HANDLE;
     }
 
-    void initializeSphereGeometry() {
-        const float t = (1.0f + std::sqrt(5.0f)) / 2.0f;
-        sphereVertices_ = {
-            {-1.0f, t, 0.0f}, {1.0f, t, 0.0f}, {-1.0f, -t, 0.0f}, {1.0f, -t, 0.0f},
-            {0.0f, -1.0f, t}, {0.0f, 1.0f, t}, {0.0f, -1.0f, -t}, {0.0f, 1.0f, -t},
-            {t, 0.0f, -1.0f}, {t, 0.0f, 1.0f}, {-t, 0.0f, -1.0f}, {-t, 0.0f, 1.0f}
-        };
-        for (auto& v : sphereVertices_) {
-            v = glm::normalize(v);
+void initializeSphereGeometry() {
+    const int stacks = 16; // Vertical resolution
+    const int slices = 16; // Horizontal resolution
+    sphereVertices_.clear();
+    sphereIndices_.clear();
+
+    for (int i = 0; i <= stacks; ++i) {
+        float phi = i * M_PI / stacks;
+        float sinPhi = sin(phi);
+        float cosPhi = cos(phi);
+        for (int j = 0; j <= slices; ++j) {
+            float theta = j * 2.0f * M_PI / slices;
+            float sinTheta = sin(theta);
+            float cosTheta = cos(theta);
+            sphereVertices_.push_back(glm::vec3(sinPhi * cosTheta, cosPhi, sinPhi * sinTheta));
         }
-        sphereIndices_ = {
-            0, 11, 5, 0, 5, 1, 0, 1, 7, 0, 7, 10, 0, 10, 11,
-            1, 5, 9, 5, 11, 4, 11, 10, 2, 10, 7, 6, 7, 1, 8,
-            3, 9, 4, 3, 4, 2, 3, 2, 6, 3, 6, 8, 3, 8, 9,
-            4, 9, 5, 2, 4, 11, 6, 2, 10, 8, 6, 7, 9, 8, 1
-        };
-        std::cerr << "Initialized sphere: " << sphereVertices_.size() << " vertices, " << sphereIndices_.size() << " indices\n";
     }
+
+    for (int i = 0; i < stacks; ++i) {
+        for (int j = 0; j < slices; ++j) {
+            uint32_t v0 = i * (slices + 1) + j;
+            uint32_t v1 = v0 + 1;
+            uint32_t v2 = (i + 1) * (slices + 1) + j;
+            uint32_t v3 = v2 + 1;
+            sphereIndices_.insert(sphereIndices_.end(), {v0, v1, v2, v2, v1, v3});
+        }
+    }
+
+    std::cerr << "Initialized sphere: " << sphereVertices_.size() << " vertices, " << sphereIndices_.size() << " indices\n";
+}
 
     void initializeQuadGeometry() {
         quadVertices_ = {
@@ -226,8 +239,8 @@ private:
         cache_.clear();
         for (int d = 1; d <= ue_.getMaxDimensions(); ++d) {
             ue_.setCurrentDimension(d);
-            auto [pos, neg] = ue_.compute();
-            cache_.push_back({d, pos, neg});
+            auto result = ue_.compute();
+            cache_.push_back({d, result.positive, result.negative});
         }
     }
 
@@ -282,6 +295,7 @@ private:
         vkCmdBeginRenderPass(commandBuffers_[imageIndex], &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
         vkCmdBindPipeline(commandBuffers_[imageIndex], VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_);
 
+        updateCache(); // Ensure cache is fresh for animations
         if (mode_ == 1) {
             renderMode1(imageIndex);
         } else if (mode_ == 2) {
@@ -317,54 +331,39 @@ private:
     }
 
     void renderMode1(uint32_t imageIndex) {
-        VkBuffer vertexBuffers[] = {quadVertexBuffer_};
+        VkBuffer vertexBuffers[] = {vertexBuffer_};
         VkDeviceSize offsets[] = {0};
         vkCmdBindVertexBuffers(commandBuffers_[imageIndex], 0, 1, vertexBuffers, offsets);
-        vkCmdBindIndexBuffer(commandBuffers_[imageIndex], quadIndexBuffer_, 0, VK_INDEX_TYPE_UINT32);
+        vkCmdBindIndexBuffer(commandBuffers_[imageIndex], indexBuffer_, 0, VK_INDEX_TYPE_UINT32);
 
-        glm::mat4 proj = glm::ortho(0.0f, (float)width_, (float)height_, 0.0f, -1.0f, 1.0f);
-        glm::mat4 view = glm::mat4(1.0f);
+        glm::mat4 proj = glm::perspective(glm::radians(45.0f), (float)width_ / height_, 0.1f, 100.0f);
+        glm::mat4 view = glm::lookAt(glm::vec3(0.0f, 0.0f, 10.0f), glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
 
+        float baseRadius = 0.5f;
+        float cycleProgress = std::fmod(wavePhase_ / (2.0f * ue_.getMaxDimensions()), 1.0f);
         for (size_t i = 0; i < cache_.size(); ++i) {
-            float x = (float)(i + 1) * width_ / (cache_.size() + 1);
-            float yPos = height_ * 0.5f + static_cast<float>(cache_[i].positive) * 50.0f;
-            float yNeg = height_ * 0.5f + static_cast<float>(cache_[i].negative) * 50.0f;
-
-            // Positive fluctuation bar
-            glm::mat4 model = glm::translate(glm::mat4(1.0f), glm::vec3(x, yPos, 0.0f));
-            model = glm::scale(model, glm::vec3(20.0f, 10.0f, 1.0f));
-            PushConstants pushConstants = {model, view, proj, static_cast<float>(cache_[i].positive), static_cast<float>(i + 1), wavePhase_, 0.0f};
-            vkCmdPushConstants(commandBuffers_[imageIndex], pipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-                               0, sizeof(PushConstants), &pushConstants);
-            vkCmdDrawIndexed(commandBuffers_[imageIndex], static_cast<uint32_t>(quadIndices_.size()), 1, 0, 0, 0);
-
-            // Negative fluctuation bar
-            model = glm::translate(glm::mat4(1.0f), glm::vec3(x, yNeg, 0.0f));
-            model = glm::scale(model, glm::vec3(20.0f, 10.0f, 1.0f));
-            pushConstants = {model, view, proj, static_cast<float>(cache_[i].negative), static_cast<float>(i + 1), wavePhase_, 0.0f};
-            vkCmdPushConstants(commandBuffers_[imageIndex], pipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-                               0, sizeof(PushConstants), &pushConstants);
-            vkCmdDrawIndexed(commandBuffers_[imageIndex], static_cast<uint32_t>(quadIndices_.size()), 1, 0, 0, 0);
-
-            // Highlight 2D boundary
-            if (i + 1 == 2) {
-                model = glm::translate(glm::mat4(1.0f), glm::vec3(x, height_ * 0.5f, 0.0f));
-                model = glm::scale(model, glm::vec3(30.0f, 30.0f, 1.0f));
-                pushConstants = {model, view, proj, 1.0f, 2.0f, wavePhase_, 0.0f};
-                vkCmdPushConstants(commandBuffers_[imageIndex], pipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-                                   0, sizeof(PushConstants), &pushConstants);
-                vkCmdDrawIndexed(commandBuffers_[imageIndex], static_cast<uint32_t>(quadIndices_.size()), 1, 0, 0, 0);
+            float radius = baseRadius * (1.0f + static_cast<float>(cache_[i].positive) * 0.2f) * 
+                          (1.0f + 0.1f * sin(wavePhase_)); // Subtle pulsing
+            glm::mat4 model = glm::rotate(glm::mat4(1.0f), wavePhase_ * 0.2f, glm::vec3(0.0f, 1.0f, 0.0f));
+            if (i + 1 == 1) { // 1D: Larger and centered
+                radius *= 2.0f;
+                model = glm::scale(model, glm::vec3(radius));
+            } else if (i + 1 == 2) { // 2D: Offset in y
+                model = glm::translate(model, glm::vec3(0.0f, 1.0f, -i * 1.0f));
+                model = glm::scale(model, glm::vec3(radius));
+            } else {
+                model = glm::translate(model, glm::vec3(0.0f, 0.0f, -i * 1.0f));
+                model = glm::scale(model, glm::vec3(radius));
             }
-        }
 
-        // 1D influence line
-        float y1D = height_ * 0.5f + static_cast<float>(ue_.getInfluence() * ue_.getPermeation()) * 50.0f;
-        glm::mat4 model = glm::translate(glm::mat4(1.0f), glm::vec3(width_ * 0.5f, y1D, 0.0f));
-        model = glm::scale(model, glm::vec3(width_ * 0.5f, 5.0f, 1.0f));
-        PushConstants pushConstants = {model, view, proj, static_cast<float>(ue_.getInfluence()), 1.0f, wavePhase_, 0.0f};
-        vkCmdPushConstants(commandBuffers_[imageIndex], pipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-                           0, sizeof(PushConstants), &pushConstants);
-        vkCmdDrawIndexed(commandBuffers_[imageIndex], static_cast<uint32_t>(quadIndices_.size()), 1, 0, 0, 0);
+            float dimValue = static_cast<float>(i + 1);
+            PushConstants pushConstants = {model, view, proj, static_cast<float>(cache_[i].positive), dimValue, wavePhase_, cycleProgress};
+            vkCmdPushConstants(commandBuffers_[imageIndex], pipelineLayout_, 
+                              VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                              0, sizeof(PushConstants), &pushConstants);
+            vkCmdDrawIndexed(commandBuffers_[imageIndex], static_cast<uint32_t>(sphereIndices_.size()), 1, 0, 0, 0);
+            baseRadius *= 0.9f;
+        }
     }
 
     void renderMode2(uint32_t imageIndex) {
@@ -374,84 +373,87 @@ private:
         vkCmdBindIndexBuffer(commandBuffers_[imageIndex], indexBuffer_, 0, VK_INDEX_TYPE_UINT32);
 
         glm::mat4 proj = glm::perspective(glm::radians(45.0f), (float)width_ / height_, 0.1f, 100.0f);
-        glm::mat4 view = glm::lookAt(glm::vec3(0.0f, 0.0f, 5.0f), glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+        glm::mat4 view = glm::lookAt(glm::vec3(0.0f, 0.0f, 10.0f), glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
 
-        float baseRadius = 1.0f;
+        float baseRadius = 0.5f;
+        float cycleProgress = std::fmod(wavePhase_ / (2.0f * ue_.getMaxDimensions()), 1.0f);
         for (size_t i = 0; i < cache_.size(); ++i) {
-            float radius = baseRadius * (1.0f + static_cast<float>(cache_[i].positive) * 0.1f);
-            glm::mat4 model = glm::rotate(glm::mat4(1.0f), wavePhase_ * 0.5f, glm::vec3(0.0f, 1.0f, 0.0f));
-            model = glm::scale(model, glm::vec3(radius));
-            model = glm::translate(model, glm::vec3(0.0f, 0.0f, -i * 0.5f));
+            float radius = baseRadius * (1.0f + static_cast<float>(cache_[i].positive) * 0.2f) * 
+                          (1.0f + 0.1f * sin(wavePhase_ + i)); // Per-dimension pulsing
+            glm::mat4 model = glm::mat4(1.0f);
+            float angle = wavePhase_ + (i + 1) * 2.0f * glm::pi<float>() / cache_.size();
+            float x = cos(angle);
+            float y = sin(angle);
+            float z = -i * 1.0f;
+            if (i + 1 == 1) {
+                radius *= 2.0f;
+                model = glm::translate(model, glm::vec3(0.0f, 0.0f, 0.0f));
+                model = glm::scale(model, glm::vec3(radius));
+            } else if (i + 1 == 2) {
+                model = glm::translate(model, glm::vec3(x * 1.5f, y * 1.5f, z));
+                model = glm::scale(model, glm::vec3(radius));
+            } else {
+                model = glm::translate(model, glm::vec3(x * 1.2f, y * 1.2f, z));
+                model = glm::scale(model, glm::vec3(radius));
+            }
 
-            float dimValue = (i + 1 == 2) ? 2.0f : static_cast<float>(i + 1);
-            PushConstants pushConstants = {model, view, proj, radius, dimValue, wavePhase_, 0.0f};
-            vkCmdPushConstants(commandBuffers_[imageIndex], pipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-                               0, sizeof(PushConstants), &pushConstants);
+            float dimValue = static_cast<float>(i + 1);
+            PushConstants pushConstants = {model, view, proj, static_cast<float>(cache_[i].positive), dimValue, wavePhase_, cycleProgress};
+            vkCmdPushConstants(commandBuffers_[imageIndex], pipelineLayout_, 
+                              VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                              0, sizeof(PushConstants), &pushConstants);
             vkCmdDrawIndexed(commandBuffers_[imageIndex], static_cast<uint32_t>(sphereIndices_.size()), 1, 0, 0, 0);
-            baseRadius *= 0.8f;
+            baseRadius *= 0.9f;
         }
-
-        // 1D influence sphere
-        float radius1D = baseRadius * (1.0f + static_cast<float>(ue_.getInfluence() * ue_.getPermeation()) * 0.1f);
-        glm::mat4 model = glm::scale(glm::mat4(1.0f), glm::vec3(radius1D * 2.0f));
-        PushConstants pushConstants = {model, view, proj, radius1D, 1.0f, wavePhase_, 0.0f};
-        vkCmdPushConstants(commandBuffers_[imageIndex], pipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-                           0, sizeof(PushConstants), &pushConstants);
-        vkCmdDrawIndexed(commandBuffers_[imageIndex], static_cast<uint32_t>(sphereIndices_.size()), 1, 0, 0, 0);
     }
 
     void renderMode3(uint32_t imageIndex) {
-        VkBuffer vertexBuffers[] = {quadVertexBuffer_};
+        VkBuffer vertexBuffers[] = {vertexBuffer_};
         VkDeviceSize offsets[] = {0};
         vkCmdBindVertexBuffers(commandBuffers_[imageIndex], 0, 1, vertexBuffers, offsets);
-        vkCmdBindIndexBuffer(commandBuffers_[imageIndex], quadIndexBuffer_, 0, VK_INDEX_TYPE_UINT32);
+        vkCmdBindIndexBuffer(commandBuffers_[imageIndex], indexBuffer_, 0, VK_INDEX_TYPE_UINT32);
 
-        glm::mat4 proj = glm::ortho(0.0f, (float)width_, (float)height_, 0.0f, -1.0f, 1.0f);
-        glm::mat4 view = glm::mat4(1.0f);
+        glm::mat4 proj = glm::perspective(glm::radians(45.0f), (float)width_ / height_, 0.1f, 100.0f);
+        glm::mat4 view = glm::lookAt(glm::vec3(0.0f, 0.0f, 10.0f), glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
 
+        float baseRadius = 0.5f;
+        float cycleProgress = std::fmod(wavePhase_ / (2.0f * ue_.getMaxDimensions()), 1.0f);
         for (size_t i = 0; i < cache_.size(); ++i) {
-            float x = (float)(i + 1) * width_ / (cache_.size() + 1);
-            float y = height_ * 0.5f + static_cast<float>(cache_[i].positive) * 50.0f;
+            ue_.setCurrentDimension(i + 1);
+            float radius = baseRadius * (1.0f + static_cast<float>(cache_[i].positive) * 0.2f) * 
+                          (1.0f + 0.1f * sin(wavePhase_)); // Subtle pulsing
+            glm::mat4 model = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, -i * 1.0f));
+            model = glm::scale(model, glm::vec3(radius));
 
-            // Draw circle for dimension
-            glm::mat4 model = glm::translate(glm::mat4(1.0f), glm::vec3(x, y, 0.0f));
-            model = glm::scale(model, glm::vec3(20.0f, 20.0f, 1.0f));
-            PushConstants pushConstants = {model, view, proj, static_cast<float>(cache_[i].positive), static_cast<float>(i + 1), wavePhase_, 0.0f};
-            vkCmdPushConstants(commandBuffers_[imageIndex], pipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-                               0, sizeof(PushConstants), &pushConstants);
-            vkCmdDrawIndexed(commandBuffers_[imageIndex], static_cast<uint32_t>(quadIndices_.size()), 1, 0, 0, 0);
+            float dimValue = static_cast<float>(i + 1);
+            PushConstants pushConstants = {model, view, proj, static_cast<float>(cache_[i].positive), dimValue, wavePhase_, cycleProgress};
+            vkCmdPushConstants(commandBuffers_[imageIndex], pipelineLayout_, 
+                              VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                              0, sizeof(PushConstants), &pushConstants);
+            vkCmdDrawIndexed(commandBuffers_[imageIndex], static_cast<uint32_t>(sphereIndices_.size()), 1, 0, 0, 0);
 
-            // Draw interactions (simplified to adjacent dimensions)
-            if (i > 0) { // Line to D-1
-                float xPrev = (float)i * width_ / (cache_.size() + 1);
-                float yPrev = height_ * 0.5f + static_cast<float>(cache_[i - 1].positive) * 50.0f;
-                model = glm::translate(glm::mat4(1.0f), glm::vec3((x + xPrev) / 2, (y + yPrev) / 2, 0.0f));
-                model = glm::scale(model, glm::vec3(std::abs(x - xPrev) / 2, 5.0f, 1.0f));
-                pushConstants = {model, view, proj, 0.5f, static_cast<float>(i + 1), wavePhase_, 0.0f};
-                vkCmdPushConstants(commandBuffers_[imageIndex], pipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-                                   0, sizeof(PushConstants), &pushConstants);
-                vkCmdDrawIndexed(commandBuffers_[imageIndex], static_cast<uint32_t>(quadIndices_.size()), 1, 0, 0, 0);
+            // Interaction spheres
+            auto pairs = ue_.getDimensionPairs();
+            for (const auto& pair : pairs) {
+                float interactionStrength = static_cast<float>(
+                    ue_.calculateInfluenceTerm(pair.dPrime, pair.distance) *
+                    std::exp(-ue_.getAlpha() * pair.distance) *
+                    ue_.calculatePermeationFactor(pair.dPrime)
+                );
+                float interactionRadius = baseRadius * 0.3f * interactionStrength * (1.0f + 0.1f * sin(wavePhase_));
+                if (interactionRadius > 0.01f) {
+                    glm::mat4 interactionModel = glm::translate(glm::mat4(1.0f), 
+                                                               glm::vec3(0.5f * (pair.dPrime - (i + 1)), 0.0f, -i * 1.0f));
+                    interactionModel = glm::scale(interactionModel, glm::vec3(interactionRadius));
+                    pushConstants = {interactionModel, view, proj, interactionStrength, static_cast<float>(pair.dPrime), wavePhase_, cycleProgress};
+                    vkCmdPushConstants(commandBuffers_[imageIndex], pipelineLayout_, 
+                                      VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                                      0, sizeof(PushConstants), &pushConstants);
+                    vkCmdDrawIndexed(commandBuffers_[imageIndex], static_cast<uint32_t>(sphereIndices_.size()), 1, 0, 0, 0);
+                }
             }
-            if (i < cache_.size() - 1) { // Line to D+1
-                float xNext = (float)(i + 2) * width_ / (cache_.size() + 1);
-                float yNext = height_ * 0.5f + static_cast<float>(cache_[i + 1].positive) * 50.0f;
-                model = glm::translate(glm::mat4(1.0f), glm::vec3((x + xNext) / 2, (y + yNext) / 2, 0.0f));
-                model = glm::scale(model, glm::vec3(std::abs(x - xNext) / 2, 5.0f, 1.0f));
-                pushConstants = {model, view, proj, 0.5f, static_cast<float>(i + 1), wavePhase_, 0.0f};
-                vkCmdPushConstants(commandBuffers_[imageIndex], pipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-                                   0, sizeof(PushConstants), &pushConstants);
-                vkCmdDrawIndexed(commandBuffers_[imageIndex], static_cast<uint32_t>(quadIndices_.size()), 1, 0, 0, 0);
-            }
+            baseRadius *= 0.9f;
         }
-
-        // 1D influence line
-        float y1D = height_ * 0.5f + static_cast<float>(ue_.getInfluence() * ue_.getPermeation()) * 50.0f;
-        glm::mat4 model = glm::translate(glm::mat4(1.0f), glm::vec3(width_ * 0.5f, y1D, 0.0f));
-        model = glm::scale(model, glm::vec3(width_ * 0.5f, 5.0f, 1.0f));
-        PushConstants pushConstants = {model, view, proj, static_cast<float>(ue_.getInfluence()), 1.0f, wavePhase_, 0.0f};
-        vkCmdPushConstants(commandBuffers_[imageIndex], pipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-                           0, sizeof(PushConstants), &pushConstants);
-        vkCmdDrawIndexed(commandBuffers_[imageIndex], static_cast<uint32_t>(quadIndices_.size()), 1, 0, 0, 0);
     }
 
     void renderMode4(uint32_t imageIndex) {
@@ -461,39 +463,35 @@ private:
         vkCmdBindIndexBuffer(commandBuffers_[imageIndex], indexBuffer_, 0, VK_INDEX_TYPE_UINT32);
 
         glm::mat4 proj = glm::perspective(glm::radians(45.0f), (float)width_ / height_, 0.1f, 100.0f);
-        glm::mat4 view = glm::lookAt(glm::vec3(0.0f, 0.0f, 5.0f), glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+        glm::mat4 view = glm::lookAt(glm::vec3(0.0f, 0.0f, 10.0f), glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
 
-        float cycleProgress = fmod(wavePhase_ * 0.1f, 1.0f);
-        size_t currentDim = 1;
-        if (cycleProgress < 0.5f) {
-            currentDim = 1 + static_cast<size_t>(cycleProgress * 18.0f); // 1 to 9
-        } else if (cycleProgress < 0.75f) {
-            currentDim = 1; // Back to 1D
-        } else {
-            currentDim = 2; // To 2D
-        }
-
-        float baseRadius = 1.0f;
+        float baseRadius = 0.5f;
+        float cycleProgress = std::fmod(wavePhase_ / (2.0f * ue_.getMaxDimensions()), 1.0f);
         for (size_t i = 0; i < cache_.size(); ++i) {
-            float radius = baseRadius * (1.0f + static_cast<float>(cache_[i].positive) * 0.1f);
-            glm::mat4 model = glm::rotate(glm::mat4(1.0f), wavePhase_ * 0.5f, glm::vec3(0.0f, 1.0f, 0.0f));
-            model = glm::scale(model, glm::vec3(radius));
-            model = glm::translate(model, glm::vec3(0.0f, 0.0f, -i * 0.5f));
+            float positiveRadius = baseRadius * (1.0f + static_cast<float>(cache_[i].positive) * 0.2f);
+            float negativeRadius = baseRadius * (1.0f + static_cast<float>(cache_[i].negative) * 0.2f);
+            float pulse = 0.5f * (positiveRadius + negativeRadius) * (1.0f + 0.2f * sin(wavePhase_ + i));
+            glm::mat4 model = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, -i * 1.0f));
+            model = glm::scale(model, glm::vec3(pulse));
 
-            float dimValue = (i + 1 == currentDim) ? 3.0f : (i + 1 == 2 ? 2.0f : static_cast<float>(i + 1));
-            PushConstants pushConstants = {model, view, proj, radius, dimValue, wavePhase_, cycleProgress};
-            vkCmdPushConstants(commandBuffers_[imageIndex], pipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-                               0, sizeof(PushConstants), &pushConstants);
+            float fluctuationRatio = cache_[i].negative > 0 ? static_cast<float>(cache_[i].positive / cache_[i].negative) : 1.0f;
+            float dimValue = static_cast<float>(i + 1);
+            PushConstants pushConstants = {model, view, proj, fluctuationRatio, dimValue, wavePhase_, cycleProgress};
+            vkCmdPushConstants(commandBuffers_[imageIndex], pipelineLayout_, 
+                              VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                              0, sizeof(PushConstants), &pushConstants);
             vkCmdDrawIndexed(commandBuffers_[imageIndex], static_cast<uint32_t>(sphereIndices_.size()), 1, 0, 0, 0);
-            baseRadius *= 0.8f;
+            baseRadius *= 0.9f;
         }
 
         // 1D influence sphere
-        float radius1D = baseRadius * (1.0f + static_cast<float>(ue_.getInfluence() * ue_.getPermeation()) * 0.1f);
+        float radius1D = baseRadius * (1.0f + static_cast<float>(ue_.getInfluence() * ue_.getPermeation()) * 0.2f) *
+                        (1.0f + 0.3f * sin(wavePhase_));
         glm::mat4 model = glm::scale(glm::mat4(1.0f), glm::vec3(radius1D * 2.0f));
-        PushConstants pushConstants = {model, view, proj, radius1D, 1.0f, wavePhase_, cycleProgress};
-        vkCmdPushConstants(commandBuffers_[imageIndex], pipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-                           0, sizeof(PushConstants), &pushConstants);
+        PushConstants pushConstants = {model, view, proj, 1.0f, 1.0f, wavePhase_, cycleProgress};
+        vkCmdPushConstants(commandBuffers_[imageIndex], pipelineLayout_, 
+                          VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                          0, sizeof(PushConstants), &pushConstants);
         vkCmdDrawIndexed(commandBuffers_[imageIndex], static_cast<uint32_t>(sphereIndices_.size()), 1, 0, 0, 0);
     }
 };
