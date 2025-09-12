@@ -4,16 +4,16 @@ WIP - Current designing and updating the program.<BR />
 Do not resize or it will crash. Not critical for me to fix yet<BR />
 <BR />
 **Key Bindings**:<BR />
-- `UP`: Increase influence (`kInfluence_`) by 0.1<BR />
-- `DOWN`: Decrease influence (`kInfluence_`) by 0.1<BR />
-- `LEFT`: Decrease dark matter strength (`kDarkMatter_`) by 0.05<BR />
-- `RIGHT`: Increase dark matter strength (`kDarkMatter_`) by 0.05<BR />
-- `PAGEUP`: Increase dark energy scale (`kDarkEnergy_`) by 0.05<BR />
-- `PAGEDOWN`: Decrease dark energy scale (`kDarkEnergy_`) by 0.05<BR />
-- `1`: Mode 1 Dimension 1? God?<BR />
-- `2`: Mode 2 Dimension 2<BR />
-- `3`: Mode 3 etc.<BR />
-- `4`: Mode 4 etc.<BR />
+`UP`: Increase influence (`kInfluence_`) by 0.1<BR />
+`DOWN`: Decrease influence (`kInfluence_`) by 0.1<BR />
+`LEFT`: Decrease dark matter strength (`kDarkMatter_`) by 0.05<BR />
+`RIGHT`: Increase dark matter strength (`kDarkMatter_`) by 0.05<BR />
+`PAGEUP`: Increase dark energy scale (`kDarkEnergy_`) by 0.05<BR />
+`PAGEDOWN`: Decrease dark energy scale (`kDarkEnergy_`) by 0.05<BR />
+`1`: Mode 1 Dimension 1? God?<BR />
+`2`: Mode 2 Dimension 2<BR />
+`3`: Mode 3 etc.<BR />
+`4`: Mode 4 etc.<BR />
 <BR />
 **Video Clip**:<BR />
 https://github.com/user-attachments/assets/344232f5-e7b8-4485-af40-5a302873f88c<BR />
