@@ -7,6 +7,7 @@ layout(push_constant) uniform PushConstants {
     mat4 model;
     mat4 view;
     mat4 proj;
+    vec3 baseColor;
     float value;
     float dimension;
     float wavePhase;
@@ -15,15 +16,17 @@ layout(push_constant) uniform PushConstants {
     float darkEnergy;
 } pushConstants;
 
-layout(location = 0) out float outValue;
-layout(location = 1) out float outDimension;
-layout(location = 2) out float outWavePhase;
-layout(location = 3) out float outCycleProgress;
-layout(location = 4) out float darkMatterPulse;
-layout(location = 5) out float darkEnergyGlow;
+layout(location = 0) out vec3 outBaseColor;
+layout(location = 1) out float outValue;
+layout(location = 2) out float outDimension;
+layout(location = 3) out float outWavePhase;
+layout(location = 4) out float outCycleProgress;
+layout(location = 5) out float darkMatterPulse;
+layout(location = 6) out float darkEnergyGlow;
 
 void main() {
     gl_Position = pushConstants.proj * pushConstants.view * pushConstants.model * vec4(inPosition, 1.0);
+    outBaseColor = pushConstants.baseColor;
     outValue = pushConstants.value;
     outDimension = pushConstants.dimension;
     outWavePhase = pushConstants.wavePhase;

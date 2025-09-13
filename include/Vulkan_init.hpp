@@ -52,10 +52,10 @@ public:
                               VkDeviceMemory vertexBufferMemory, VkBuffer indexBuffer, VkDeviceMemory indexBufferMemory) {
         if (device) {
             vkDeviceWaitIdle(device);
-            vkDestroyBuffer(device, vertexBuffer, nullptr);
-            vkFreeMemory(device, vertexBufferMemory, nullptr);
-            vkDestroyBuffer(device, indexBuffer, nullptr);
-            vkFreeMemory(device, indexBufferMemory, nullptr);
+            if (vertexBuffer != VK_NULL_HANDLE) vkDestroyBuffer(device, vertexBuffer, nullptr);
+            if (vertexBufferMemory != VK_NULL_HANDLE) vkFreeMemory(device, vertexBufferMemory, nullptr);
+            if (indexBuffer != VK_NULL_HANDLE) vkDestroyBuffer(device, indexBuffer, nullptr);
+            if (indexBufferMemory != VK_NULL_HANDLE) vkFreeMemory(device, indexBufferMemory, nullptr);
             vkDestroySemaphore(device, imageAvailableSemaphore, nullptr);
             vkDestroySemaphore(device, renderFinishedSemaphore, nullptr);
             vkDestroyFence(device, inFlightFence, nullptr);
@@ -188,7 +188,13 @@ private:
         VkAttachmentDescription color = { 0, format, VK_SAMPLE_COUNT_1_BIT, VK_ATTACHMENT_LOAD_OP_CLEAR, VK_ATTACHMENT_STORE_OP_STORE, VK_ATTACHMENT_LOAD_OP_DONT_CARE, VK_ATTACHMENT_STORE_OP_DONT_CARE, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR };
         VkAttachmentReference colorRef = { 0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL };
         VkSubpassDescription subpass = { 0, VK_PIPELINE_BIND_POINT_GRAPHICS, 0, nullptr, 1, &colorRef, nullptr, nullptr, 0, nullptr };
-        VkRenderPassCreateInfo info = { VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO, nullptr, 0, 1, &color, 1, &subpass, 0, nullptr };
+        VkSubpassDependency dependency = {
+            VK_SUBPASS_EXTERNAL, 0,
+            VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+            0, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+            0
+        };
+        VkRenderPassCreateInfo info = { VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO, nullptr, 0, 1, &color, 1, &subpass, 1, &dependency };
         if (vkCreateRenderPass(device, &info, nullptr, &renderPass) != VK_SUCCESS) throw std::runtime_error("Render pass creation failed");
     }
 
@@ -199,6 +205,8 @@ private:
         file.seekg(0);
         file.read(buffer.data(), buffer.size());
         file.close();
+        size_t paddedSize = (buffer.size() + 3) & ~3; // Align to 4 bytes
+        buffer.resize(paddedSize, 0);
         VkShaderModuleCreateInfo info = { VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO, nullptr, 0, buffer.size(), reinterpret_cast<const uint32_t*>(buffer.data()) };
         VkShaderModule module;
         if (vkCreateShaderModule(device, &info, nullptr, &module) != VK_SUCCESS) throw std::runtime_error("Shader module creation failed");
@@ -221,21 +229,26 @@ private:
         VkPipelineViewportStateCreateInfo viewportState = { VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO, nullptr, 0, 1, &viewport, 1, &scissor };
         VkPipelineRasterizationStateCreateInfo rasterizer = { VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO, nullptr, 0, VK_FALSE, VK_FALSE, VK_POLYGON_MODE_FILL, VK_CULL_MODE_BACK_BIT, VK_FRONT_FACE_COUNTER_CLOCKWISE, VK_FALSE, 0, 0, 0, 1.0f };
         VkPipelineMultisampleStateCreateInfo multisampling = { VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO, nullptr, 0, VK_SAMPLE_COUNT_1_BIT, VK_FALSE, 0, nullptr, VK_FALSE, VK_FALSE };
+        VkPipelineDepthStencilStateCreateInfo depthStencil = { VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO, nullptr, 0, VK_TRUE, VK_TRUE, VK_COMPARE_OP_LESS, VK_FALSE, VK_FALSE, {}, {}, 0, 1.0f };
         VkPipelineColorBlendAttachmentState blendAttachment = { VK_TRUE, VK_BLEND_FACTOR_SRC_ALPHA, VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA, VK_BLEND_OP_ADD, VK_BLEND_FACTOR_SRC_ALPHA, VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA, VK_BLEND_OP_ADD, VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT };
         VkPipelineColorBlendStateCreateInfo blending = { VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO, nullptr, 0, VK_FALSE, VK_LOGIC_OP_COPY, 1, &blendAttachment, {0} };
         struct PushConstants {
-            glm::mat4 model;
-            glm::mat4 view;
-            glm::mat4 proj;
-            float value;
-            float dimension;
-            float wavePhase;
-            float cycleProgress;
-        };
+            glm::mat4 model;      // 64 bytes
+            glm::mat4 view;       // 64 bytes
+            glm::mat4 proj;       // 64 bytes
+            glm::vec3 baseColor;  // 12 bytes
+            float value;          // 4 bytes
+            float dimension;      // 4 bytes
+            float wavePhase;      // 4 bytes
+            float cycleProgress;  // 4 bytes
+            float darkMatter;     // 4 bytes
+            float darkEnergy;     // 4 bytes
+        }; // Total: 228 bytes
         VkPushConstantRange pushConstant = { VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(PushConstants) };
         VkPipelineLayoutCreateInfo layoutInfo = { VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO, nullptr, 0, 0, nullptr, 1, &pushConstant };
+        std::cerr << "PushConstants size: " << sizeof(PushConstants) << " bytes\n";
         if (vkCreatePipelineLayout(device, &layoutInfo, nullptr, &pipelineLayout) != VK_SUCCESS) throw std::runtime_error("Pipeline layout creation failed");
-        VkGraphicsPipelineCreateInfo pipelineInfo = { VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO, nullptr, 0, 2, stages, &vertexInput, &inputAssembly, nullptr, &viewportState, &rasterizer, &multisampling, nullptr, &blending, nullptr, pipelineLayout, renderPass, 0, VK_NULL_HANDLE, -1 };
+        VkGraphicsPipelineCreateInfo pipelineInfo = { VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO, nullptr, 0, 2, stages, &vertexInput, &inputAssembly, nullptr, &viewportState, &rasterizer, &multisampling, &depthStencil, &blending, nullptr, pipelineLayout, renderPass, 0, VK_NULL_HANDLE, -1 };
         if (vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &pipeline) != VK_SUCCESS) throw std::runtime_error("Graphics pipeline creation failed");
         vkDestroyShaderModule(device, vert, nullptr);
         vkDestroyShaderModule(device, frag, nullptr);
@@ -291,27 +304,26 @@ private:
             }
             throw std::runtime_error("No suitable memory type");
         }
-        std::cerr << "Allocating " << memReqs.size << " bytes for memory type " << memType << "\n";
         VkMemoryAllocateInfo allocInfo = { VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO, nullptr, memReqs.size, memType };
         VkResult result = vkAllocateMemory(device, &allocInfo, nullptr, &memory);
         if (result != VK_SUCCESS) {
             std::cerr << "Memory allocation failed with error: " << result << "\n";
             throw std::runtime_error("Memory allocation failed");
         }
-        vkBindBufferMemory(device, buffer, memory, 0);
+        if (vkBindBufferMemory(device, buffer, memory, 0) != VK_SUCCESS) throw std::runtime_error("Buffer memory binding failed");
     }
 
     static void copyBuffer(VkDevice device, VkCommandPool commandPool, VkQueue graphicsQueue, VkBuffer src, VkBuffer dst, VkDeviceSize size) {
         VkCommandBufferAllocateInfo allocInfo = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO, nullptr, commandPool, VK_COMMAND_BUFFER_LEVEL_PRIMARY, 1 };
         VkCommandBuffer cmd;
-        vkAllocateCommandBuffers(device, &allocInfo, &cmd);
+        if (vkAllocateCommandBuffers(device, &allocInfo, &cmd) != VK_SUCCESS) throw std::runtime_error("Command buffer allocation failed");
         VkCommandBufferBeginInfo beginInfo = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO, nullptr, VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT, nullptr };
-        vkBeginCommandBuffer(cmd, &beginInfo);
+        if (vkBeginCommandBuffer(cmd, &beginInfo) != VK_SUCCESS) throw std::runtime_error("Command buffer begin failed");
         VkBufferCopy copy = { 0, 0, size };
         vkCmdCopyBuffer(cmd, src, dst, 1, &copy);
-        vkEndCommandBuffer(cmd);
+        if (vkEndCommandBuffer(cmd) != VK_SUCCESS) throw std::runtime_error("Command buffer end failed");
         VkSubmitInfo submit = { VK_STRUCTURE_TYPE_SUBMIT_INFO, nullptr, 0, nullptr, nullptr, 1, &cmd, 0, nullptr };
-        vkQueueSubmit(graphicsQueue, 1, &submit, VK_NULL_HANDLE);
+        if (vkQueueSubmit(graphicsQueue, 1, &submit, VK_NULL_HANDLE) != VK_SUCCESS) throw std::runtime_error("Queue submit failed");
         vkQueueWaitIdle(graphicsQueue);
         vkFreeCommandBuffers(device, commandPool, 1, &cmd);
     }
@@ -325,7 +337,7 @@ private:
         VkDeviceMemory stagingMem;
         createBuffer(device, physicalDevice, size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, staging, stagingMem);
         void* data;
-        vkMapMemory(device, stagingMem, 0, size, 0, &data);
+        if (vkMapMemory(device, stagingMem, 0, size, 0, &data) != VK_SUCCESS) throw std::runtime_error("Memory mapping failed");
         memcpy(data, vertices.data(), size);
         vkUnmapMemory(device, stagingMem);
         createBuffer(device, physicalDevice, size, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, vertexBuffer, vertexBufferMemory);
@@ -339,11 +351,14 @@ private:
         if (indices.empty()) throw std::runtime_error("Index buffer is empty");
         VkDeviceSize size = sizeof(indices[0]) * indices.size();
         std::cerr << "Index buffer size: " << size / (1024.0 * 1024.0) << " MB (" << indices.size() << " indices)\n";
+        for (const auto& index : indices) {
+            if (index >= indices.size()) throw std::runtime_error("Invalid index in index buffer");
+        }
         VkBuffer staging;
         VkDeviceMemory stagingMem;
         createBuffer(device, physicalDevice, size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, staging, stagingMem);
         void* data;
-        vkMapMemory(device, stagingMem, 0, size, 0, &data);
+        if (vkMapMemory(device, stagingMem, 0, size, 0, &data) != VK_SUCCESS) throw std::runtime_error("Memory mapping failed");
         memcpy(data, indices.data(), size);
         vkUnmapMemory(device, stagingMem);
         createBuffer(device, physicalDevice, size, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, indexBuffer, indexBufferMemory);
