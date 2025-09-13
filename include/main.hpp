@@ -359,41 +359,92 @@ private:
         wavePhase_ += waveSpeed_;
     }
 
-    void renderMode1(uint32_t imageIndex) {
-        VkBuffer vertexBuffers[] = {vertexBuffer_};
-        VkDeviceSize offsets[] = {0};
-        vkCmdBindVertexBuffers(commandBuffers_[imageIndex], 0, 1, vertexBuffers, offsets);
-        vkCmdBindIndexBuffer(commandBuffers_[imageIndex], indexBuffer_, 0, VK_INDEX_TYPE_UINT32);
+void renderMode1(uint32_t imageIndex) {
+    VkBuffer vertexBuffers[] = {vertexBuffer_};
+    VkDeviceSize offsets[] = {0};
+    vkCmdBindVertexBuffers(commandBuffers_[imageIndex], 0, 1, vertexBuffers, offsets);
+    vkCmdBindIndexBuffer(commandBuffers_[imageIndex], indexBuffer_, 0, VK_INDEX_TYPE_UINT32);
 
-        glm::mat4 proj = glm::perspective(glm::radians(45.0f), (float)width_ / height_, 0.1f, 100.0f);
-        glm::mat4 view = glm::lookAt(glm::vec3(0.0f, 0.0f, 10.0f), glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+    // Camera setup: Positioned to frame the infinite 1D axis
+    glm::mat4 proj = glm::perspective(glm::radians(45.0f), (float)width_ / height_, 0.1f, 1000.0f); // Extended far plane for infinity
+    glm::mat4 view = glm::lookAt(glm::vec3(0.0f, 0.0f, 10.0f), glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
 
-        constexpr float baseRadius = 0.5f;
-        float cycleProgress = std::fmod(wavePhase_ / (2.0f * kMaxRenderedDimensions), 1.0f);
-        for (size_t i = 0; i < kMaxRenderedDimensions; ++i) {
-            float emphasis = (i == 0) ? 2.0f : 0.5f;
-            float radius = baseRadius * emphasis * (1.0f + static_cast<float>(cache_[i].observable) * 0.2f) *
-                           (1.0f + 0.1f * sin(wavePhase_ + i) * (1.0f + static_cast<float>(cache_[i].darkMatter) * 0.5f));
-            glm::mat4 model = glm::rotate(glm::mat4(1.0f), wavePhase_ * 0.2f, glm::vec3(0.0f, 1.0f, 0.0f));
-            if (i == 0) {
-                model = glm::scale(model, glm::vec3(radius));
-            } else if (i == 1) {
-                model = glm::translate(model, glm::vec3(0.0f, 1.5f * (1.0f + static_cast<float>(cache_[i].darkEnergy) * 0.2f), -i * 1.0f));
-                model = glm::scale(model, glm::vec3(radius));
-            } else {
-                model = glm::translate(model, glm::vec3(0.0f, 0.0f, -i * 1.0f * (1.0f + static_cast<float>(cache_[i].darkEnergy) * 0.2f)));
-                model = glm::scale(model, glm::vec3(radius));
-            }
+    constexpr float baseRadius = 0.5f;
+    float cycleProgress = std::fmod(wavePhase_ / (2.0f * kMaxRenderedDimensions), 1.0f);
+    float pulse = 0.85f + 0.15f * sin(wavePhase_ * 6.28318f); // Subtle, eternal pulse
 
-            float dimValue = static_cast<float>(i + 1);
-            PushConstants pushConstants = {model, view, proj, static_cast<float>(cache_[i].observable), dimValue, wavePhase_, cycleProgress,
-                                          static_cast<float>(cache_[i].darkMatter), static_cast<float>(cache_[i].darkEnergy)};
+    // Render only the first dimension (i=0) as the God dimension
+    for (size_t i = 0; i < kMaxRenderedDimensions; ++i) {
+        if (i > 0) continue; // Focus solely on the divine 1D axis
+
+        // Divine scale: Emphasize the infinite extent
+        float emphasis = 3.0f; // Bold presence
+        float radius = baseRadius * emphasis * (1.0f + static_cast<float>(cache_[i].observable) * 0.5f) *
+                       (1.0f + 0.15f * sin(wavePhase_) * (1.0f + static_cast<float>(cache_[i].darkMatter) * 0.7f));
+
+        // Model matrix: Infinite 1D line along X-axis, centered and eternal
+        glm::mat4 model = glm::mat4(1.0f);
+        model = glm::translate(model, glm::vec3(0.0f, 0.0f, 0.0f));
+        model = glm::scale(model, glm::vec3(radius * 100.0f, radius * 0.05f, radius * 0.05f)); // Stretch X infinitely, thin Y/Z
+        model = glm::rotate(model, wavePhase_ * 0.1f, glm::vec3(0.0f, 1.0f, 0.0f)); // Gentle oscillation for divine presence
+
+        float dimValue = 1.0f; // Pure 1D for the God dimension
+        PushConstants pushConstants = {
+            model,
+            view,
+            proj,
+            static_cast<float>(cache_[i].observable) * (0.8f + 0.2f * cos(wavePhase_)), // Eternal radiance
+            dimValue,
+            wavePhase_,
+            cycleProgress,
+            static_cast<float>(cache_[i].darkMatter),
+            static_cast<float>(cache_[i].darkEnergy)
+        };
+        vkCmdPushConstants(commandBuffers_[imageIndex], pipelineLayout_, 
+                          VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                          0, sizeof(PushConstants), &pushConstants);
+        vkCmdDrawIndexed(commandBuffers_[imageIndex], static_cast<uint32_t>(sphereIndices_.size()), 1, 0, 0, 0);
+    }
+
+    // Interactions: Subtle threads of divine connection
+    ue_.setCurrentDimension(1);
+    auto pairs = ue_.getInteractions();
+    for (const auto& pair : pairs) {
+        if (pair.dimension > 1) continue; // Only 1D interactions
+
+        float interactionStrength = static_cast<float>(
+            computeInteraction(pair.dimension, pair.distance) *
+            std::exp(-ue_.getAlpha() * pair.distance) *
+            computePermeation(pair.dimension) *
+            pair.darkMatterDensity);
+        float interactionRadius = baseRadius * 0.15f * interactionStrength * 
+                                 (1.0f + 0.2f * sin(wavePhase_ * 2.0f)); // Gentle, sacred pulse
+
+        if (interactionRadius > 0.01f) {
+            // Interaction visuals: Delicate lines parallel to the main axis
+            float offset = pair.distance * 0.5f * (1.0f + static_cast<float>(pair.darkMatterDensity) * 0.2f);
+            glm::vec3 offsetPos = glm::vec3(0.0f, offset * sin(wavePhase_ + pair.dimension), offset * cos(wavePhase_ + pair.dimension));
+            glm::mat4 interactionModel = glm::translate(glm::mat4(1.0f), offsetPos);
+            interactionModel = glm::scale(interactionModel, glm::vec3(interactionRadius * 50.0f, interactionRadius * 0.03f, interactionRadius * 0.03f)); // Thin, infinite threads
+
+            PushConstants pushConstants = {
+                interactionModel,
+                view,
+                proj,
+                interactionStrength * (0.7f + 0.3f * cos(wavePhase_)), // Subtle glow
+                1.0f, // 1D interactions
+                wavePhase_,
+                cycleProgress,
+                static_cast<float>(pair.darkMatterDensity),
+                static_cast<float>(computeDarkEnergy(pair.distance))
+            };
             vkCmdPushConstants(commandBuffers_[imageIndex], pipelineLayout_, 
                               VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
                               0, sizeof(PushConstants), &pushConstants);
             vkCmdDrawIndexed(commandBuffers_[imageIndex], static_cast<uint32_t>(sphereIndices_.size()), 1, 0, 0, 0);
         }
     }
+}
 
     void renderMode2(uint32_t imageIndex) {
         VkBuffer vertexBuffers[] = {vertexBuffer_};
@@ -437,66 +488,105 @@ private:
         }
     }
 
-    void renderMode3(uint32_t imageIndex) {
-        VkBuffer vertexBuffers[] = {vertexBuffer_};
-        VkDeviceSize offsets[] = {0};
-        vkCmdBindVertexBuffers(commandBuffers_[imageIndex], 0, 1, vertexBuffers, offsets);
-        vkCmdBindIndexBuffer(commandBuffers_[imageIndex], indexBuffer_, 0, VK_INDEX_TYPE_UINT32);
+void renderMode3(uint32_t imageIndex) {
+    VkBuffer vertexBuffers[] = {vertexBuffer_};
+    VkDeviceSize offsets[] = {0};
+    vkCmdBindVertexBuffers(commandBuffers_[imageIndex], 0, 1, vertexBuffers, offsets);
+    vkCmdBindIndexBuffer(commandBuffers_[imageIndex], indexBuffer_, 0, VK_INDEX_TYPE_UINT32);
 
-        glm::mat4 proj = glm::perspective(glm::radians(45.0f), (float)width_ / height_, 0.1f, 100.0f);
-        glm::mat4 view = glm::lookAt(glm::vec3(0.0f, 0.0f, 10.0f), glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+    // Camera setup: perspective projection and view matrix
+    glm::mat4 proj = glm::perspective(glm::radians(45.0f), (float)width_ / height_, 0.1f, 100.0f);
+    glm::mat4 view = glm::lookAt(glm::vec3(0.0f, 0.0f, 12.0f), glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
 
-        constexpr float baseRadius = 0.5f;
-        float cycleProgress = std::fmod(wavePhase_ / (2.0f * kMaxRenderedDimensions), 1.0f);
-        for (size_t i = 0; i < kMaxRenderedDimensions; ++i) {
-            float emphasis = (i == 2) ? 2.0f : 0.5f;
-            float radius = baseRadius * emphasis * (1.0f + static_cast<float>(cache_[i].observable) * 0.2f) *
-                           (1.0f + 0.1f * sin(wavePhase_ + i) * (1.0f + static_cast<float>(cache_[i].darkMatter) * 0.5f));
-            glm::mat4 model = glm::mat4(1.0f);
-            if (i == 2) {
-                model = glm::translate(model, glm::vec3(0.0f, 0.0f, 0.0f));
-                model = glm::scale(model, glm::vec3(radius));
-            } else {
-                float offsetX = (i == 0) ? -1.5f : (i == 1) ? 0.0f : 1.5f;
-                model = glm::translate(model, glm::vec3(offsetX * (1.0f + static_cast<float>(cache_[i].darkEnergy) * 0.2f), 0.0f, -i * 1.0f));
-                model = glm::scale(model, glm::vec3(radius));
-            }
+    constexpr float baseRadius = 0.5f;
+    float cycleProgress = std::fmod(wavePhase_ / (2.0f * kMaxRenderedDimensions), 1.0f);
+    float beat = 0.8f + 0.2f * sin(wavePhase_ * 6.28318f); // Bass pulse for animations
 
-            float dimValue = static_cast<float>(i + 1);
-            PushConstants pushConstants = {model, view, proj, static_cast<float>(cache_[i].observable), dimValue, wavePhase_, cycleProgress,
-                                          static_cast<float>(cache_[i].darkMatter), static_cast<float>(cache_[i].darkEnergy)};
-            vkCmdPushConstants(commandBuffers_[imageIndex], pipelineLayout_, 
-                              VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-                              0, sizeof(PushConstants), &pushConstants);
-            vkCmdDrawIndexed(commandBuffers_[imageIndex], static_cast<uint32_t>(sphereIndices_.size()), 1, 0, 0, 0);
+    // Render 1D + 1D + 3D dimensions
+    for (size_t i = 0; i < kMaxRenderedDimensions; ++i) {
+        float emphasis = (i == 2) ? 2.5f : 0.4f; // Emphasize 3D, scale down 1D
+        float radius = baseRadius * emphasis * (1.0f + static_cast<float>(cache_[i].observable) * 0.3f) *
+                       (1.0f + 0.15f * sin(wavePhase_ + i * 2.0f) * (1.0f + static_cast<float>(cache_[i].darkMatter) * 0.7f));
 
-            if (i == 2) {
-                ue_.setCurrentDimension(3);
-                auto pairs = ue_.getInteractions();
-                for (const auto& pair : pairs) {
-                    if (pair.dimension > kMaxRenderedDimensions) continue;
-                    float interactionStrength = static_cast<float>(
-                        computeInteraction(pair.dimension, pair.distance) *
-                        std::exp(-ue_.getAlpha() * pair.distance) *
-                        computePermeation(pair.dimension) *
-                        pair.darkMatterDensity);
-                    float interactionRadius = baseRadius * 0.3f * interactionStrength * (1.0f + 0.1f * sin(wavePhase_));
-                    if (interactionRadius > 0.01f) {
-                        glm::mat4 interactionModel = glm::translate(glm::mat4(1.0f), 
-                                                                   glm::vec3(0.5f * (pair.dimension - 3) * (1.0f + static_cast<float>(pair.distance) * 0.5f), 
-                                                                             0.0f, 0.0f));
-                        interactionModel = glm::scale(interactionModel, glm::vec3(interactionRadius));
-                        pushConstants = {interactionModel, view, proj, interactionStrength, static_cast<float>(pair.dimension), wavePhase_, cycleProgress,
-                                        static_cast<float>(pair.darkMatterDensity), static_cast<float>(computeDarkEnergy(pair.distance))};
-                        vkCmdPushConstants(commandBuffers_[imageIndex], pipelineLayout_, 
-                                          VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-                                          0, sizeof(PushConstants), &pushConstants);
-                        vkCmdDrawIndexed(commandBuffers_[imageIndex], static_cast<uint32_t>(sphereIndices_.size()), 1, 0, 0, 0);
-                    }
-                }
+        glm::mat4 model = glm::mat4(1.0f);
+        if (i == 2) {
+            // 3D dimension: Central pulsing sphere
+            model = glm::translate(model, glm::vec3(0.0f, 0.0f, 0.0f));
+            model = glm::scale(model, glm::vec3(radius * beat)); // Scale with bass pulse
+        } else {
+            // 1D dimensions: Lines or thin cylinders along X-axis
+            float offsetX = (i == 0) ? -2.0f : 2.0f; // Spread 1D lines left and right
+            float darkEnergyOffset = static_cast<float>(cache_[i].darkEnergy) * 0.3f;
+            model = glm::translate(model, glm::vec3(offsetX * (1.0f + darkEnergyOffset), 0.0f, 0.0f));
+            // Scale for 1D: thin along Y/Z, stretched along X
+            model = glm::scale(model, glm::vec3(radius * 2.0f * beat, radius * 0.1f, radius * 0.1f));
+        }
+
+        float dimValue = (i == 2) ? 3.0f : 1.0f; // 3D for i==2, 1D for others
+        PushConstants pushConstants = {
+            model,
+            view,
+            proj,
+            static_cast<float>(cache_[i].observable) * (0.8f + 0.2f * cos(wavePhase_)), // Rhythmic observable
+            dimValue,
+            wavePhase_,
+            cycleProgress,
+            static_cast<float>(cache_[i].darkMatter),
+            static_cast<float>(cache_[i].darkEnergy)
+        };
+        vkCmdPushConstants(commandBuffers_[imageIndex], pipelineLayout_, 
+                          VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                          0, sizeof(PushConstants), &pushConstants);
+        vkCmdDrawIndexed(commandBuffers_[imageIndex], static_cast<uint32_t>(sphereIndices_.size()), 1, 0, 0, 0);
+    }
+
+    // Interactions for 3D dimension (i == 2)
+    if (true) { // Always process interactions for 3D
+        ue_.setCurrentDimension(3);
+        auto pairs = ue_.getInteractions();
+        for (const auto& pair : pairs) {
+            if (pair.dimension > kMaxRenderedDimensions) continue;
+
+            // Compute interaction strength with bass-driven modulation
+            float interactionStrength = static_cast<float>(
+                computeInteraction(pair.dimension, pair.distance) *
+                std::exp(-ue_.getAlpha() * pair.distance) *
+                computePermeation(pair.dimension) *
+                pair.darkMatterDensity);
+            float interactionRadius = baseRadius * 0.4f * interactionStrength * 
+                                     (1.0f + 0.2f * sin(wavePhase_ * 2.0f)); // Faster pulse
+
+            if (interactionRadius > 0.01f) {
+                // Interaction visuals: Small orbiting spheres for 3D interactions
+                float angle = wavePhase_ + pair.dimension * 2.0f; // Rotate based on dimension
+                float orbitRadius = 1.5f + pair.distance * 0.5f;
+                glm::vec3 orbitPos = glm::vec3(
+                    cos(angle) * orbitRadius * (1.0f + static_cast<float>(pair.darkMatterDensity) * 0.2f),
+                    sin(angle) * orbitRadius * 0.5f,
+                    0.0f
+                );
+                glm::mat4 interactionModel = glm::translate(glm::mat4(1.0f), orbitPos);
+                interactionModel = glm::scale(interactionModel, glm::vec3(interactionRadius * beat));
+
+                PushConstants pushConstants = {
+                    interactionModel,
+                    view,
+                    proj,
+                    interactionStrength * (0.7f + 0.3f * sin(wavePhase_)), // Pulsing strength
+                    static_cast<float>(pair.dimension),
+                    wavePhase_,
+                    cycleProgress,
+                    static_cast<float>(pair.darkMatterDensity),
+                    static_cast<float>(computeDarkEnergy(pair.distance))
+                };
+                vkCmdPushConstants(commandBuffers_[imageIndex], pipelineLayout_, 
+                                  VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                                  0, sizeof(PushConstants), &pushConstants);
+                vkCmdDrawIndexed(commandBuffers_[imageIndex], static_cast<uint32_t>(sphereIndices_.size()), 1, 0, 0, 0);
             }
         }
     }
+}
 
 void renderMode4(uint32_t imageIndex) {
     VkBuffer vertexBuffers[] = {vertexBuffer_};
