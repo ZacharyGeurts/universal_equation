@@ -498,55 +498,69 @@ private:
         }
     }
 
-    void renderMode4(uint32_t imageIndex) {
-        VkBuffer vertexBuffers[] = {vertexBuffer_};
-        VkDeviceSize offsets[] = {0};
-        vkCmdBindVertexBuffers(commandBuffers_[imageIndex], 0, 1, vertexBuffers, offsets);
-        vkCmdBindIndexBuffer(commandBuffers_[imageIndex], indexBuffer_, 0, VK_INDEX_TYPE_UINT32);
+void renderMode4(uint32_t imageIndex) {
+    VkBuffer vertexBuffers[] = {vertexBuffer_};
+    VkDeviceSize offsets[] = {0};
+    vkCmdBindVertexBuffers(commandBuffers_[imageIndex], 0, 1, vertexBuffers, offsets);
+    vkCmdBindIndexBuffer(commandBuffers_[imageIndex], indexBuffer_, 0, VK_INDEX_TYPE_UINT32);
 
-        glm::mat4 proj = glm::perspective(glm::radians(45.0f), (float)width_ / height_, 0.1f, 100.0f);
-        glm::mat4 view = glm::lookAt(glm::vec3(0.0f, 0.0f, 10.0f), glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+    glm::mat4 proj = glm::perspective(glm::radians(45.0f), (float)width_ / height_, 0.1f, 100.0f);
+    glm::mat4 view = glm::lookAt(glm::vec3(0.0f, 0.0f, 10.0f), glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
 
-        constexpr float baseRadius = 0.5f;
-        float cycleProgress = std::fmod(wavePhase_ / (2.0f * kMaxRenderedDimensions), 1.0f);
-        for (size_t i = 0; i < kMaxRenderedDimensions; ++i) {
-            float emphasis = (i == 3) ? 2.0f : 0.5f;
-            float observableRadius = baseRadius * (1.0f + static_cast<float>(cache_[i].observable) * 0.2f);
-            float potentialRadius = baseRadius * (1.0f + static_cast<float>(cache_[i].potential) * 0.2f);
-            float pulse = 0.5f * (observableRadius + potentialRadius) * emphasis *
-                          (1.0f + 0.2f * sin(wavePhase_ + i) * (1.0f + static_cast<float>(cache_[i].darkMatter) * 0.5f));
-            glm::mat4 model = glm::mat4(1.0f);
-            if (i == 3) {
-                model = glm::translate(model, glm::vec3(0.0f, 0.0f, 0.0f));
-                model = glm::scale(model, glm::vec3(pulse));
-            } else {
-                float offsetX = (i == 0) ? -1.5f : (i == 1) ? 0.0f : 1.5f;
-                model = glm::translate(model, glm::vec3(offsetX * (1.0f + static_cast<float>(cache_[i].darkEnergy) * 0.2f), 
-                                                        0.0f, -i * 1.0f));
-                model = glm::scale(model, glm::vec3(pulse));
-            }
+    constexpr float baseRadius = 0.5f;
+    float cycleProgress = std::fmod(wavePhase_ / (2.0f * kMaxRenderedDimensions), 1.0f);
 
-            float fluctuationRatio = cache_[i].potential > 0 ? static_cast<float>(cache_[i].observable / cache_[i].potential) : 1.0f;
-            float dimValue = static_cast<float>(i + 1);
-            PushConstants pushConstants = {model, view, proj, fluctuationRatio, dimValue, wavePhase_, cycleProgress,
-                                          static_cast<float>(cache_[i].darkMatter), static_cast<float>(cache_[i].darkEnergy)};
-            vkCmdPushConstants(commandBuffers_[imageIndex], pipelineLayout_, 
-                              VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-                              0, sizeof(PushConstants), &pushConstants);
-            vkCmdDrawIndexed(commandBuffers_[imageIndex], static_cast<uint32_t>(sphereIndices_.size()), 1, 0, 0, 0);
+    for (size_t i = 0; i < kMaxRenderedDimensions; ++i) {
+        // Define components of the equation
+        float alpha = (i == 3) ? 2.0f : 0.5f; // α: emphasis factor
+        float omega = 0.2f; // ω: sinusoidal modulation factor
+        float observableRadius = baseRadius * (1.0f + static_cast<float>(cache_[i].observable) * 0.2f); // K
+        float potentialRadius = baseRadius * (1.0f + static_cast<float>(cache_[i].potential) * 0.2f); // ∇Φ component
+        float timeModulation = sin(wavePhase_ + i) * (1.0f + static_cast<float>(cache_[i].darkMatter) * 0.5f); // T
+
+        // Geometry scaling (G)
+        float geometryScale = 0.5f * (observableRadius + potentialRadius); // Base G
+        float scaledGeometry = geometryScale * (alpha + omega * timeModulation); // α⋅G + ω⋅G
+
+        // Location (L) and Energy (E)
+        glm::mat4 model = glm::mat4(1.0f);
+        if (i == 3) {
+            model = glm::translate(model, glm::vec3(0.0f, 0.0f, 0.0f)); // L: no offset for dimension 3
+        } else {
+            float offsetX = (i == 0) ? -1.5f : (i == 1) ? 0.0f : 1.5f;
+            float energyOffset = offsetX * (1.0f + static_cast<float>(cache_[i].darkEnergy) * 0.2f); // E
+            model = glm::translate(model, glm::vec3(energyOffset, 0.0f, -i * 1.0f)); // L + E
         }
 
-        float radius1D = baseRadius * (1.0f + static_cast<float>(ue_.getInfluence() * ue_.getOneDPermeation()) * 0.2f) *
-                         (1.0f + 0.3f * sin(wavePhase_) * (1.0f + static_cast<float>(ue_.getDarkMatterStrength()) * 0.5f));
-        glm::mat4 model = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 1.5f, 0.0f));
-        model = glm::scale(model, glm::vec3(radius1D * 1.5f));
-        PushConstants pushConstants = {model, view, proj, 1.0f, 1.0f, wavePhase_, cycleProgress,
-                                      static_cast<float>(ue_.getDarkMatterStrength()), static_cast<float>(ue_.getDarkEnergyStrength())};
+        // Combine transformations: T = (L + E + K + G) + α⋅G + ω⋅G + ∇Φ
+        float finalScale = scaledGeometry + potentialRadius * 0.1f; // Add ∇Φ influence
+        model = glm::scale(model, glm::vec3(finalScale));
+
+        // Push constants
+        float fluctuationRatio = cache_[i].potential > 0 ? static_cast<float>(cache_[i].observable / cache_[i].potential) : 1.0f;
+        float dimValue = static_cast<float>(i + 1);
+        PushConstants pushConstants = {model, view, proj, fluctuationRatio, dimValue, wavePhase_, cycleProgress,
+                                      static_cast<float>(cache_[i].darkMatter), static_cast<float>(cache_[i].darkEnergy)};
         vkCmdPushConstants(commandBuffers_[imageIndex], pipelineLayout_, 
                           VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
                           0, sizeof(PushConstants), &pushConstants);
         vkCmdDrawIndexed(commandBuffers_[imageIndex], static_cast<uint32_t>(sphereIndices_.size()), 1, 0, 0, 0);
     }
+
+    // 1D case (similar adjustments can be applied)
+    float radius1D = baseRadius * (1.0f + static_cast<float>(ue_.getInfluence() * ue_.getOneDPermeation()) * 0.2f);
+    float timeModulation1D = 0.3f * sin(wavePhase_) * (1.0f + static_cast<float>(ue_.getDarkMatterStrength()) * 0.5f);
+    float finalScale1D = radius1D * (1.0f + timeModulation1D); // G + ω⋅G
+    glm::mat4 model = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 1.5f, 0.0f)); // L
+    model = glm::scale(model, glm::vec3(finalScale1D * 1.5f));
+
+    PushConstants pushConstants = {model, view, proj, 1.0f, 1.0f, wavePhase_, cycleProgress,
+                                  static_cast<float>(ue_.getDarkMatterStrength()), static_cast<float>(ue_.getDarkEnergyStrength())};
+    vkCmdPushConstants(commandBuffers_[imageIndex], pipelineLayout_, 
+                      VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                      0, sizeof(PushConstants), &pushConstants);
+    vkCmdDrawIndexed(commandBuffers_[imageIndex], static_cast<uint32_t>(sphereIndices_.size()), 1, 0, 0, 0);
+}
 
 private:
     // Moved from UniversalEquation to allow access in renderMode3
