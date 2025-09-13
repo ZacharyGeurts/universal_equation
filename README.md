@@ -1,6 +1,8 @@
 # Dimensional Navigator
 
-**Latest Video**: [Latest](https://github.com/user-attachments/assets/c1b983bf-bdd9-4ae7-b8bb-fc7a1debdbef)<BR />
+Browsing dimensions 1d(God) through 5d(Heaven1).
+**Latest Video**: [Latest](https://github.com/user-attachments/assets/2980fe0d-1204-4a53-b6a4-cdf4f3eca072)<BR />
+**Old Video**: [Latest](https://github.com/user-attachments/assets/c1b983bf-bdd9-4ae7-b8bb-fc7a1debdbef)<BR />
 **Previous**: [Older WIP](https://github.com/ZacharyGeurts/universal_equation/raw/refs/heads/main/wip2.mov)<BR />
 **Previous Previous**: [Older Version](https://github.com/user-attachments/assets/344232f5-e7b8-4485-af40-5a302873f88c)<BR />
 <BR />
