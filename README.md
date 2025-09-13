@@ -37,23 +37,16 @@ The `UniversalEquation` models the universe as:
 The visualization emphasizes 1D’s omnipresent wave-like influence, with dynamic sphere animations reflecting energy fluctuations, dark matter stabilization, and dark energy expansion.
 
 ## Features
-- **Real-Time Visualization**: Renders symmetric ± energy fluctuations (`observable`, `potential`, `darkMatter`, `darkEnergy`) for dimensions 1 to 4.
+- **Real-Time Visualization**: Renders symmetric ± energy fluctuations (`observable`, `potential`, `darkMatter`, `darkEnergy`) for dimensions 1 to 5.
 - **Dynamic Rendering**:
-  - **Mode 1 (1D)**: Displays a blue quad with wave-like pulsing, representing the infinite base.
-  - **Mode 2 (2D)**: Renders neon green spheres, emphasized for dimension 2, with pulsating effects driven by dark matter and dark energy.
-  - **Mode 3 (3D)**: Shows red spheres with orbiting interactions, reflecting 3D’s influence on adjacent dimensions.
-  - **Mode 4 (4D)**: Displays yellow spheres with complex scaling, modulated by observable/potential ratios.
-- **Interactive Controls**:
-  - Adjust influence, dark matter, and dark energy in real-time.
-  - Zoom in/out using 'a'/'z' keys for enhanced exploration.
-- **Key Bindings**:
+  **Interactive Controls**:
+  **Key Bindings**:
   - `UP`/`DOWN`: Increase/decrease influence (`kInfluence_`) by 0.1.
   - `LEFT`/`RIGHT`: Decrease/increase dark matter strength (`kDarkMatter_`) by 0.05.
   - `PAGEUP`/`PAGEDOWN`: Increase/decrease dark energy scale (`kDarkEnergy_`) by 0.05.
   - `1`/`2`/`3`/`4`: Switch to rendering modes 1 (1D), 2 (2D), 3 (3D), or 4 (4D).
 - **Data Logging**: Outputs dimensional data (dimension, observable, potential, dark matter, dark energy) to the console for debugging (enable in `UniversalEquation`).
-- **Zoom Support**: Adjusts visualization scale dynamically, enhancing user control over perspective.
-
+-
 ## Model Description
 The `UniversalEquation` class defines dimensional interactions:
 - **1D ("God")**: A singular, infinite static permeating all dimensions, modeled as a wave-like influence.
