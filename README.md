@@ -1,99 +1,71 @@
-# Dimensional Navigator Project
-**Video Clip**:
-https://github.com/ZacharyGeurts/universal_equation/raw/refs/heads/main/wip2.mov<BR />
-**Video Clip**: (old) https://github.com/user-attachments/assets/344232f5-e7b8-4485-af40-5a302873f88c<BR />
-<BR />
-WIP - Current designing and updating the program.<BR />
-Do not resize or it will crash. Not critical for me to fix yet<BR />
-Modify src/main.cpp if you need it bigger or smaller.<BR />
-Like an idiot I made a custom Vulkan backend instead of flat SDL3, so it has become more complicated than necessary.<BR />
-I enjoy my idiocy however 😊, or I would be on SDL2 and OpenGL<BR />
-This is for linux until I stabilize the gui and make a release.<BR />
-<BR />
-This is not free (like freedom) software.<BR />
-This software is for educational purposes.<BR />
-You may not sell, or require any compensation by the user.<BR />
-Attainment is to be done here at https://github.com/ZacharyGeurts/universal_equation<BR />
-Projects using any of this code are subject to free distribution.<BR />
-It is free of cost. Installation is at the bottom.<BR />
-<BR />
-**Key Bindings**:<BR />
-`UP`: Increase influence (`kInfluence_`) by 0.1<BR />
-`DOWN`: Decrease influence (`kInfluence_`) by 0.1<BR />
-`LEFT`: Decrease dark matter strength (`kDarkMatter_`) by 0.05<BR />
-`RIGHT`: Increase dark matter strength (`kDarkMatter_`) by 0.05<BR />
-`PAGEUP`: Increase dark energy scale (`kDarkEnergy_`) by 0.05<BR />
-`PAGEDOWN`: Decrease dark energy scale (`kDarkEnergy_`) by 0.05<BR />
-`1`: Mode 1 Dimension 1? God?<BR />
-`2`: Mode 2 Dimension 2<BR />
-`3`: Mode 3 etc.<BR />
-`4`: Mode 4 etc.<BR />
-<BR />
+# Dimensional Navigator
+
+**Video Demo**: [Latest WIP](https://github.com/ZacharyGeurts/universal_equation/raw/refs/heads/main/wip2.mov)  
+**Previous Demo**: [Older Version](https://github.com/user-attachments/assets/344232f5-e7b8-4485-af40-5a302873f88c)
+
+**Status**: Work in Progress (WIP). The project is under active development, with ongoing updates to the visualization and GUI.  
+**Note**: Resizing the window may cause crashes; this is a known issue and not a priority for fixing yet. To adjust window size, modify `src/main.cpp`.  
+**Platform**: Currently Linux-only, with plans for cross-platform support after GUI stabilization.  
+
+This project uses a custom Vulkan backend for rendering, chosen for its flexibility despite added complexity. Future versions may explore simpler backends (e.g., SDL3 with OpenGL), but the current approach reflects a deliberate design choice for learning and experimentation.
+
+## Licensing
+This is **not free (as in freedom) software**. It is provided for **educational purposes only**.  
+- **Restrictions**: You may not sell this software or require any compensation from users.  
+- **Distribution**: Projects using this code must be distributed freely (no cost).  
+- **Source**: Obtain the software exclusively from [https://github.com/ZacharyGeurts/universal_equation](https://github.com/ZacharyGeurts/universal_equation).  
+- **Cost**: Free of charge.
+
 ## Overview
-<BR />
-The **Dimensional Navigator** is a computational tool that visualizes a mathematical model of dimensional interactions using C++ with SDL3, SDL3_ttf, and Vulkan. 
-It graphs the outputs of the `UniversalEquation` class, displaying symmetric ± energy fluctuations across dimensions 1 through 9, with dark matter and dark energy influencing the dynamics.<BR />
-<BR />
-The model conceptualizes the universe as:<BR />
-- **1D (God)**: An infinite, wave-like base permeating all dimensions, acting as a "fountain" of influence, like a radio wave flowing through everything.<BR />
-- **2D**: The boundary or "skin" of a cosmic bubble, enclosing higher dimensions.<BR />
-- **3D to 9D**: Nested dimensions that permeate the dimension below, with interactions decaying exponentially.<BR />
-- **Dark Matter**: Stabilizes interactions, amplifying pulsing effects in higher dimensions.<BR />
-- **Dark Energy**: Drives expansion, increasing effective distances between dimensions.<BR />
-<BR />
-The visualization emphasizes the wave-like nature of 1D’s omnipresent influence, with real-time interactivity and dynamic rendering of cosmological effects.
+The **Dimensional Navigator** is a computational visualization tool built in C++ using SDL3, SDL3_ttf, Vulkan, and GLM. It graphs the outputs of the `UniversalEquation` class, modeling dimensional interactions across dimensions 1 to 9. The visualization displays symmetric positive and negative energy fluctuations, influenced by dark matter and dark energy, with real-time interactivity.
+
+### Conceptual Model
+The `UniversalEquation` models the universe as:
+- **1D ("God")**: An infinite, wave-like base permeating all dimensions, acting as a universal "fountain" of influence, akin to an omnipresent radio wave.
+- **2D**: The boundary or "skin" of a cosmic bubble, enclosing higher dimensions and strongly interacting with 1D and 3D.
+- **3D to 9D**: Nested dimensions, each permeating the one below (e.g., 4D influences 3D, 3D influences 2D), with interactions decaying exponentially.
+- **Dark Matter**: Stabilizes interactions, amplifying pulsing effects, especially in higher dimensions.
+- **Dark Energy**: Drives dimensional expansion, increasing effective distances between dimensions.
+
+The visualization emphasizes 1D’s omnipresent wave-like influence, with dynamic sphere animations reflecting energy fluctuations, dark matter stabilization, and dark energy expansion.
 
 ## Features
-- **Real-time Graphing**: Displays symmetric ± energy fluctuations (`Total_±(D)`) for dimensions D = 1 to 9.
-- **Wave-Like Visualization**: Renders a dynamic, sinusoidal background scaled by 1D’s influence, symbolizing its permeating presence.
-- **Dark Matter Visualization**: Amplifies pulsing effects in sphere animations, reflecting its stabilizing role (e.g., stronger pulses in higher dimensions).
-- **Dark Energy Visualization**: Adjusts sphere spacing or positions, representing dimensional expansion (e.g., wider orbits in Mode 2).
-- **Interactive Controls**: Adjust influence (`UP`/`DOWN`), dark matter (`LEFT`/`RIGHT`), and dark energy (`PAGEUP`/`PAGEDOWN`) in real-time.
-- **Rendering Modes**: Four distinct modes to visualize dimensional interactions, with unique arrangements and effects.
-- **Data Logging**: Outputs dimension, positive, negative, dark matter, and dark energy values to `dimensional_output.txt` for analysis.
+- **Real-Time Visualization**: Renders symmetric ± energy fluctuations (`observable`, `potential`, `darkMatter`, `darkEnergy`) for dimensions 1 to 4.
+- **Dynamic Rendering**:
+  - **Mode 1 (1D)**: Displays a blue quad with wave-like pulsing, representing the infinite base.
+  - **Mode 2 (2D)**: Renders neon green spheres, emphasized for dimension 2, with pulsating effects driven by dark matter and dark energy.
+  - **Mode 3 (3D)**: Shows red spheres with orbiting interactions, reflecting 3D’s influence on adjacent dimensions.
+  - **Mode 4 (4D)**: Displays yellow spheres with complex scaling, modulated by observable/potential ratios.
+- **Interactive Controls**:
+  - Adjust influence, dark matter, and dark energy in real-time.
+  - Zoom in/out using 'a'/'z' keys for enhanced exploration.
+- **Key Bindings**:
+  - `UP`/`DOWN`: Increase/decrease influence (`kInfluence_`) by 0.1.
+  - `LEFT`/`RIGHT`: Decrease/increase dark matter strength (`kDarkMatter_`) by 0.05.
+  - `PAGEUP`/`PAGEDOWN`: Increase/decrease dark energy scale (`kDarkEnergy_`) by 0.05.
+  - `1`/`2`/`3`/`4`: Switch to rendering modes 1 (1D), 2 (2D), 3 (3D), or 4 (4D).
+  - `a`/`z`: Zoom in/out.
+- **Data Logging**: Outputs dimensional data (dimension, observable, potential, dark matter, dark energy) to the console for debugging (enable in `UniversalEquation`).
+- **Zoom Support**: Adjusts visualization scale dynamically, enhancing user control over perspective.
 
 ## Model Description
-The `UniversalEquation` class models dimensional interactions with the following structure:
-- **1D (God)**: The infinite universal base, a singular infinite static that permeates all dimensions, both inside and outside, with a wave-like influence.
-- As big as God is small. Infinite.
-- **2D**: The boundary of a cosmic bubble, enclosing higher dimensions and interacting strongly with 1D and 3D.
-- **3D to 9D**: Nested dimensions, each permeating the dimension below (e.g., 4D influences 3D, 3D influences 2D).
-- **Influence**: Decays exponentially with dimensional separation, modulated by a weak interaction factor for dimensions above 3.
-- **Dark Matter**: Acts as a stabilizing force, increasing in density with dimension number, reducing fluctuations and enhancing visual pulsing.
-- **Dark Energy**: Drives exponential expansion of dimensional distances, affecting sphere positions and spacing in visualizations.
-- **Outputs**: Symmetric ± energy fluctuations reflect frequency and field dynamics, compatible with relativity, with contributions from dark matter and dark energy.
+The `UniversalEquation` class defines dimensional interactions:
+- **1D ("God")**: A singular, infinite static permeating all dimensions, modeled as a wave-like influence.
+- **2D**: The cosmic boundary, interacting strongly with 1D and 3D, visualized as pulsating neon green spheres.
+- **3D to 9D**: Nested dimensions with exponentially decaying influence on lower dimensions, modulated by a weak interaction factor for D > 3.
+- **Dark Matter**: Increases density with dimension, stabilizing interactions and amplifying visual pulsing (e.g., stronger in 3D/4D).
+- **Dark Energy**: Drives exponential expansion of dimensional distances, affecting sphere positions and spacing.
+- **Outputs**: Symmetric ± energy fluctuations (`observable`, `potential`) reflect frequency and field dynamics, with contributions from `darkMatter` and `darkEnergy`, compatible with relativistic principles.
 
 ## Requirements
-- **Compiler**: g++ with C++17 support.
+- **OS**: Linux (Ubuntu/Debian recommended; other distros may require building SDL3 from source).
+- **Compiler**: `g++` with C++17 support.
 - **Libraries**:
-  - **SDL3**: Development headers and libraries (`libsdl3-dev`).
-  - **SDL3_ttf**: Development headers and libraries (`libsdl3-ttf-dev`).
-  - **Vulkan**: Development headers and libraries (`libvulkan-dev`, `vulkan-tools` for validation).
-  - **GLM**: OpenGL Mathematics library (`libglm-dev`).
-- **Font**: `arial.ttf` (included).
+  - **SDL3**: `libsdl3-dev` (may need to build from source if not available).
+  - **SDL3_ttf**: `libsdl3-ttf-dev`.
+  - **Vulkan**: `libvulkan-dev`, `vulkan-tools` (for validation layers).
+  - **GLM**: `libglm-dev`.
+- **Font**: `arial.ttf` (included in the repository).
+- **Shader Compiler**: `glslc` (from Vulkan SDK).
 
-## Files
-- `universal_equation.hpp`: Header for the `UniversalEquation` class, defining dimensional interactions.
-- `main.hpp`: Header for the `DimensionalNavigator` class, handling visualization and input.
-- `SDL3_init.hpp` and `Vulkan_init.hpp`: Utility headers for SDL3 and Vulkan initialization.
-- `arial.ttf`: Font file for text rendering.
-- `main.cpp` Set window size here.
-- SDL3, SDL3_ttf, Vulkan, and GLM headers are assumed to be in the system path (e.g., `/usr/include` or `/usr/local/include`).
-
-## Installation
-Note: SDL3 is not available on all distros yet and you may need to build and install from source.
-```bash
-# Install dependencies (Ubuntu/Debian)
-sudo apt update
-sudo apt install g++ libsdl3-dev libsdl3-ttf-dev libvulkan-dev vulkan-tools libglm-dev
-
-# Clone the repository
-git clone https://github.com/ZacharyGeurts/universal_equation
-cd universal_equation
-
-# Build the project
-make
-
-# Run the application
-cd bin
-./Navigator
+## Project Structure
