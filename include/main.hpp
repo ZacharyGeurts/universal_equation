@@ -771,28 +771,33 @@ void renderMode4(uint32_t imageIndex) {
         }
 
         float alpha = 2.0f;
-        float omega = 0.2f;
-        float observableRadius = 1.0f * (1.0f + static_cast<float>(cache_[i].observable) * 0.2f);
-        float potentialRadius = 1.0f * (1.0f + static_cast<float>(cache_[i].potential) * 0.2f);
-        float timeModulation = sinf(wavePhase_ + i) * (1.0f + static_cast<float>(cache_[i].darkMatter) * 0.5f);
+        float omega = 0.3f;
+        float observableRadius = 1.0f * (1.0f + static_cast<float>(cache_[i].observable) * 0.25f);
+        float potentialRadius = 1.0f * (1.0f + static_cast<float>(cache_[i].potential) * 0.25f);
+        float timeModulation = sinf(wavePhase_ * 1.5f + i) * (1.0f + static_cast<float>(cache_[i].darkMatter) * 0.6f);
         float geometryScale = 0.5f * (observableRadius + potentialRadius);
         float scaledGeometry = geometryScale * (alpha + omega * timeModulation);
 
         glm::mat4 model = glm::mat4(1.0f);
         model = glm::translate(model, glm::vec3(0.0f, 0.0f, 0.0f));
-        model = glm::scale(model, glm::vec3(scaledGeometry * 50.0f * zoomFactor));
-        model = glm::rotate(model, wavePhase_ * 0.1f, glm::vec3(1.0f, 1.0f, 1.0f));
-        model = glm::scale(model, glm::vec3(1.0f + 0.2f * sinf(wavePhase_ * 0.5f)));
+        model = glm::scale(model, glm::vec3(scaledGeometry * zoomFactor * 0.8f, scaledGeometry * zoomFactor * 1.2f, scaledGeometry * zoomFactor));
+        model = glm::rotate(model, wavePhase_ * 0.15f, glm::vec3(0.7f, 1.0f, 0.7f));
+        model = glm::scale(model, glm::vec3(1.0f + 0.3f * sinf(wavePhase_ * 0.7f)));
 
         float fluctuationRatio = cache_[i].potential > 0 ? static_cast<float>(cache_[i].observable / cache_[i].potential) : 1.0f;
         float dimValue = 4.0f;
-        glm::vec3 baseColor = glm::vec3(1.0f, 1.0f, 1.0f); // White base for mode 4
+        glm::vec3 baseColor = glm::vec3(
+            0.4f + 0.2f * sinf(wavePhase_),
+            0.3f + 0.2f * cosf(wavePhase_ * 0.8f),
+            0.6f + 0.3f * sinf(wavePhase_ * 1.2f)
+        );
+
         PushConstants pushConstants = {
             model,
             view,
             proj,
             baseColor,
-            fluctuationRatio,
+            fluctuationRatio * (0.8f + 0.4f * cosf(wavePhase_ * 1.2f)),
             dimValue,
             wavePhase_,
             cycleProgress,
@@ -803,6 +808,9 @@ void renderMode4(uint32_t imageIndex) {
                           VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
                           0, sizeof(PushConstants), &pushConstants);
         vkCmdDrawIndexed(commandBuffers_[imageIndex], static_cast<uint32_t>(sphereIndices_.size()), 1, 0, 0, 0);
+
+        std::cerr << "Mode4[D=4]: scaledGeometry=" << scaledGeometry << ", fluctuationRatio=" << fluctuationRatio
+                  << ", pos=(0, 0, 0), color=(" << baseColor.x << ", " << baseColor.y << ", " << baseColor.z << ")\n";
     }
 
     ue_.setCurrentDimension(4);
@@ -811,8 +819,12 @@ void renderMode4(uint32_t imageIndex) {
         std::cerr << "Warning: No interactions for dimension 4\n";
         glm::mat4 interactionModel = glm::mat4(1.0f);
         interactionModel = glm::translate(interactionModel, glm::vec3(0.0f, 0.0f, 0.0f));
-        interactionModel = glm::scale(interactionModel, glm::vec3(25.0f * zoomFactor));
-        glm::vec3 baseColor = glm::vec3(1.0f, 1.0f, 1.0f); // White base for interactions
+        interactionModel = glm::scale(interactionModel, glm::vec3(0.3f * zoomFactor));
+        glm::vec3 baseColor = glm::vec3(
+            0.4f + 0.2f * sinf(wavePhase_),
+            0.3f + 0.2f * cosf(wavePhase_ * 0.8f),
+            0.6f + 0.3f * sinf(wavePhase_ * 1.2f)
+        );
         PushConstants pushConstants = {
             interactionModel,
             view,
@@ -831,41 +843,49 @@ void renderMode4(uint32_t imageIndex) {
         vkCmdDrawIndexed(commandBuffers_[imageIndex], static_cast<uint32_t>(sphereIndices_.size()), 1, 0, 0, 0);
     } else {
         for (const auto& pair : pairs) {
-            if (pair.dimension != 4) continue;
+            if (pair.dimension != 1 && pair.dimension != 2 && pair.dimension != 3 && pair.dimension != 4 && pair.dimension != 5) continue;
 
+            // Simplified interaction strength using public data
             float interactionStrength = static_cast<float>(
-                computeInteraction(pair.dimension, pair.distance) *
-                std::exp(-ue_.getAlpha() * pair.distance) *
-                computePermeation(pair.dimension) *
-                pair.darkMatterDensity);
+                (1.0f / (1.0f + pair.distance)) * pair.darkMatterDensity * (0.5f + 0.5f * cosf(wavePhase_ + pair.dimension))
+            );
             if (interactionStrength < 0.01f) interactionStrength = 0.5f;
 
-            float offset = static_cast<float>(pair.distance) * 0.5f * (1.0f + static_cast<float>(pair.darkMatterDensity) * 0.2f);
-            glm::vec3 offsetPos = glm::vec3(
-                offset * sinf(wavePhase_ + pair.dimension) * zoomFactor,
-                offset * cosf(wavePhase_ + pair.dimension) * zoomFactor,
-                offset * sinf(wavePhase_ + pair.dimension * 2.0f) * zoomFactor
+            float orbitRadius = 1.5f + static_cast<float>(pair.distance) * 0.5f * (1.0f + static_cast<float>(pair.darkMatterDensity) * 0.3f);
+            float angle = wavePhase_ * 1.2f + pair.dimension * 1.5f;
+            glm::vec3 orbitPos = glm::vec3(
+                cosf(angle) * orbitRadius * zoomFactor,
+                sinf(angle) * orbitRadius * zoomFactor,
+                (angle * 0.2f + pair.dimension * 0.5f) * zoomFactor
             );
-            glm::mat4 interactionModel = glm::translate(glm::mat4(1.0f), offsetPos);
-            interactionModel = glm::scale(interactionModel, glm::vec3(25.0f * zoomFactor));
+            glm::mat4 interactionModel = glm::translate(glm::mat4(1.0f), orbitPos);
+            interactionModel = glm::scale(interactionModel, glm::vec3(0.25f * zoomFactor * (1.0f + 0.2f * sinf(wavePhase_))));
 
-            glm::vec3 baseColor = glm::vec3(1.0f, 1.0f, 1.0f); // White base for interactions
+            glm::vec3 baseColor = glm::vec3(
+                0.4f + 0.2f * sinf(wavePhase_ + pair.dimension),
+                0.3f + 0.2f * cosf(wavePhase_ * 0.8f + pair.dimension),
+                0.6f + 0.3f * sinf(wavePhase_ * 1.2f + pair.dimension)
+            );
             PushConstants pushConstants = {
                 interactionModel,
                 view,
                 proj,
                 baseColor,
-                interactionStrength * (0.7f + 0.3f * cosf(wavePhase_)),
+                interactionStrength * (0.8f + 0.4f * cosf(wavePhase_ * 1.2f)),
                 4.0f,
                 wavePhase_,
                 cycleProgress,
                 static_cast<float>(pair.darkMatterDensity),
-                static_cast<float>(computeDarkEnergy(pair.distance))
+                0.5f // Default value since computeDarkEnergy is inaccessible
             };
             vkCmdPushConstants(commandBuffers_[imageIndex], pipelineLayout_,
                               VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
                               0, sizeof(PushConstants), &pushConstants);
             vkCmdDrawIndexed(commandBuffers_[imageIndex], static_cast<uint32_t>(sphereIndices_.size()), 1, 0, 0, 0);
+
+            std::cerr << "Mode4 Interaction[D=" << pair.dimension << "]: strength=" << interactionStrength
+                      << ", orbitRadius=" << orbitRadius << ", pos=("
+                      << orbitPos.x << ", " << orbitPos.y << ", " << orbitPos.z << ")\n";
         }
     }
 }

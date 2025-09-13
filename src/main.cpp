@@ -4,7 +4,7 @@
 
 int main() {
     try {
-        DimensionalNavigator navigator("Dimensional Navigator", 1800, 1180, "arial.ttf", 24);
+        DimensionalNavigator navigator("Dimensional Navigator", 1600, 1000, "arial.ttf", 24);
         navigator.run();
     } catch (const std::exception& e) {
         std::time_t now = std::time(nullptr);
