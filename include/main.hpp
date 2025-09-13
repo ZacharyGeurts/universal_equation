@@ -299,7 +299,7 @@ private:
     }
 
     void initializeCalculator() {
-        ue_ = UniversalEquation(9, 1, 1.0, 0.5, 0.5, 0.5, 1.5, 2.0, 0.27, 0.68, 5.0, 0.2, false);
+        ue_ = UniversalEquation(9, 1, 1.0, 0.5, 0.5, 0.5, 1.5, 2.0, 0.27, 0.68, 5.0, 0.2, true); // Enable debug
         updateCache();
     }
 
@@ -310,6 +310,9 @@ private:
             ue_.setCurrentDimension(d);
             auto result = ue_.compute();
             cache_.push_back({d, result.observable, result.potential, result.darkMatter, result.darkEnergy});
+            if (ue_.getDebug()) {
+                std::cerr << "Cache[D=" << d << "]: " << result.toString() << "\n";
+            }
         }
     }
 
@@ -342,7 +345,7 @@ private:
     }
 
     void renderMode1(uint32_t imageIndex) {
-        VkBuffer vertexBuffers[] = {quadVertexBuffer_}; // Use quad for 1D
+        VkBuffer vertexBuffers[] = {quadVertexBuffer_};
         VkDeviceSize offsets[] = {0};
         vkCmdBindVertexBuffers(commandBuffers_[imageIndex], 0, 1, vertexBuffers, offsets);
         vkCmdBindIndexBuffer(commandBuffers_[imageIndex], quadIndexBuffer_, 0, VK_INDEX_TYPE_UINT32);
@@ -357,21 +360,31 @@ private:
 
         float cycleProgress = std::fmod(wavePhase_ / (2.0f * kMaxRenderedDimensions), 1.0f);
 
+        if (cache_.size() < kMaxRenderedDimensions) {
+            std::cerr << "Warning: Cache size " << cache_.size() << " < " << kMaxRenderedDimensions << "\n";
+            return;
+        }
+
         for (size_t i = 0; i < kMaxRenderedDimensions; ++i) {
             if (i > 0) continue;
+            if (cache_[i].dimension != 1) {
+                std::cerr << "Warning: Invalid cache for dimension 1\n";
+                continue;
+            }
 
-            float emphasis = 3.0f;
             glm::mat4 model = glm::mat4(1.0f);
             model = glm::translate(model, glm::vec3(0.0f, 0.0f, 0.0f));
             model = glm::scale(model, glm::vec3(100.0f * zoomFactor, 100.0f * zoomFactor, 0.01f));
             model = glm::rotate(model, wavePhase_ * 0.1f, glm::vec3(0.0f, 1.0f, 0.0f));
 
             float dimValue = 1.0f;
+            float value = static_cast<float>(cache_[i].observable * (0.8f + 0.2f * cosf(wavePhase_)));
+            if (value < 0.01f) value = 0.5f;
             PushConstants pushConstants = {
                 model,
                 view,
                 proj,
-                static_cast<float>(cache_[i].observable * (0.8f + 0.2f * cosf(wavePhase_))),
+                value,
                 dimValue,
                 wavePhase_,
                 cycleProgress,
@@ -386,17 +399,38 @@ private:
 
         ue_.setCurrentDimension(1);
         auto pairs = ue_.getInteractions();
-        for (const auto& pair : pairs) {
-            if (pair.dimension > 1) continue;
+        if (pairs.empty()) {
+            std::cerr << "Warning: No interactions for dimension 1\n";
+            glm::mat4 interactionModel = glm::mat4(1.0f);
+            interactionModel = glm::translate(interactionModel, glm::vec3(0.0f, 0.0f, 0.0f));
+            interactionModel = glm::scale(interactionModel, glm::vec3(50.0f * zoomFactor, 50.0f * zoomFactor, 0.01f));
+            PushConstants pushConstants = {
+                interactionModel,
+                view,
+                proj,
+                0.5f,
+                1.0f,
+                wavePhase_,
+                cycleProgress,
+                0.5f,
+                0.5f
+            };
+            vkCmdPushConstants(commandBuffers_[imageIndex], pipelineLayout_,
+                              VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                              0, sizeof(PushConstants), &pushConstants);
+            vkCmdDrawIndexed(commandBuffers_[imageIndex], static_cast<uint32_t>(quadIndices_.size()), 1, 0, 0, 0);
+        } else {
+            for (const auto& pair : pairs) {
+                if (pair.dimension > 1) continue;
 
-            float interactionStrength = static_cast<float>(
-                computeInteraction(pair.dimension, pair.distance) *
-                std::exp(-ue_.getAlpha() * pair.distance) *
-                computePermeation(pair.dimension) *
-                pair.darkMatterDensity);
+                float interactionStrength = static_cast<float>(
+                    computeInteraction(pair.dimension, pair.distance) *
+                    std::exp(-ue_.getAlpha() * pair.distance) *
+                    computePermeation(pair.dimension) *
+                    pair.darkMatterDensity);
+                if (interactionStrength < 0.01f) interactionStrength = 0.5f;
 
-            if (interactionStrength > 0.01f) {
-                float offset = pair.distance * 0.5f * (1.0f + static_cast<float>(pair.darkMatterDensity) * 0.2f);
+                float offset = static_cast<float>(pair.distance) * 0.5f * (1.0f + static_cast<float>(pair.darkMatterDensity) * 0.2f);
                 glm::vec3 offsetPos = glm::vec3(0.0f, offset * sinf(wavePhase_ + pair.dimension), offset * cosf(wavePhase_ + pair.dimension));
                 glm::mat4 interactionModel = glm::translate(glm::mat4(1.0f), offsetPos);
                 interactionModel = glm::scale(interactionModel, glm::vec3(50.0f * zoomFactor, 50.0f * zoomFactor, 0.01f));
@@ -420,88 +454,149 @@ private:
         }
     }
 
-void renderMode2(uint32_t imageIndex) {
-    VkBuffer vertexBuffers[] = {vertexBuffer_};
-    VkDeviceSize offsets[] = {0};
-    vkCmdBindVertexBuffers(commandBuffers_[imageIndex], 0, 1, vertexBuffers, offsets);
-    vkCmdBindIndexBuffer(commandBuffers_[imageIndex], indexBuffer_, 0, VK_INDEX_TYPE_UINT32);
-
-    float zoomFactor = zoomLevel_;
-    glm::mat4 proj = glm::perspective(glm::radians(45.0f), (float)width_ / height_, 0.1f, 1000.0f); // Extended far plane
-    glm::mat4 view = glm::lookAt(
-        glm::vec3(0.0f, 0.0f, 10.0f * zoomFactor), // Zoom-adjusted camera
-        glm::vec3(0.0f, 0.0f, 0.0f),
-        glm::vec3(0.0f, 1.0f, 0.0f)
-    );
-
-    constexpr float baseRadius = 0.5f;
-    float cycleProgress = std::fmod(wavePhase_ / (2.0f * kMaxRenderedDimensions), 1.0f);
-
-    // Validate cache
-    if (cache_.size() < kMaxRenderedDimensions) {
-        std::cerr << "Warning: Cache size " << cache_.size() << " is less than kMaxRenderedDimensions " << kMaxRenderedDimensions << "\n";
-        return;
-    }
-
-    for (size_t i = 0; i < kMaxRenderedDimensions; ++i) {
-        // Ensure cache data is valid
-        if (cache_[i].dimension != static_cast<int>(i + 1)) {
-            std::cerr << "Warning: Invalid cache for dimension " << i + 1 << "\n";
-            continue;
-        }
-
-        float emphasis = (i == 1) ? 2.0f : 0.5f;
-        float radius = baseRadius * emphasis * (1.0f + static_cast<float>(cache_[i].observable) * 0.2f) *
-                       (1.0f + 0.1f * sinf(wavePhase_ + i) * (1.0f + static_cast<float>(cache_[i].darkMatter) * 0.5f));
-        radius *= zoomFactor; // Apply zoom to radius
-        if (radius < 0.01f) radius = 0.1f * zoomFactor; // Ensure visibility
-
-        glm::mat4 model = glm::mat4(1.0f);
-        float angle = wavePhase_ + (i + 1) * 2.0f * glm::pi<float>() / kMaxRenderedDimensions;
-        float spacing = 1.5f * (1.0f + static_cast<float>(cache_[i].darkEnergy) * 0.5f);
-        float x = cosf(angle) * spacing;
-        float y = sinf(angle) * spacing;
-        float z = -static_cast<float>(i) * 0.5f;
-        if (i == 1) {
-            model = glm::translate(model, glm::vec3(x * 1.5f * zoomFactor, y * 1.5f * zoomFactor, z));
-            model = glm::scale(model, glm::vec3(radius));
-        } else if (i == 0) {
-            model = glm::translate(model, glm::vec3(0.0f, 0.0f, 0.0f));
-            model = glm::scale(model, glm::vec3(radius));
-        } else {
-            model = glm::translate(model, glm::vec3(x * zoomFactor, y * zoomFactor, z));
-            model = glm::scale(model, glm::vec3(radius));
-        }
-
-        float dimValue = static_cast<float>(i + 1);
-        float value = static_cast<float>(cache_[i].observable);
-        if (value < 0.01f) value = 0.5f; // Ensure visible shader output
-        PushConstants pushConstants = {
-            model,
-            view,
-            proj,
-            value,
-            dimValue,
-            wavePhase_,
-            cycleProgress,
-            static_cast<float>(cache_[i].darkMatter),
-            static_cast<float>(cache_[i].darkEnergy)
-        };
-        vkCmdPushConstants(commandBuffers_[imageIndex], pipelineLayout_,
-                          VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-                          0, sizeof(PushConstants), &pushConstants);
-        vkCmdDrawIndexed(commandBuffers_[imageIndex], static_cast<uint32_t>(sphereIndices_.size()), 1, 0, 0, 0);
-    }
-}
-
-    void renderMode3(uint32_t imageIndex) {
-        VkBuffer vertexBuffers[] = {vertexBuffer_}; // Use sphere for 3D
+    void renderMode2(uint32_t imageIndex) {
+        VkBuffer vertexBuffers[] = {vertexBuffer_};
         VkDeviceSize offsets[] = {0};
         vkCmdBindVertexBuffers(commandBuffers_[imageIndex], 0, 1, vertexBuffers, offsets);
         vkCmdBindIndexBuffer(commandBuffers_[imageIndex], indexBuffer_, 0, VK_INDEX_TYPE_UINT32);
 
         float zoomFactor = zoomLevel_;
-        glm::mat4 proj = glm::perspective(glm::radians(45.0f), (float)width_ / height_, 0.1f, 100.0f);
+        glm::mat4 proj = glm::perspective(glm::radians(45.0f), (float)width_ / height_, 0.1f, 1000.0f);
+        glm::mat4 view = glm::lookAt(
+            glm::vec3(0.0f, 0.0f, 10.0f * zoomFactor),
+            glm::vec3(0.0f, 0.0f, 0.0f),
+            glm::vec3(0.0f, 1.0f, 0.0f)
+        );
+
+        constexpr float baseRadius = 0.5f;
+        float cycleProgress = std::fmod(wavePhase_ / (2.0f * kMaxRenderedDimensions), 1.0f);
+
+        if (cache_.size() < kMaxRenderedDimensions) {
+            std::cerr << "Warning: Cache size " << cache_.size() << " < " << kMaxRenderedDimensions << "\n";
+            return;
+        }
+
+        for (size_t i = 0; i < kMaxRenderedDimensions; ++i) {
+            if (cache_[i].dimension != static_cast<int>(i + 1)) {
+                std::cerr << "Warning: Invalid cache for dimension " << i + 1 << "\n";
+                continue;
+            }
+
+            float emphasis = (i == 1) ? 2.0f : 0.5f;
+            float radius = baseRadius * emphasis * (1.0f + static_cast<float>(cache_[i].observable) * 0.2f) *
+                           (1.0f + 0.1f * sinf(wavePhase_ + i) * (1.0f + static_cast<float>(cache_[i].darkMatter) * 0.5f));
+            radius *= zoomFactor;
+            if (radius < 0.01f) radius = 0.1f * zoomFactor;
+
+            glm::mat4 model = glm::mat4(1.0f);
+            float angle = wavePhase_ + (i + 1) * 2.0f * glm::pi<float>() / kMaxRenderedDimensions;
+            float spacing = 1.5f * (1.0f + static_cast<float>(cache_[i].darkEnergy) * 0.5f);
+            float x = cosf(angle) * spacing;
+            float y = sinf(angle) * spacing;
+            float z = -static_cast<float>(i) * 0.5f;
+            if (i == 1) {
+                model = glm::translate(model, glm::vec3(x * 1.5f * zoomFactor, y * 1.5f * zoomFactor, z));
+                model = glm::scale(model, glm::vec3(radius));
+            } else if (i == 0) {
+                model = glm::translate(model, glm::vec3(0.0f, 0.0f, 0.0f));
+                model = glm::scale(model, glm::vec3(radius));
+            } else {
+                model = glm::translate(model, glm::vec3(x * zoomFactor, y * zoomFactor, z));
+                model = glm::scale(model, glm::vec3(radius));
+            }
+
+            float dimValue = static_cast<float>(i + 1);
+            float value = static_cast<float>(cache_[i].observable);
+            if (value < 0.01f) value = 0.5f;
+            PushConstants pushConstants = {
+                model,
+                view,
+                proj,
+                value,
+                dimValue,
+                wavePhase_,
+                cycleProgress,
+                static_cast<float>(cache_[i].darkMatter),
+                static_cast<float>(cache_[i].darkEnergy)
+            };
+            vkCmdPushConstants(commandBuffers_[imageIndex], pipelineLayout_,
+                              VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                              0, sizeof(PushConstants), &pushConstants);
+            vkCmdDrawIndexed(commandBuffers_[imageIndex], static_cast<uint32_t>(sphereIndices_.size()), 1, 0, 0, 0);
+            std::cerr << "Mode2[D=" << i + 1 << "]: radius=" << radius << ", value=" << value
+                      << ", pos=(" << x << ", " << y << ", " << z << ")\n";
+        }
+
+        // Optional: Add interactions for enhanced visibility (uncomment if desired)
+        ///*
+        ue_.setCurrentDimension(2);
+        auto pairs = ue_.getInteractions();
+        if (pairs.empty()) {
+            std::cerr << "Warning: No interactions for dimension 2\n";
+            glm::mat4 interactionModel = glm::mat4(1.0f);
+            interactionModel = glm::translate(interactionModel, glm::vec3(0.0f, 0.0f, 0.0f));
+            interactionModel = glm::scale(interactionModel, glm::vec3(0.5f * zoomFactor));
+            PushConstants pushConstants = {
+                interactionModel,
+                view,
+                proj,
+                0.5f,
+                2.0f,
+                wavePhase_,
+                cycleProgress,
+                0.5f,
+                0.5f
+            };
+            vkCmdPushConstants(commandBuffers_[imageIndex], pipelineLayout_,
+                              VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                              0, sizeof(PushConstants), &pushConstants);
+            vkCmdDrawIndexed(commandBuffers_[imageIndex], static_cast<uint32_t>(sphereIndices_.size()), 1, 0, 0, 0);
+        } else {
+            for (const auto& pair : pairs) {
+                if (pair.dimension != 2) continue;
+
+                float interactionStrength = static_cast<float>(
+                    computeInteraction(pair.dimension, pair.distance) *
+                    std::exp(-ue_.getAlpha() * pair.distance) *
+                    computePermeation(pair.dimension) *
+                    pair.darkMatterDensity);
+                if (interactionStrength < 0.01f) interactionStrength = 0.5f;
+
+                float offset = static_cast<float>(pair.distance) * 0.5f * (1.0f + static_cast<float>(pair.darkMatterDensity) * 0.2f);
+                glm::vec3 offsetPos = glm::vec3(offset * sinf(wavePhase_ + pair.dimension) * zoomFactor,
+                                                offset * cosf(wavePhase_ + pair.dimension) * zoomFactor,
+                                                0.0f);
+                glm::mat4 interactionModel = glm::translate(glm::mat4(1.0f), offsetPos);
+                interactionModel = glm::scale(interactionModel, glm::vec3(0.5f * zoomFactor));
+
+                PushConstants pushConstants = {
+                    interactionModel,
+                    view,
+                    proj,
+                    interactionStrength * (0.7f + 0.3f * cosf(wavePhase_)),
+                    2.0f,
+                    wavePhase_,
+                    cycleProgress,
+                    static_cast<float>(pair.darkMatterDensity),
+                    static_cast<float>(computeDarkEnergy(pair.distance))
+                };
+                vkCmdPushConstants(commandBuffers_[imageIndex], pipelineLayout_,
+                                  VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                                  0, sizeof(PushConstants), &pushConstants);
+                vkCmdDrawIndexed(commandBuffers_[imageIndex], static_cast<uint32_t>(sphereIndices_.size()), 1, 0, 0, 0);
+            }
+        }
+        //*/
+    }
+
+    void renderMode3(uint32_t imageIndex) {
+        VkBuffer vertexBuffers[] = {vertexBuffer_};
+        VkDeviceSize offsets[] = {0};
+        vkCmdBindVertexBuffers(commandBuffers_[imageIndex], 0, 1, vertexBuffers, offsets);
+        vkCmdBindIndexBuffer(commandBuffers_[imageIndex], indexBuffer_, 0, VK_INDEX_TYPE_UINT32);
+
+        float zoomFactor = zoomLevel_;
+        glm::mat4 proj = glm::perspective(glm::radians(45.0f), (float)width_ / height_, 0.1f, 1000.0f);
         glm::mat4 view = glm::lookAt(
             glm::vec3(10.0f * zoomFactor, 10.0f * zoomFactor, 10.0f * zoomFactor),
             glm::vec3(0.0f, 0.0f, 0.0f),
@@ -510,21 +605,31 @@ void renderMode2(uint32_t imageIndex) {
 
         float cycleProgress = std::fmod(wavePhase_ / (2.0f * kMaxRenderedDimensions), 1.0f);
 
+        if (cache_.size() < kMaxRenderedDimensions) {
+            std::cerr << "Warning: Cache size " << cache_.size() << " < " << kMaxRenderedDimensions << "\n";
+            return;
+        }
+
         for (size_t i = 0; i < kMaxRenderedDimensions; ++i) {
             if (i != 2) continue;
+            if (cache_[i].dimension != 3) {
+                std::cerr << "Warning: Invalid cache for dimension 3\n";
+                continue;
+            }
 
-            float emphasis = 2.5f;
             glm::mat4 model = glm::mat4(1.0f);
             model = glm::translate(model, glm::vec3(0.0f, 0.0f, 0.0f));
             model = glm::scale(model, glm::vec3(50.0f * zoomFactor, 50.0f * zoomFactor, 50.0f * zoomFactor));
             model = glm::rotate(model, wavePhase_ * 0.1f, glm::vec3(1.0f, 1.0f, 1.0f));
 
             float dimValue = 3.0f;
+            float value = static_cast<float>(cache_[i].observable * (0.8f + 0.2f * cosf(wavePhase_)));
+            if (value < 0.01f) value = 0.5f;
             PushConstants pushConstants = {
                 model,
                 view,
                 proj,
-                static_cast<float>(cache_[i].observable * (0.8f + 0.2f * cosf(wavePhase_))),
+                value,
                 dimValue,
                 wavePhase_,
                 cycleProgress,
@@ -539,25 +644,46 @@ void renderMode2(uint32_t imageIndex) {
 
         ue_.setCurrentDimension(3);
         auto pairs = ue_.getInteractions();
-        for (const auto& pair : pairs) {
-            if (pair.dimension != 3) continue;
+        if (pairs.empty()) {
+            std::cerr << "Warning: No interactions for dimension 3\n";
+            glm::mat4 interactionModel = glm::mat4(1.0f);
+            interactionModel = glm::translate(interactionModel, glm::vec3(0.0f, 0.0f, 0.0f));
+            interactionModel = glm::scale(interactionModel, glm::vec3(25.0f * zoomFactor));
+            PushConstants pushConstants = {
+                interactionModel,
+                view,
+                proj,
+                0.5f,
+                3.0f,
+                wavePhase_,
+                cycleProgress,
+                0.5f,
+                0.5f
+            };
+            vkCmdPushConstants(commandBuffers_[imageIndex], pipelineLayout_,
+                              VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                              0, sizeof(PushConstants), &pushConstants);
+            vkCmdDrawIndexed(commandBuffers_[imageIndex], static_cast<uint32_t>(sphereIndices_.size()), 1, 0, 0, 0);
+        } else {
+            for (const auto& pair : pairs) {
+                if (pair.dimension != 3) continue;
 
-            float interactionStrength = static_cast<float>(
-                computeInteraction(pair.dimension, pair.distance) *
-                std::exp(-ue_.getAlpha() * pair.distance) *
-                computePermeation(pair.dimension) *
-                pair.darkMatterDensity);
+                float interactionStrength = static_cast<float>(
+                    computeInteraction(pair.dimension, pair.distance) *
+                    std::exp(-ue_.getAlpha() * pair.distance) *
+                    computePermeation(pair.dimension) *
+                    pair.darkMatterDensity);
+                if (interactionStrength < 0.01f) interactionStrength = 0.5f;
 
-            if (interactionStrength > 0.01f) {
                 float angle = wavePhase_ + pair.dimension * 2.0f;
-                float orbitRadius = 1.5f + pair.distance * 0.5f;
+                float orbitRadius = 1.5f + static_cast<float>(pair.distance) * 0.5f;
                 glm::vec3 orbitPos = glm::vec3(
-                    cosf(angle) * orbitRadius * (1.0f + static_cast<float>(pair.darkMatterDensity) * 0.2f),
-                    sinf(angle) * orbitRadius * 0.5f,
+                    cosf(angle) * orbitRadius * (1.0f + static_cast<float>(pair.darkMatterDensity) * 0.2f) * zoomFactor,
+                    sinf(angle) * orbitRadius * 0.5f * zoomFactor,
                     0.0f
                 );
                 glm::mat4 interactionModel = glm::translate(glm::mat4(1.0f), orbitPos);
-                interactionModel = glm::scale(interactionModel, glm::vec3(25.0f * zoomFactor, 25.0f * zoomFactor, 25.0f * zoomFactor));
+                interactionModel = glm::scale(interactionModel, glm::vec3(25.0f * zoomFactor));
 
                 PushConstants pushConstants = {
                     interactionModel,
@@ -579,13 +705,13 @@ void renderMode2(uint32_t imageIndex) {
     }
 
     void renderMode4(uint32_t imageIndex) {
-        VkBuffer vertexBuffers[] = {vertexBuffer_}; // Use sphere for 4D
+        VkBuffer vertexBuffers[] = {vertexBuffer_};
         VkDeviceSize offsets[] = {0};
         vkCmdBindVertexBuffers(commandBuffers_[imageIndex], 0, 1, vertexBuffers, offsets);
         vkCmdBindIndexBuffer(commandBuffers_[imageIndex], indexBuffer_, 0, VK_INDEX_TYPE_UINT32);
 
         float zoomFactor = zoomLevel_;
-        glm::mat4 proj = glm::perspective(glm::radians(45.0f), (float)width_ / height_, 0.1f, 100.0f);
+        glm::mat4 proj = glm::perspective(glm::radians(45.0f), (float)width_ / height_, 0.1f, 1000.0f);
         glm::mat4 view = glm::lookAt(
             glm::vec3(10.0f * zoomFactor, 10.0f * zoomFactor, 10.0f * zoomFactor),
             glm::vec3(0.0f, 0.0f, 0.0f),
@@ -594,8 +720,17 @@ void renderMode2(uint32_t imageIndex) {
 
         float cycleProgress = std::fmod(wavePhase_ / (2.0f * kMaxRenderedDimensions), 1.0f);
 
+        if (cache_.size() < kMaxRenderedDimensions) {
+            std::cerr << "Warning: Cache size " << cache_.size() << " < " << kMaxRenderedDimensions << "\n";
+            return;
+        }
+
         for (size_t i = 0; i < kMaxRenderedDimensions; ++i) {
             if (i != 3) continue;
+            if (cache_[i].dimension != 4) {
+                std::cerr << "Warning: Invalid cache for dimension 4\n";
+                continue;
+            }
 
             float alpha = 2.0f;
             float omega = 0.2f;
@@ -632,25 +767,45 @@ void renderMode2(uint32_t imageIndex) {
 
         ue_.setCurrentDimension(4);
         auto pairs = ue_.getInteractions();
-        for (const auto& pair : pairs) {
-            if (pair.dimension != 4) continue;
+        if (pairs.empty()) {
+            std::cerr << "Warning: No interactions for dimension 4\n";
+            glm::mat4 interactionModel = glm::mat4(1.0f);
+            interactionModel = glm::translate(interactionModel, glm::vec3(0.0f, 0.0f, 0.0f));
+            interactionModel = glm::scale(interactionModel, glm::vec3(25.0f * zoomFactor));
+            PushConstants pushConstants = {
+                interactionModel,
+                view,
+                proj,
+                0.5f,
+                4.0f,
+                wavePhase_,
+                cycleProgress,
+                0.5f,
+                0.5f
+            };
+            vkCmdPushConstants(commandBuffers_[imageIndex], pipelineLayout_,
+                              VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                              0, sizeof(PushConstants), &pushConstants);
+            vkCmdDrawIndexed(commandBuffers_[imageIndex], static_cast<uint32_t>(sphereIndices_.size()), 1, 0, 0, 0);
+        } else {
+            for (const auto& pair : pairs) {
+                if (pair.dimension != 4) continue;
 
-            float interactionStrength = static_cast<float>(
-                computeInteraction(pair.dimension, pair.distance) *
-                std::exp(-ue_.getAlpha() * pair.distance) *
-                computePermeation(pair.dimension) *
-                pair.darkMatterDensity);
+                float interactionStrength = static_cast<float>(
+                    computeInteraction(pair.dimension, pair.distance) *
+                    std::exp(-ue_.getAlpha() * pair.distance) *
+                    computePermeation(pair.dimension) *
+                    pair.darkMatterDensity);
+                if (interactionStrength < 0.01f) interactionStrength = 0.5f;
 
-            if (interactionStrength > 0.01f) {
-                float offset = pair.distance * 0.5f * (1.0f + static_cast<float>(pair.darkMatterDensity) * 0.2f);
+                float offset = static_cast<float>(pair.distance) * 0.5f * (1.0f + static_cast<float>(pair.darkMatterDensity) * 0.2f);
                 glm::vec3 offsetPos = glm::vec3(
-                    offset * sinf(wavePhase_ + pair.dimension),
-                    offset * cosf(wavePhase_ + pair.dimension),
-                    offset * sinf(wavePhase_ + pair.dimension * 2.0f)
+                    offset * sinf(wavePhase_ + pair.dimension) * zoomFactor,
+                    offset * cosf(wavePhase_ + pair.dimension) * zoomFactor,
+                    offset * sinf(wavePhase_ + pair.dimension * 2.0f) * zoomFactor
                 );
                 glm::mat4 interactionModel = glm::translate(glm::mat4(1.0f), offsetPos);
                 interactionModel = glm::scale(interactionModel, glm::vec3(25.0f * zoomFactor));
-                interactionModel = glm::scale(interactionModel, glm::vec3(1.0f + 0.3f * sinf(wavePhase_ * 0.7f)));
 
                 PushConstants pushConstants = {
                     interactionModel,
