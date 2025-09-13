@@ -31,6 +31,8 @@ The `UniversalEquation` models the universe as:
 - **1D ("God")**: An infinite, wave-like base permeating all dimensions, acting as a universal "fountain" of influence, akin to an omnipresent radio wave.
 - **2D**: The boundary or "skin" of a cosmic bubble, enclosing higher dimensions and strongly interacting with 1D and 3D.
 - **3D to 9D**: Nested dimensions, each permeating the one below (e.g., 4D influences 3D, 3D influences 2D), with interactions decaying exponentially.
+- **4D**: 3D's Clock, piston, heartbeat.
+- **5D**: Heaven1, Love, Weak force on 3D, strong on 4D.
 - **Dark Matter**: Stabilizes interactions, amplifying pulsing effects, especially in higher dimensions.
 - **Dark Energy**: Drives dimensional expansion, increasing effective distances between dimensions.
 
