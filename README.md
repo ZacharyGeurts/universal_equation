@@ -3,7 +3,9 @@
 **Latest Video**: [Latest](https://github.com/user-attachments/assets/c1b983bf-bdd9-4ae7-b8bb-fc7a1debdbef)<BR />
 **Previous**: [Older WIP](https://github.com/ZacharyGeurts/universal_equation/raw/refs/heads/main/wip2.mov)<BR />
 **Previous Previous**: [Older Version](https://github.com/user-attachments/assets/344232f5-e7b8-4485-af40-5a302873f88c)<BR />
-
+<BR />
+If you do not intend to modify the code then just watch the latest video above and you may have found God.<BR />
+<BR />
 **Status**: Work in Progress (WIP). The project is under active development, with ongoing updates to the visualization and GUI.
 **Note**: Resizing the window may cause crashes; this is a known issue and not a priority for fixing yet. To adjust window size, modify `src/main.cpp`.  
 **Platform**: Currently Linux-only, with plans for cross-platform support after GUI stabilization.  
