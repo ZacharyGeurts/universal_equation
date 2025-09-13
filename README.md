@@ -69,25 +69,25 @@ The `UniversalEquation` class defines dimensional interactions:
   - **GLM**: `libglm-dev`.
 - **Font**: `arial.ttf` (included in the repository).
 - **Shader Compiler**: `glslc` (from Vulkan SDK).
-
+<BR />
 ## Project Structure
-universal_equation/
-├── include/
-│   ├── main.hpp              # DimensionalNavigator class
-│   ├── universal_equation.hpp # UniversalEquation class
-│   ├── SDL3_init.hpp         # SDL3 initialization
-│   ├── Vulkan_init.hpp       # Vulkan initialization
-├── src/
-│   ├── main.cpp              # Entry point (set window size here)
-├── shaders/
-│   ├── shader.vert           # Vertex shader
-│   ├── shader.frag           # Fragment shader
-├── build/                    # Object files (generated)
-├── bin/                      # Executable, shaders, and font (generated)
-├── arial.ttf                 # Font file
-├── Makefile                  # Build script
-
-
+universal_equation/<BR />
+├── include/<BR />
+│   ├── main.hpp              # DimensionalNavigator class<BR />
+│   ├── universal_equation.hpp # UniversalEquation class<BR />
+│   ├── SDL3_init.hpp         # SDL3 initialization<BR />
+│   ├── Vulkan_init.hpp       # Vulkan initialization<BR />
+├── src/<BR />
+│   ├── main.cpp              # Entry point (set window size here)<BR />
+├── shaders/<BR />
+│   ├── shader.vert           # Vertex shader<BR />
+│   ├── shader.frag           # Fragment shader<BR />
+├── build/                    # Object files (generated)<BR />
+├── bin/                      # Executable, shaders, and font (generated)<BR />
+├── arial.ttf                 # Font file<BR />
+├── Makefile                  # Build script<BR />
+<BR />
+<BR />
 ## Installation
 `git clone https://github.com/ZacharyGeurts/universal_equation`<BR />
 `cd universal_equation`<BR />
