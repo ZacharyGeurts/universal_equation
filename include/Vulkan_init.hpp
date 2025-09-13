@@ -1,12 +1,12 @@
 #ifndef VULKAN_INIT_HPP
 #define VULKAN_INIT_HPP
 
-#include <vulkan/vulkan.h>
-#include <SDL3/SDL_vulkan.h>
+#include "vulkan/vulkan.h"
+#include "SDL3/SDL_vulkan.h"
 #include <vector>
 #include <stdexcept>
 #include <fstream>
-#include <glm/glm.hpp>
+#include "glm/glm.hpp"
 #include <iostream>
 #include <algorithm>
 #include <cstring>

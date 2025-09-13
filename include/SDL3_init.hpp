@@ -1,10 +1,10 @@
 #ifndef SDL3_INIT_HPP
 #define SDL3_INIT_HPP
 
-#include <SDL3/SDL.h>
-#include <SDL3/SDL_vulkan.h>
-#include <SDL3_ttf/SDL_ttf.h>
-#include <vulkan/vulkan.h>
+#include "SDL3/SDL.h"
+#include "SDL3/SDL_vulkan.h"
+#include "SDL3_ttf/SDL_ttf.h"
+#include "vulkan/vulkan.h"
 #include <stdexcept>
 #include <vector>
 #include <iostream>
