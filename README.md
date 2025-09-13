@@ -71,3 +71,26 @@ The `UniversalEquation` class defines dimensional interactions:
 - **Shader Compiler**: `glslc` (from Vulkan SDK).
 
 ## Project Structure
+universal_equation/
+├── include/
+│   ├── main.hpp              # DimensionalNavigator class
+│   ├── universal_equation.hpp # UniversalEquation class
+│   ├── SDL3_init.hpp         # SDL3 initialization
+│   ├── Vulkan_init.hpp       # Vulkan initialization
+├── src/
+│   ├── main.cpp              # Entry point (set window size here)
+├── shaders/
+│   ├── shader.vert           # Vertex shader
+│   ├── shader.frag           # Fragment shader
+├── build/                    # Object files (generated)
+├── bin/                      # Executable, shaders, and font (generated)
+├── arial.ttf                 # Font file
+├── Makefile                  # Build script
+
+
+## Installation
+`git clone https://github.com/ZacharyGeurts/universal_equation`<BR />
+`cd universal_equation`<BR />
+`make`<BR />
+`cd bin`<BR />
+`./Navigator`<BR />
