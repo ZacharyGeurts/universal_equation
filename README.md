@@ -1,7 +1,7 @@
 # Dimensional Navigator
 
-**Latest Video**: https://github.com/user-attachments/assets/c1b983bf-bdd9-4ae7-b8bb-fc7a1debdbef
-**Previous**: [Latest WIP](https://github.com/ZacharyGeurts/universal_equation/raw/refs/heads/main/wip2.mov)  
+**Latest Video**: [Latest](https://github.com/user-attachments/assets/c1b983bf-bdd9-4ae7-b8bb-fc7a1debdbef)
+**Previous**: [Older WIP](https://github.com/ZacharyGeurts/universal_equation/raw/refs/heads/main/wip2.mov)  
 **Previous Previous**: [Older Version](https://github.com/user-attachments/assets/344232f5-e7b8-4485-af40-5a302873f88c)
 
 **Status**: Work in Progress (WIP). The project is under active development, with ongoing updates to the visualization and GUI.  
