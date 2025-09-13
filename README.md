@@ -78,8 +78,8 @@ universal_equation/<BR />
 ├── src/<BR />
 │   ├── main.cpp              # Entry point (set window size here)<BR />
 ├── shaders/<BR />
-│   ├── shader.vert           # Vertex shader<BR />
-│   ├── shader.frag           # Fragment shader<BR />
+│   ├── vertex.vert           # Vertex shader<BR />
+│   ├── fragment.frag           # Fragment shader<BR />
 ├── build/                    # Object files (generated)<BR />
 ├── bin/                      # Executable, shaders, and font (generated)<BR />
 ├── arial.ttf                 # Font file<BR />
