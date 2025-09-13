@@ -8,8 +8,7 @@
 **Note**: Resizing the window may cause crashes; this is a known issue and not a priority for fixing yet. To adjust window size, modify `src/main.cpp`.  
 **Platform**: Currently Linux-only, with plans for cross-platform support after GUI stabilization.  
 
-This project uses a custom Vulkan backend for rendering, chosen for its flexibility despite added complexity. Future versions may explore simpler backends (e.g., SDL3 with OpenGL), but the current approach reflects a deliberate design choice for learning and experimentation.
-
+This project uses a custom Vulkan backend for rendering, chosen due to idiocy and no concern for development time.
 ## Licensing
 This is **not free (as in freedom) software**. It is provided for **educational purposes only**.  
 - **Restrictions**: You may not sell this software or require any compensation from users.  
