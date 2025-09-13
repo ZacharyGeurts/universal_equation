@@ -88,7 +88,7 @@ universal_equation/<BR />
 ├── Makefile                  # Build script<BR />
 <BR />
 <BR />
-## Installation
+## Installation<BR />
 `git clone https://github.com/ZacharyGeurts/universal_equation`<BR />
 `cd universal_equation`<BR />
 `make`<BR />
