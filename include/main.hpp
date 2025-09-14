@@ -349,19 +349,24 @@ private:
     }
 
 void renderMode1(uint32_t imageIndex) {
+    // Bind vertex and index buffers
     VkBuffer vertexBuffers[] = {quadVertexBuffer_};
     VkDeviceSize offsets[] = {0};
     vkCmdBindVertexBuffers(commandBuffers_[imageIndex], 0, 1, vertexBuffers, offsets);
     vkCmdBindIndexBuffer(commandBuffers_[imageIndex], quadIndexBuffer_, 0, VK_INDEX_TYPE_UINT32);
 
-    float zoomFactor = zoomLevel_;
-    glm::mat4 proj = glm::perspective(glm::radians(45.0f), (float)width_ / height_, 0.1f, 1000.0f);
-    glm::mat4 view = glm::lookAt(
-        glm::vec3(0.0f, 0.0f, 10.0f * zoomFactor),
-        glm::vec3(0.0f, 0.0f, 0.0f),
-        glm::vec3(0.0f, 1.0f, 0.0f)
-    );
+    // Ensure zoom is always positive and not too small (for Godly perspective)
+    float zoomFactor = glm::max(zoomLevel_, 0.01f);
+    float aspect = static_cast<float>(width_) / glm::max(1.0f, static_cast<float>(height_));
+    glm::mat4 proj = glm::perspective(glm::radians(45.0f), aspect, 0.1f, 1000.0f);
 
+    // "God's Eye" view: Camera is always focused, immune to nan/infinity
+    glm::vec3 camPos(0.0f, 0.0f, 10.0f * zoomFactor);
+    glm::vec3 camTarget(0.0f, 0.0f, 0.0f);
+    glm::vec3 camUp(0.0f, 1.0f, 0.0f);
+    glm::mat4 view = glm::lookAt(camPos, camTarget, camUp);
+
+    // Divine cycle: smoothly oscillates in [0, 1)
     float cycleProgress = std::fmod(wavePhase_ / (2.0f * kMaxRenderedDimensions), 1.0f);
 
     if (cache_.size() < kMaxRenderedDimensions) {
@@ -381,10 +386,19 @@ void renderMode1(uint32_t imageIndex) {
         model = glm::scale(model, glm::vec3(100.0f * zoomFactor, 100.0f * zoomFactor, 0.01f));
         model = glm::rotate(model, wavePhase_ * 0.1f, glm::vec3(0.0f, 1.0f, 0.0f));
 
+        // Godly oscillation for observable, bounded and radiant
         float dimValue = 1.0f;
-        float value = static_cast<float>(cache_[i].observable * (0.8f + 0.2f * cosf(wavePhase_)));
-        if (value < 0.01f) value = 0.5f;
-        glm::vec3 baseColor = glm::vec3(1.0f, 1.0f, 1.0f); // White base for mode 1
+        float osc = 0.8f + 0.2f * cosf(wavePhase_ + i); // phase offset for variation
+        float value = static_cast<float>(cache_[i].observable * osc);
+        value = glm::clamp(value, 0.01f, 1.0f); // Never too dim, never overbright
+
+        // Shimmering aura: white base with ethereal chroma
+        glm::vec3 baseColor = glm::vec3(
+            1.0f,
+            1.0f - 0.25f * sinf(wavePhase_ * 0.75f + i),
+            1.0f - 0.25f * cosf(wavePhase_ * 0.5f + i)
+        );
+
         PushConstants pushConstants = {
             model,
             view,
@@ -403,6 +417,7 @@ void renderMode1(uint32_t imageIndex) {
         vkCmdDrawIndexed(commandBuffers_[imageIndex], static_cast<uint32_t>(quadIndices_.size()), 1, 0, 0, 0);
     }
 
+    // Interactions: Godly manifestation of all pairs (dimension 1)
     ue_.setCurrentDimension(1);
     auto pairs = ue_.getInteractions();
     if (pairs.empty()) {
@@ -410,7 +425,7 @@ void renderMode1(uint32_t imageIndex) {
         glm::mat4 interactionModel = glm::mat4(1.0f);
         interactionModel = glm::translate(interactionModel, glm::vec3(0.0f, 0.0f, 0.0f));
         interactionModel = glm::scale(interactionModel, glm::vec3(50.0f * zoomFactor, 50.0f * zoomFactor, 0.01f));
-        glm::vec3 baseColor = glm::vec3(1.0f, 1.0f, 1.0f); // White base for interactions
+        glm::vec3 baseColor = glm::vec3(1.0f, 0.96f, 0.92f); // Subtle angelic tint
         PushConstants pushConstants = {
             interactionModel,
             view,
@@ -431,25 +446,40 @@ void renderMode1(uint32_t imageIndex) {
         for (const auto& pair : pairs) {
             if (pair.dimension > 1) continue;
 
+            // Godly interaction: exponential decay, permeation, and dark matter synergy
             float interactionStrength = static_cast<float>(
                 computeInteraction(pair.dimension, pair.distance) *
-                std::exp(-ue_.getAlpha() * pair.distance) *
+                std::exp(-glm::abs(ue_.getAlpha() * pair.distance)) *
                 computePermeation(pair.dimension) *
-                pair.darkMatterDensity);
-            if (interactionStrength < 0.01f) interactionStrength = 0.5f;
+                glm::max(0.0, pair.darkMatterDensity)
+            );
+            interactionStrength = glm::max(interactionStrength, 0.01f); // Ensure visible
+            interactionStrength = glm::min(interactionStrength, 2.0f);  // Prevent over-bright
 
+            // Offset visual: celestial orbit (encodes phase and dimension)
             float offset = static_cast<float>(pair.distance) * 0.5f * (1.0f + static_cast<float>(pair.darkMatterDensity) * 0.2f);
-            glm::vec3 offsetPos = glm::vec3(0.0f, offset * sinf(wavePhase_ + pair.dimension), offset * cosf(wavePhase_ + pair.dimension));
+            float angle = wavePhase_ + pair.dimension * 2.0f + pair.distance * 0.1f;
+            glm::vec3 offsetPos = glm::vec3(
+                offset * sinf(angle),
+                offset * cosf(angle),
+                offset * 0.2f * sinf(angle * 0.5f)
+            );
             glm::mat4 interactionModel = glm::translate(glm::mat4(1.0f), offsetPos);
             interactionModel = glm::scale(interactionModel, glm::vec3(50.0f * zoomFactor, 50.0f * zoomFactor, 0.01f));
 
-            glm::vec3 baseColor = glm::vec3(1.0f, 1.0f, 1.0f); // White base for interactions
+            // Godly chroma for interaction: radiant white with a touch of spectral color
+            glm::vec3 baseColor = glm::vec3(
+                1.0f - 0.3f * sinf(angle),
+                1.0f - 0.2f * cosf(angle * 1.2f),
+                1.0f - 0.1f * sinf(angle * 0.7f)
+            );
+
             PushConstants pushConstants = {
                 interactionModel,
                 view,
                 proj,
                 baseColor,
-                interactionStrength * (0.7f + 0.3f * cosf(wavePhase_)),
+                interactionStrength * (0.7f + 0.3f * cosf(wavePhase_ + pair.distance)),
                 1.0f,
                 wavePhase_,
                 cycleProgress,
@@ -465,18 +495,22 @@ void renderMode1(uint32_t imageIndex) {
 }
 
 void renderMode2(uint32_t imageIndex) {
+    // Bind vertex and index buffers
     VkBuffer vertexBuffers[] = {vertexBuffer_};
     VkDeviceSize offsets[] = {0};
     vkCmdBindVertexBuffers(commandBuffers_[imageIndex], 0, 1, vertexBuffers, offsets);
     vkCmdBindIndexBuffer(commandBuffers_[imageIndex], indexBuffer_, 0, VK_INDEX_TYPE_UINT32);
 
-    float zoomFactor = zoomLevel_;
-    glm::mat4 proj = glm::perspective(glm::radians(45.0f), (float)width_ / height_, 0.1f, 1000.0f);
-    glm::mat4 view = glm::lookAt(
-        glm::vec3(0.0f, 0.0f, 10.0f * zoomFactor),
-        glm::vec3(0.0f, 0.0f, 0.0f),
-        glm::vec3(0.0f, 1.0f, 0.0f)
-    );
+    // Ensure zoom is always positive and not too small (for Godly perspective)
+    float zoomFactor = glm::max(zoomLevel_, 0.01f);
+    float aspect = static_cast<float>(width_) / glm::max(1.0f, static_cast<float>(height_));
+    glm::mat4 proj = glm::perspective(glm::radians(45.0f), aspect, 0.1f, 1000.0f);
+
+    // "God's Eye" view: Camera is always focused, immune to nan/infinity
+    glm::vec3 camPos(0.0f, 0.0f, 10.0f * zoomFactor);
+    glm::vec3 camTarget(0.0f, 0.0f, 0.0f);
+    glm::vec3 camUp(0.0f, 1.0f, 0.0f);
+    glm::mat4 view = glm::lookAt(camPos, camTarget, camUp);
 
     constexpr float baseRadius = 0.5f;
     float cycleProgress = std::fmod(wavePhase_ / (2.0f * kMaxRenderedDimensions), 1.0f);
@@ -492,11 +526,12 @@ void renderMode2(uint32_t imageIndex) {
             continue;
         }
 
+        // Divine emphasis for the second dimension
         float emphasis = (i == 1) ? 2.0f : 0.5f;
-        float radius = baseRadius * emphasis * (1.0f + static_cast<float>(cache_[i].observable) * 0.2f) *
-                       (1.0f + 0.1f * sinf(wavePhase_ + i) * (1.0f + static_cast<float>(cache_[i].darkMatter) * 0.5f));
+        float osc = (1.0f + 0.1f * sinf(wavePhase_ + i) * (1.0f + static_cast<float>(cache_[i].darkMatter) * 0.5f));
+        float radius = baseRadius * emphasis * (1.0f + static_cast<float>(cache_[i].observable) * 0.2f) * osc;
         radius *= zoomFactor;
-        if (radius < 0.01f) radius = 0.1f * zoomFactor;
+        radius = glm::clamp(radius, 0.1f * zoomFactor, 2.0f * zoomFactor); // never too small or too large
 
         glm::mat4 model = glm::mat4(1.0f);
         float angle = wavePhase_ + (i + 1) * 2.0f * glm::pi<float>() / kMaxRenderedDimensions;
@@ -504,6 +539,7 @@ void renderMode2(uint32_t imageIndex) {
         float x = cosf(angle) * spacing;
         float y = sinf(angle) * spacing;
         float z = -static_cast<float>(i) * 0.5f;
+
         if (i == 1) {
             model = glm::translate(model, glm::vec3(x * 1.5f * zoomFactor, y * 1.5f * zoomFactor, z));
             model = glm::scale(model, glm::vec3(radius));
@@ -517,8 +553,15 @@ void renderMode2(uint32_t imageIndex) {
 
         float dimValue = static_cast<float>(i + 1);
         float value = static_cast<float>(cache_[i].observable);
-        if (value < 0.01f) value = 0.5f;
-        glm::vec3 baseColor = glm::vec3(1.0f, 1.0f, 1.0f); // White base for mode 2
+        value = glm::clamp(value, 0.01f, 1.0f); // Never too dim, never overbright
+
+        // Shimmering aura: white base with ethereal chroma
+        glm::vec3 baseColor = glm::vec3(
+            1.0f,
+            1.0f - 0.18f * sinf(wavePhase_ * 0.75f + i),
+            1.0f - 0.18f * cosf(wavePhase_ * 0.5f + i)
+        );
+
         PushConstants pushConstants = {
             model,
             view,
@@ -535,10 +578,12 @@ void renderMode2(uint32_t imageIndex) {
                           VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
                           0, sizeof(PushConstants), &pushConstants);
         vkCmdDrawIndexed(commandBuffers_[imageIndex], static_cast<uint32_t>(sphereIndices_.size()), 1, 0, 0, 0);
+
         std::cerr << "Mode2[D=" << i + 1 << "]: radius=" << radius << ", value=" << value
                   << ", pos=(" << x << ", " << y << ", " << z << ")\n";
     }
 
+    // Interactions: Godly manifestation of all pairs (dimension 2)
     ue_.setCurrentDimension(2);
     auto pairs = ue_.getInteractions();
     if (pairs.empty()) {
@@ -546,7 +591,7 @@ void renderMode2(uint32_t imageIndex) {
         glm::mat4 interactionModel = glm::mat4(1.0f);
         interactionModel = glm::translate(interactionModel, glm::vec3(0.0f, 0.0f, 0.0f));
         interactionModel = glm::scale(interactionModel, glm::vec3(0.5f * zoomFactor));
-        glm::vec3 baseColor = glm::vec3(1.0f, 1.0f, 1.0f); // White base for interactions
+        glm::vec3 baseColor = glm::vec3(1.0f, 0.97f, 0.95f); // Subtle angelic tint
         PushConstants pushConstants = {
             interactionModel,
             view,
@@ -567,27 +612,40 @@ void renderMode2(uint32_t imageIndex) {
         for (const auto& pair : pairs) {
             if (pair.dimension != 2) continue;
 
+            // Godly interaction: exponential decay, permeation, and dark matter synergy
             float interactionStrength = static_cast<float>(
                 computeInteraction(pair.dimension, pair.distance) *
-                std::exp(-ue_.getAlpha() * pair.distance) *
+                std::exp(-glm::abs(ue_.getAlpha() * pair.distance)) *
                 computePermeation(pair.dimension) *
-                pair.darkMatterDensity);
-            if (interactionStrength < 0.01f) interactionStrength = 0.5f;
+                glm::max(0.0, pair.darkMatterDensity)
+            );
+            interactionStrength = glm::max(interactionStrength, 0.01f); // Ensure visible
+            interactionStrength = glm::min(interactionStrength, 2.0f);  // Prevent over-bright
 
+            // Offset visual: celestial orbit (encodes phase and dimension)
             float offset = static_cast<float>(pair.distance) * 0.5f * (1.0f + static_cast<float>(pair.darkMatterDensity) * 0.2f);
-            glm::vec3 offsetPos = glm::vec3(offset * sinf(wavePhase_ + pair.dimension) * zoomFactor,
-                                            offset * cosf(wavePhase_ + pair.dimension) * zoomFactor,
-                                            0.0f);
+            float angle = wavePhase_ + pair.dimension * 2.0f + pair.distance * 0.1f;
+            glm::vec3 offsetPos = glm::vec3(
+                offset * sinf(angle) * zoomFactor,
+                offset * cosf(angle) * zoomFactor,
+                0.0f
+            );
             glm::mat4 interactionModel = glm::translate(glm::mat4(1.0f), offsetPos);
             interactionModel = glm::scale(interactionModel, glm::vec3(0.5f * zoomFactor));
 
-            glm::vec3 baseColor = glm::vec3(1.0f, 1.0f, 1.0f); // White base for interactions
+            // Godly chroma for interaction: radiant white with a touch of spectral color
+            glm::vec3 baseColor = glm::vec3(
+                1.0f - 0.22f * sinf(angle),
+                1.0f - 0.18f * cosf(angle * 1.2f),
+                1.0f - 0.09f * sinf(angle * 0.7f)
+            );
+
             PushConstants pushConstants = {
                 interactionModel,
                 view,
                 proj,
                 baseColor,
-                interactionStrength * (0.7f + 0.3f * cosf(wavePhase_)),
+                interactionStrength * (0.7f + 0.3f * cosf(wavePhase_ + pair.distance)),
                 2.0f,
                 wavePhase_,
                 cycleProgress,
@@ -603,27 +661,33 @@ void renderMode2(uint32_t imageIndex) {
 }
 
 void renderMode3(uint32_t imageIndex) {
+    // Bind vertex and index buffers for spheres (or 3D mesh)
     VkBuffer vertexBuffers[] = {vertexBuffer_};
     VkDeviceSize offsets[] = {0};
     vkCmdBindVertexBuffers(commandBuffers_[imageIndex], 0, 1, vertexBuffers, offsets);
     vkCmdBindIndexBuffer(commandBuffers_[imageIndex], indexBuffer_, 0, VK_INDEX_TYPE_UINT32);
 
-    float zoomFactor = zoomLevel_;
-    glm::mat4 proj = glm::perspective(glm::radians(45.0f), (float)width_ / height_, 0.1f, 1000.0f);
-    glm::mat4 view = glm::lookAt(
-        glm::vec3(10.0f * zoomFactor, 10.0f * zoomFactor, 10.0f * zoomFactor),
-        glm::vec3(0.0f, 0.0f, 0.0f),
-        glm::vec3(0.0f, 1.0f, 0.0f)
+    // Robust 3D camera: orbits origin for dynamic parallax
+    float zoomFactor = glm::max(zoomLevel_, 0.01f);
+    float aspect = static_cast<float>(width_) / glm::max(1.0f, static_cast<float>(height_));
+    float camOrbit = 0.7f * wavePhase_; // slow, smooth orbit for God-view
+    float camRadius = 16.0f * zoomFactor;
+    glm::vec3 camPos(
+        camRadius * cosf(camOrbit),
+        camRadius * sinf(camOrbit * 0.7f),
+        camRadius * sinf(camOrbit)
     );
+    glm::mat4 proj = glm::perspective(glm::radians(45.0f), aspect, 0.1f, 1000.0f);
+    glm::mat4 view = glm::lookAt(camPos, glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
 
-    float cycleProgress = std::fmod(wavePhase_ / (2.0f * kMaxRenderedDimensions), 1.0f);
+    float cycleProgress = std::fmod(wavePhase_ / (3.0f * kMaxRenderedDimensions), 1.0f);
 
     if (cache_.size() < kMaxRenderedDimensions) {
         std::cerr << "Warning: Cache size " << cache_.size() << " < " << kMaxRenderedDimensions << "\n";
         return;
     }
 
-    // Render the main sphere for dimension 3
+    // Render the main sphere for dimension 3, with cosmic shimmer
     for (size_t i = 0; i < kMaxRenderedDimensions; ++i) {
         if (i != 2) continue; // Only render dimension 3
         if (cache_[i].dimension != 3) {
@@ -631,23 +695,28 @@ void renderMode3(uint32_t imageIndex) {
             continue;
         }
 
-        // Dynamic scaling based on UniversalEquation
-        float observableScale = 1.0f + static_cast<float>(cache_[i].observable) * 0.3f; // e.g., 3.226497 from log
-        float darkMatterScale = 1.0f + static_cast<float>(cache_[i].darkMatter) * 0.5f; // e.g., 0.341967
-        float darkEnergyScale = 1.0f + static_cast<float>(cache_[i].darkEnergy) * 0.4f; // e.g., 0.909233
+        // Divine scaling and rotation
+        float observableScale = 1.0f + static_cast<float>(cache_[i].observable) * 0.3f;
+        float darkMatterScale = 1.0f + static_cast<float>(cache_[i].darkMatter) * 0.5f;
+        float darkEnergyScale = 1.0f + static_cast<float>(cache_[i].darkEnergy) * 0.4f;
         float radius = 0.7f * observableScale * darkMatterScale * darkEnergyScale * (1.0f + 0.2f * sinf(wavePhase_));
         radius *= zoomFactor;
-        if (radius < 0.1f) radius = 0.1f * zoomFactor;
+        radius = glm::clamp(radius, 0.1f * zoomFactor, 10.0f * zoomFactor);
 
         glm::mat4 model = glm::mat4(1.0f);
-        model = glm::translate(model, glm::vec3(0.0f, 0.0f, 0.0f)); // Centered for main sphere
+        model = glm::translate(model, glm::vec3(0.0f, 0.0f, 0.0f));
         model = glm::scale(model, glm::vec3(radius));
-        model = glm::rotate(model, wavePhase_ * 0.1f, glm::vec3(1.0f, 1.0f, 1.0f));
+        model = glm::rotate(model, wavePhase_ * 0.23f, glm::normalize(glm::vec3(0.7f, 1.0f, 1.3f)));
 
         float dimValue = 3.0f;
-        float value = static_cast<float>(cache_[i].observable) * (0.8f + 0.2f * cosf(wavePhase_));
-        if (value < 0.01f) value = 0.5f;
-        glm::vec3 baseColor = glm::vec3(1.0f, 1.0f, 1.0f); // White base for mode 3
+        float value = glm::clamp(static_cast<float>(cache_[i].observable) * (0.8f + 0.2f * cosf(wavePhase_)), 0.01f, 1.0f);
+
+        // Godly color: spectral white with a faint 3D shimmer
+        glm::vec3 baseColor = glm::vec3(
+            1.0f - 0.19f * sinf(wavePhase_ * 0.85f + 2.0f),
+            1.0f - 0.14f * cosf(wavePhase_ * 0.63f + 1.1f),
+            1.0f - 0.21f * sinf(wavePhase_ * 0.7f + 2.7f)
+        );
 
         PushConstants pushConstants = {
             model,
@@ -662,23 +731,23 @@ void renderMode3(uint32_t imageIndex) {
             static_cast<float>(cache_[i].darkEnergy)
         };
         vkCmdPushConstants(commandBuffers_[imageIndex], pipelineLayout_,
-                          VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-                          0, sizeof(PushConstants), &pushConstants);
+                           VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                           0, sizeof(PushConstants), &pushConstants);
         vkCmdDrawIndexed(commandBuffers_[imageIndex], static_cast<uint32_t>(sphereIndices_.size()), 1, 0, 0, 0);
 
         std::cerr << "Mode3[D=3]: radius=" << radius << ", value=" << value
                   << ", pos=(0, 0, 0), color=(" << baseColor.x << ", " << baseColor.y << ", " << baseColor.z << ")\n";
     }
 
-    // Render interactions for dimension 3
+    // Render interactions for dimension 3 as celestial orbits in 3D
     ue_.setCurrentDimension(3);
     auto pairs = ue_.getInteractions();
     if (pairs.empty()) {
         std::cerr << "Warning: No interactions for dimension 3\n";
         glm::mat4 interactionModel = glm::mat4(1.0f);
         interactionModel = glm::translate(interactionModel, glm::vec3(0.0f, 0.0f, 0.0f));
-        interactionModel = glm::scale(interactionModel, glm::vec3(0.3f * zoomFactor));
-        glm::vec3 baseColor = glm::vec3(1.0f, 1.0f, 1.0f); // White base for interactions
+        interactionModel = glm::scale(interactionModel, glm::vec3(0.35f * zoomFactor));
+        glm::vec3 baseColor = glm::vec3(1.0f, 0.97f, 0.93f); // angelic tint
         PushConstants pushConstants = {
             interactionModel,
             view,
@@ -692,38 +761,46 @@ void renderMode3(uint32_t imageIndex) {
             0.5f
         };
         vkCmdPushConstants(commandBuffers_[imageIndex], pipelineLayout_,
-                          VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-                          0, sizeof(PushConstants), &pushConstants);
+                           VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                           0, sizeof(PushConstants), &pushConstants);
         vkCmdDrawIndexed(commandBuffers_[imageIndex], static_cast<uint32_t>(sphereIndices_.size()), 1, 0, 0, 0);
     } else {
         for (const auto& pair : pairs) {
-            // Include interactions with dimensions 2, 3, and 4 (from log: D=2, D=3, D=4, D=1)
             if (pair.dimension != 1 && pair.dimension != 2 && pair.dimension != 3 && pair.dimension != 4) continue;
 
             float interactionStrength = static_cast<float>(
                 computeInteraction(pair.dimension, pair.distance) *
-                std::exp(-ue_.getAlpha() * pair.distance) *
+                std::exp(-glm::abs(ue_.getAlpha() * pair.distance)) *
                 computePermeation(pair.dimension) *
-                pair.darkMatterDensity);
-            if (interactionStrength < 0.01f) interactionStrength = 0.5f;
+                glm::max(0.0, pair.darkMatterDensity)
+            );
+            interactionStrength = glm::clamp(interactionStrength, 0.01f, 2.0f);
 
+            // 3D orbit: phase, distance, and dark matter density, full celestial
             float orbitRadius = 1.5f + static_cast<float>(pair.distance) * 0.5f * (1.0f + static_cast<float>(pair.darkMatterDensity) * 0.2f);
-            float angle = wavePhase_ + pair.dimension * 2.0f;
+            float angleA = wavePhase_ + pair.dimension * 2.0f + pair.distance * 0.13f;
+            float angleB = wavePhase_ * 0.7f + pair.dimension * 0.9f + pair.distance * 0.17f;
             glm::vec3 orbitPos = glm::vec3(
-                cosf(angle) * orbitRadius * zoomFactor,
-                sinf(angle) * orbitRadius * zoomFactor,
-                cosf(angle + pair.dimension) * orbitRadius * 0.5f * zoomFactor
+                cosf(angleA) * orbitRadius * zoomFactor,
+                sinf(angleA) * orbitRadius * zoomFactor,
+                cosf(angleB) * orbitRadius * 0.7f * zoomFactor
             );
             glm::mat4 interactionModel = glm::translate(glm::mat4(1.0f), orbitPos);
-            interactionModel = glm::scale(interactionModel, glm::vec3(0.3f * zoomFactor));
+            interactionModel = glm::scale(interactionModel, glm::vec3(0.35f * zoomFactor));
 
-            glm::vec3 baseColor = glm::vec3(1.0f, 1.0f, 1.0f); // White base for interactions
+            // Godly color: spectral highlight for interactions
+            glm::vec3 baseColor = glm::vec3(
+                1.0f - 0.18f * sinf(angleA),
+                1.0f - 0.13f * cosf(angleB * 1.12f),
+                1.0f - 0.11f * sinf(angleB * 0.7f)
+            );
+
             PushConstants pushConstants = {
                 interactionModel,
                 view,
                 proj,
                 baseColor,
-                interactionStrength * (0.7f + 0.3f * cosf(wavePhase_)),
+                interactionStrength * (0.7f + 0.3f * cosf(wavePhase_ + pair.distance)),
                 3.0f,
                 wavePhase_,
                 cycleProgress,
@@ -731,8 +808,8 @@ void renderMode3(uint32_t imageIndex) {
                 static_cast<float>(computeDarkEnergy(pair.distance))
             };
             vkCmdPushConstants(commandBuffers_[imageIndex], pipelineLayout_,
-                              VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-                              0, sizeof(PushConstants), &pushConstants);
+                               VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                               0, sizeof(PushConstants), &pushConstants);
             vkCmdDrawIndexed(commandBuffers_[imageIndex], static_cast<uint32_t>(sphereIndices_.size()), 1, 0, 0, 0);
 
             std::cerr << "Mode3 Interaction[D=" << pair.dimension << "]: strength=" << interactionStrength
@@ -748,15 +825,20 @@ void renderMode4(uint32_t imageIndex) {
     vkCmdBindVertexBuffers(commandBuffers_[imageIndex], 0, 1, vertexBuffers, offsets);
     vkCmdBindIndexBuffer(commandBuffers_[imageIndex], indexBuffer_, 0, VK_INDEX_TYPE_UINT32);
 
-    float zoomFactor = zoomLevel_;
-    glm::mat4 proj = glm::perspective(glm::radians(45.0f), (float)width_ / height_, 0.1f, 1000.0f);
-    glm::mat4 view = glm::lookAt(
-        glm::vec3(10.0f * zoomFactor, 10.0f * zoomFactor, 10.0f * zoomFactor),
-        glm::vec3(0.0f, 0.0f, 0.0f),
-        glm::vec3(0.0f, 1.0f, 0.0f)
+    // Robust dynamic 4D camera: tesseract orbit (projection into 3D)
+    float zoomFactor = glm::max(zoomLevel_, 0.01f);
+    float aspect = static_cast<float>(width_) / glm::max(1.0f, static_cast<float>(height_));
+    float camPhase = 1.2f * wavePhase_;
+    float camRadius = 13.0f * zoomFactor;
+    glm::vec3 camPos(
+        camRadius * cosf(camPhase),
+        camRadius * sinf(camPhase * 0.77f),
+        camRadius * sinf(camPhase * 1.33f)
     );
+    glm::mat4 proj = glm::perspective(glm::radians(45.0f), aspect, 0.1f, 1000.0f);
+    glm::mat4 view = glm::lookAt(camPos, glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
 
-    float cycleProgress = std::fmod(wavePhase_ / (2.0f * kMaxRenderedDimensions), 1.0f);
+    float cycleProgress = std::fmod(wavePhase_ / (4.0f * kMaxRenderedDimensions), 1.0f);
 
     if (cache_.size() < kMaxRenderedDimensions) {
         std::cerr << "Warning: Cache size " << cache_.size() << " < " << kMaxRenderedDimensions << "\n";
@@ -770,26 +852,31 @@ void renderMode4(uint32_t imageIndex) {
             continue;
         }
 
+        // Hyperspherical scaling, dynamic morphing
         float alpha = 2.0f;
-        float omega = 0.3f;
-        float observableRadius = 1.0f * (1.0f + static_cast<float>(cache_[i].observable) * 0.25f);
-        float potentialRadius = 1.0f * (1.0f + static_cast<float>(cache_[i].potential) * 0.25f);
+        float omega = 0.33f;
+        float observableRadius = 1.0f + static_cast<float>(cache_[i].observable) * 0.25f;
+        float potentialRadius = 1.0f + static_cast<float>(cache_[i].potential) * 0.25f;
         float timeModulation = sinf(wavePhase_ * 1.5f + i) * (1.0f + static_cast<float>(cache_[i].darkMatter) * 0.6f);
         float geometryScale = 0.5f * (observableRadius + potentialRadius);
         float scaledGeometry = geometryScale * (alpha + omega * timeModulation);
+        float morph = 1.0f + 0.35f * sinf(wavePhase_ * 0.73f + 2.0f);
 
         glm::mat4 model = glm::mat4(1.0f);
         model = glm::translate(model, glm::vec3(0.0f, 0.0f, 0.0f));
-        model = glm::scale(model, glm::vec3(scaledGeometry * zoomFactor * 0.8f, scaledGeometry * zoomFactor * 1.2f, scaledGeometry * zoomFactor));
-        model = glm::rotate(model, wavePhase_ * 0.15f, glm::vec3(0.7f, 1.0f, 0.7f));
-        model = glm::scale(model, glm::vec3(1.0f + 0.3f * sinf(wavePhase_ * 0.7f)));
+        model = glm::scale(model, glm::vec3(scaledGeometry * zoomFactor * 0.82f * morph,
+                                            scaledGeometry * zoomFactor * 1.18f * morph,
+                                            scaledGeometry * zoomFactor * morph));
+        model = glm::rotate(model, wavePhase_ * 0.19f, glm::normalize(glm::vec3(0.7f, 1.0f, 0.7f)));
 
         float fluctuationRatio = cache_[i].potential > 0 ? static_cast<float>(cache_[i].observable / cache_[i].potential) : 1.0f;
         float dimValue = 4.0f;
+
+        // Transcendental 4D color: shimmering hyperspectral
         glm::vec3 baseColor = glm::vec3(
-            0.4f + 0.2f * sinf(wavePhase_),
-            0.3f + 0.2f * cosf(wavePhase_ * 0.8f),
-            0.6f + 0.3f * sinf(wavePhase_ * 1.2f)
+            0.55f + 0.27f * sinf(wavePhase_ * 0.97f + 0.8f),
+            0.41f + 0.23f * cosf(wavePhase_ * 0.79f + 2.2f),
+            0.68f + 0.29f * sinf(wavePhase_ * 1.41f + 1.7f)
         );
 
         PushConstants pushConstants = {
@@ -813,17 +900,18 @@ void renderMode4(uint32_t imageIndex) {
                   << ", pos=(0, 0, 0), color=(" << baseColor.x << ", " << baseColor.y << ", " << baseColor.z << ")\n";
     }
 
+    // Render transcendental 4D interactions as tesseract orbits in 3D projection
     ue_.setCurrentDimension(4);
     auto pairs = ue_.getInteractions();
     if (pairs.empty()) {
         std::cerr << "Warning: No interactions for dimension 4\n";
         glm::mat4 interactionModel = glm::mat4(1.0f);
         interactionModel = glm::translate(interactionModel, glm::vec3(0.0f, 0.0f, 0.0f));
-        interactionModel = glm::scale(interactionModel, glm::vec3(0.3f * zoomFactor));
+        interactionModel = glm::scale(interactionModel, glm::vec3(0.33f * zoomFactor));
         glm::vec3 baseColor = glm::vec3(
-            0.4f + 0.2f * sinf(wavePhase_),
-            0.3f + 0.2f * cosf(wavePhase_ * 0.8f),
-            0.6f + 0.3f * sinf(wavePhase_ * 1.2f)
+            0.55f + 0.27f * sinf(wavePhase_ * 0.97f),
+            0.41f + 0.23f * cosf(wavePhase_ * 0.79f),
+            0.68f + 0.29f * sinf(wavePhase_ * 1.41f)
         );
         PushConstants pushConstants = {
             interactionModel,
@@ -843,35 +931,38 @@ void renderMode4(uint32_t imageIndex) {
         vkCmdDrawIndexed(commandBuffers_[imageIndex], static_cast<uint32_t>(sphereIndices_.size()), 1, 0, 0, 0);
     } else {
         for (const auto& pair : pairs) {
-            if (pair.dimension != 1 && pair.dimension != 2 && pair.dimension != 3 && pair.dimension != 4 && pair.dimension != 5) continue;
+            if (pair.dimension < 1 || pair.dimension > 5) continue;
 
-            // Simplified interaction strength using public data
+            // Hyperspatial interaction strength (bounded, oscillatory)
             float interactionStrength = static_cast<float>(
-                (1.0f / (1.0f + pair.distance)) * pair.darkMatterDensity * (0.5f + 0.5f * cosf(wavePhase_ + pair.dimension))
+                (1.0f / (1.0f + pair.distance)) * glm::max(0.0, pair.darkMatterDensity) * (0.7f + 0.5f * cosf(wavePhase_ + pair.dimension))
             );
-            if (interactionStrength < 0.01f) interactionStrength = 0.5f;
+            interactionStrength = glm::clamp(interactionStrength, 0.01f, 2.5f);
 
-            float orbitRadius = 1.5f + static_cast<float>(pair.distance) * 0.5f * (1.0f + static_cast<float>(pair.darkMatterDensity) * 0.3f);
-            float angle = wavePhase_ * 1.2f + pair.dimension * 1.5f;
+            // Tesseract-inspired 4D orbit projection
+            float orbitRadius = 2.0f + static_cast<float>(pair.distance) * 0.57f * (1.0f + static_cast<float>(pair.darkMatterDensity) * 0.33f);
+            float angleA = wavePhase_ * 1.17f + pair.dimension * 1.47f;
+            float angleB = wavePhase_ * 0.87f + pair.dimension * 1.23f;
             glm::vec3 orbitPos = glm::vec3(
-                cosf(angle) * orbitRadius * zoomFactor,
-                sinf(angle) * orbitRadius * zoomFactor,
-                (angle * 0.2f + pair.dimension * 0.5f) * zoomFactor
+                cosf(angleA) * orbitRadius * zoomFactor,
+                sinf(angleA) * orbitRadius * zoomFactor,
+                cosf(angleB) * orbitRadius * 0.87f * zoomFactor
             );
             glm::mat4 interactionModel = glm::translate(glm::mat4(1.0f), orbitPos);
-            interactionModel = glm::scale(interactionModel, glm::vec3(0.25f * zoomFactor * (1.0f + 0.2f * sinf(wavePhase_))));
+            interactionModel = glm::scale(interactionModel, glm::vec3(0.28f * zoomFactor * (1.0f + 0.22f * sinf(wavePhase_ + pair.dimension))));
 
+            // Hyperspectral color for 4D interactions
             glm::vec3 baseColor = glm::vec3(
-                0.4f + 0.2f * sinf(wavePhase_ + pair.dimension),
-                0.3f + 0.2f * cosf(wavePhase_ * 0.8f + pair.dimension),
-                0.6f + 0.3f * sinf(wavePhase_ * 1.2f + pair.dimension)
+                0.55f + 0.27f * sinf(wavePhase_ * 0.97f + pair.dimension),
+                0.41f + 0.23f * cosf(wavePhase_ * 0.79f + pair.dimension),
+                0.68f + 0.29f * sinf(wavePhase_ * 1.41f + pair.dimension)
             );
             PushConstants pushConstants = {
                 interactionModel,
                 view,
                 proj,
                 baseColor,
-                interactionStrength * (0.8f + 0.4f * cosf(wavePhase_ * 1.2f)),
+                interactionStrength * (0.8f + 0.4f * cosf(wavePhase_ * 1.2f + pair.dimension)),
                 4.0f,
                 wavePhase_,
                 cycleProgress,
@@ -896,41 +987,46 @@ void renderMode5(uint32_t imageIndex) {
     vkCmdBindVertexBuffers(commandBuffers_[imageIndex], 0, 1, vertexBuffers, offsets);
     vkCmdBindIndexBuffer(commandBuffers_[imageIndex], indexBuffer_, 0, VK_INDEX_TYPE_UINT32);
 
-    float zoomFactor = zoomLevel_;
-    glm::mat4 proj = glm::perspective(glm::radians(60.0f), (float)width_ / height_, 0.1f, 1000.0f);
-    glm::mat4 view = glm::lookAt(
-        glm::vec3(15.0f * zoomFactor, 15.0f * zoomFactor, 15.0f * zoomFactor),
-        glm::vec3(0.0f, 0.0f, 0.0f),
-        glm::vec3(0.0f, 1.0f, 0.0f)
+    // Robust 5D camera: dynamic celestial arc for max parallax
+    float zoomFactor = glm::max(zoomLevel_, 0.01f);
+    float aspect = static_cast<float>(width_) / glm::max(1.0f, static_cast<float>(height_));
+    float camPhase = 0.67f * wavePhase_;
+    float camRadius = 18.0f * zoomFactor;
+    glm::vec3 camPos(
+        camRadius * cosf(camPhase),
+        camRadius * sinf(camPhase * 0.8f),
+        camRadius * sinf(camPhase * 1.5f)
     );
+    glm::mat4 proj = glm::perspective(glm::radians(60.0f), aspect, 0.1f, 1000.0f);
+    glm::mat4 view = glm::lookAt(camPos, glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
 
-    float cycleProgress = std::fmod(wavePhase_ / (2.0f * kMaxRenderedDimensions), 1.0f);
-    float heavenGlow = 0.8f + 0.2f * sinf(wavePhase_ * 0.5f); // Pulsating glow effect
-    glm::vec3 pinkBaseColor = glm::vec3(1.0f, 0.41f, 0.71f); // Pink baseline color
+    float cycleProgress = std::fmod(wavePhase_ / (5.0f * kMaxRenderedDimensions), 1.0f);
+    float heavenGlow = 0.82f + 0.18f * sinf(wavePhase_ * 0.51f); // Pulsating glow effect
+    glm::vec3 pinkBaseColor = glm::vec3(1.0f, 0.41f, 0.71f);
 
     if (cache_.size() < kMaxRenderedDimensions) {
         std::cerr << "Warning: Cache size " << cache_.size() << " < " << kMaxRenderedDimensions << "\n";
         return;
     }
 
-    // Render all dimensions as interconnected spheres
+    // Render all dimensions as interconnected spheres (pentachoron/tetrahedral projection)
     for (size_t i = 0; i < kMaxRenderedDimensions; ++i) {
         if (cache_[i].dimension != static_cast<int>(i + 1)) {
             std::cerr << "Warning: Invalid cache for dimension " << i + 1 << "\n";
             continue;
         }
 
-        // Use UniversalEquation math for scaling
+        // UniversalEquation math for scaling
         float observableScale = 1.0f + static_cast<float>(cache_[i].observable) * 0.3f;
         float darkMatterScale = 1.0f + static_cast<float>(cache_[i].darkMatter) * 0.5f;
         float darkEnergyScale = 1.0f + static_cast<float>(cache_[i].darkEnergy) * 0.4f;
         float radius = 0.7f * observableScale * darkMatterScale * darkEnergyScale * (1.0f + 0.2f * sinf(wavePhase_ + i));
         radius *= zoomFactor;
-        if (radius < 0.1f) radius = 0.1f * zoomFactor;
+        radius = glm::clamp(radius, 0.1f * zoomFactor, 8.0f * zoomFactor);
 
-        // Tetrahedral arrangement for celestial layout
+        // 5D pentachoron-inspired arrangement
         float angle = wavePhase_ + (i + 1) * 2.0f * glm::pi<float>() / kMaxRenderedDimensions;
-        float spacing = 2.0f * (1.0f + static_cast<float>(cache_[i].darkEnergy) * 0.5f);
+        float spacing = 2.3f * (1.0f + static_cast<float>(cache_[i].darkEnergy) * 0.5f);
         glm::vec3 pos;
         switch (i) {
             case 0: pos = glm::vec3(0.0f, 0.0f, 0.0f); break; // Center
@@ -939,20 +1035,24 @@ void renderMode5(uint32_t imageIndex) {
                                     spacing * sinf(angle + 2.0f * glm::pi<float>() / 3.0f), spacing); break;
             case 3: pos = glm::vec3(spacing * cosf(angle + 4.0f * glm::pi<float>() / 3.0f), 
                                     spacing * sinf(angle + 4.0f * glm::pi<float>() / 3.0f), -spacing); break;
+            case 4: // Fifth dimension, hyper vertex (above/below 3D base)
+                pos = glm::vec3(0.0f, 0.0f, 0.0f) +
+                      glm::vec3(0.0f, 0.0f, 1.5f * spacing * sinf(wavePhase_ + i)); break;
         }
         pos *= zoomFactor;
 
         glm::mat4 model = glm::mat4(1.0f);
         model = glm::translate(model, pos);
         model = glm::scale(model, glm::vec3(radius));
-        model = glm::rotate(model, wavePhase_ * 0.2f, glm::vec3(0.5f, 0.5f, 0.5f));
+        model = glm::rotate(model, wavePhase_ * 0.22f + i * 0.11f, glm::normalize(glm::vec3(0.5f, 0.5f, 0.5f + 0.1f * i)));
 
         float dimValue = static_cast<float>(i + 1);
-        float value = static_cast<float>(cache_[i].observable) * heavenGlow;
-        if (value < 0.01f) value = 0.5f;
+        float value = glm::clamp(static_cast<float>(cache_[i].observable) * heavenGlow, 0.01f, 1.0f);
 
-        // Modulate pink color with dark matter and dark energy
-        glm::vec3 modulatedColor = pinkBaseColor * (0.8f + 0.2f * static_cast<float>(cache_[i].darkMatter) * heavenGlow);
+        // Modulate pink with dark matter, dark energy, shimmer
+        glm::vec3 modulatedColor = pinkBaseColor * (0.78f + 0.22f * static_cast<float>(cache_[i].darkMatter) * heavenGlow);
+        float hyperShimmer = 0.04f * sinf(wavePhase_ * 0.9f + i);
+        modulatedColor += glm::vec3(hyperShimmer, -hyperShimmer, hyperShimmer);
         modulatedColor = glm::clamp(modulatedColor, 0.0f, 1.0f);
 
         PushConstants pushConstants = {
@@ -977,7 +1077,7 @@ void renderMode5(uint32_t imageIndex) {
                   << modulatedColor.x << ", " << modulatedColor.y << ", " << modulatedColor.z << ")\n";
     }
 
-    // Render interactions as glowing orbital paths
+    // Render interactions as glowing 5D orbital paths
     for (size_t i = 0; i < kMaxRenderedDimensions; ++i) {
         ue_.setCurrentDimension(i + 1);
         auto pairs = ue_.getInteractions();
@@ -991,23 +1091,27 @@ void renderMode5(uint32_t imageIndex) {
 
             float interactionStrength = static_cast<float>(
                 computeInteraction(pair.dimension, pair.distance) *
-                std::exp(-ue_.getAlpha() * pair.distance) *
+                std::exp(-glm::abs(ue_.getAlpha() * pair.distance)) *
                 computePermeation(pair.dimension) *
-                pair.darkMatterDensity);
+                glm::max(0.0, pair.darkMatterDensity));
             interactionStrength *= heavenGlow;
-            if (interactionStrength < 0.01f) interactionStrength = 0.5f;
+            interactionStrength = glm::clamp(interactionStrength, 0.01f, 2.0f);
 
-            float orbitRadius = 1.0f + static_cast<float>(pair.distance) * 0.3f * (1.0f + static_cast<float>(pair.darkMatterDensity) * 0.2f);
-            float angle = wavePhase_ + pair.dimension * 2.0f;
+            // Pentachoron/hyper-orbit in 5D, projected to 3D
+            float orbitRadius = 1.6f + static_cast<float>(pair.distance) * 0.37f * (1.0f + static_cast<float>(pair.darkMatterDensity) * 0.2f);
+            float angleA = wavePhase_ + pair.dimension * 2.0f + pair.distance * 0.13f;
+            float angleB = wavePhase_ * 0.7f + pair.dimension * 0.9f + pair.distance * 0.17f;
             glm::vec3 orbitPos = glm::vec3(
-                cosf(angle) * orbitRadius * zoomFactor,
-                sinf(angle) * orbitRadius * zoomFactor,
-                sinf(angle + pair.dimension) * orbitRadius * 0.5f * zoomFactor
+                cosf(angleA) * orbitRadius * zoomFactor,
+                sinf(angleA) * orbitRadius * zoomFactor,
+                sinf(angleB + pair.dimension) * orbitRadius * 0.5f * zoomFactor
             );
             glm::mat4 interactionModel = glm::translate(glm::mat4(1.0f), orbitPos);
-            interactionModel = glm::scale(interactionModel, glm::vec3(0.3f * zoomFactor * (1.0f + heavenGlow)));
+            interactionModel = glm::scale(interactionModel, glm::vec3(0.36f * zoomFactor * (1.0f + heavenGlow)));
 
-            glm::vec3 interactionColor = pinkBaseColor * (0.7f + 0.3f * static_cast<float>(pair.darkMatterDensity) * heavenGlow);
+            glm::vec3 interactionColor = pinkBaseColor * (0.74f + 0.26f * static_cast<float>(pair.darkMatterDensity) * heavenGlow);
+            float hyperGlow = 0.03f * sinf(wavePhase_ * 0.8f + pair.dimension);
+            interactionColor += glm::vec3(hyperGlow, -hyperGlow, hyperGlow);
             interactionColor = glm::clamp(interactionColor, 0.0f, 1.0f);
 
             PushConstants pushConstants = {

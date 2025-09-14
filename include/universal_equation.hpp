@@ -6,6 +6,7 @@
 #include <string>
 #include <limits>
 #include <iostream>
+#include <algorithm>
 
 class UniversalEquation {
 public:
@@ -61,23 +62,46 @@ public:
         }
     }
 
+    // --- Getter and Setter Methods: ---
     void setInfluence(double value) { influence_ = std::clamp(value, 0.0, 10.0); }
+    double getInfluence() const { return influence_; }
+
     void setWeak(double value) { weak_ = std::clamp(value, 0.0, 1.0); }
+    double getWeak() const { return weak_; }
+
     void setCollapse(double value) { collapse_ = std::clamp(value, 0.0, 5.0); }
+    double getCollapse() const { return collapse_; }
+
     void setTwoD(double value) { twoD_ = std::clamp(value, 0.0, 5.0); }
+    double getTwoD() const { return twoD_; }
+
     void setThreeDInfluence(double value) { threeDInfluence_ = std::clamp(value, 0.0, 5.0); }
+    double getThreeDInfluence() const { return threeDInfluence_; }
+
     void setOneDPermeation(double value) { oneDPermeation_ = std::clamp(value, 0.0, 5.0); }
+    double getOneDPermeation() const { return oneDPermeation_; }
+
     void setDarkMatterStrength(double value) {
         darkMatterStrength_ = std::clamp(value, 0.0, 1.0);
         updateInteractions();
     }
+    double getDarkMatterStrength() const { return darkMatterStrength_; }
+
     void setDarkEnergyStrength(double value) {
         darkEnergyStrength_ = std::clamp(value, 0.0, 2.0);
         updateInteractions();
     }
+    double getDarkEnergyStrength() const { return darkEnergyStrength_; }
+
     void setAlpha(double value) { alpha_ = std::clamp(value, 0.1, 10.0); }
+    double getAlpha() const { return alpha_; }
+
     void setBeta(double value) { beta_ = std::clamp(value, 0.0, 1.0); }
+    double getBeta() const { return beta_; }
+
     void setDebug(bool value) { debug_ = value; }
+    bool getDebug() const { return debug_; }
+
     void setMode(int mode) {
         mode_ = std::clamp(mode, 1, maxDimensions_);
         currentDimension_ = mode_;
@@ -86,6 +110,8 @@ public:
             std::cout << "Mode set to: " << mode_ << ", dimension: " << currentDimension_ << "\n";
         }
     }
+    int getMode() const { return mode_; }
+
     void setCurrentDimension(int dimension) {
         if (dimension >= 1 && (dimension <= maxDimensions_)) {
             currentDimension_ = dimension;
@@ -96,22 +122,13 @@ public:
             }
         }
     }
+    int getCurrentDimension() const { return currentDimension_; }
 
     int getMaxDimensions() const { return maxDimensions_; }
-    int getCurrentDimension() const { return currentDimension_; }
-    int getMode() const { return mode_; }
-    double getInfluence() const { return influence_; }
-    double getWeak() const { return weak_; }
-    double getCollapse() const { return collapse_; }
-    double getTwoD() const { return twoD_; }
-    double getThreeDInfluence() const { return threeDInfluence_; }
-    double getOneDPermeation() const { return oneDPermeation_; }
-    double getDarkMatterStrength() const { return darkMatterStrength_; }
-    double getDarkEnergyStrength() const { return darkEnergyStrength_; }
-    double getAlpha() const { return alpha_; }
-    double getBeta() const { return beta_; }
-    bool getDebug() const { return debug_; }
+
     std::vector<DimensionInteraction> getInteractions() const { return interactions_; }
+
+    // --- End of Getter and Setter Methods ---
 
     void advanceCycle() {
         if (currentDimension_ == maxDimensions_) {
@@ -179,7 +196,7 @@ private:
         if (currentDimension_ == 3 && (dimension == 2 || dimension == 4)) {
             modifier *= threeDInfluence_;
         }
-        double result = influence_ * (distance / denom) * modifier;
+        double result = influence_ * (1.0 / (denom * (1.0 + distance))) * modifier;
         if (debug_) {
             std::cout << "Interaction(D=" << dimension << ", dist=" << distance << "): " << result << "\n";
         }
@@ -187,7 +204,7 @@ private:
     }
 
     double computePermeation(int dimension) const {
-        if (dimension == 1 || currentDimension_ == 1) return oneDPermeation_;
+        if (dimension == 1 || currentDimension_ == 1) return 1.0;
         if (currentDimension_ == 2 && dimension > 2) return twoD_;
         if (currentDimension_ == 3 && (dimension == 2 || dimension == 4)) return threeDInfluence_;
         return 1.0;
@@ -196,8 +213,8 @@ private:
     double computeCollapse() const {
         if (currentDimension_ == 1) return 0.0;
         double phase = static_cast<double>(currentDimension_) / (2 * maxDimensions_);
-        double result = collapse_ * currentDimension_ * std::exp(-beta_ * (currentDimension_ - 1)) *
-                        std::abs(std::cos(2.0 * M_PI * phase));
+        double osc = std::abs(std::cos(2.0 * M_PI * phase));
+        double result = std::max(0.0, collapse_ * currentDimension_ * std::exp(-beta_ * (currentDimension_ - 1)) * (0.8 * osc + 0.2));
         if (debug_) {
             std::cout << "Collapse(D=" << currentDimension_ << "): " << result << "\n";
         }
@@ -205,7 +222,8 @@ private:
     }
 
     double computeDarkEnergy(double distance) const {
-        double result = darkEnergyStrength_ * std::exp(distance * invMaxDim_);
+        double d = std::min(distance, 10.0);
+        double result = darkEnergyStrength_ * std::exp(d * invMaxDim_);
         if (debug_) {
             std::cout << "DarkEnergy(dist=" << distance << "): " << result << "\n";
         }
