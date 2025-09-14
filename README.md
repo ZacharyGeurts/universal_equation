@@ -62,7 +62,7 @@ The visualization emphasizes 1D’s omnipresent wave-like influence, with dynami
   - `PAGEUP`/`PAGEDOWN`: Increase/decrease dark energy scale (`kDarkEnergy_`) by 0.05.
   - `1`/`2`/`3`/`4`/`5`: Switch to rendering modes 1D through 5D
 - **Data Logging**: Outputs dimensional data (dimension, observable, potential, dark matter, dark energy) to the console for debugging (enable in `UniversalEquation`).
--
+
 ## Model Description
 The `UniversalEquation` class defines dimensional interactions:
 - **1D ("God")**: A singular, infinite static permeating all dimensions, modeled as a wave-like influence.
