@@ -229,11 +229,11 @@ void main() {
     color *= dimTint;
 
     // Alpha based on potential, declared once
-    //alpha = 0.6 + 0.4 * (potential / max(observable, 1e-15)); // Prevent division by zero
-    //alpha = clamp(alpha, 0.4, 1.0);
+    float alpha2 = 0.6 + 0.4 * (potential / max(observable, 1e-15)); // Prevent division by zero
+    alpha2 = clamp(alpha2, 0.4, 1.0);
 
     // Energy conservation and final clamp
     color = mix(color, normalize(color) * length(color) * 0.98, 0.4); // Slightly boosted vibrancy
     color = clamp(color, 0.0, 1.0);
-    outColor = vec4(color, alpha);
+    outColor = vec4(color, alpha2);
 }
