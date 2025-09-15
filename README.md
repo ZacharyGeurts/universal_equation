@@ -1,7 +1,9 @@
 # Dimensional Navigator
 <BR />
-Browsing dimensions 1d(God) through 5d(Heaven1).<BR />
-**Latest Video**: [Co-Pilot update](https://github.com/user-attachments/assets/4a730d87-8b38-428e-bd5e-79c51921b67b)<BR />
+Browsing dimensions 1d(God) through 9d(Spot ;).<BR />
+<BR />
+**Latest Video**: [6d-8d](https://x.com/i/status/1967431708258804189)
+**Older Video**: [Co-Pilot update](https://github.com/user-attachments/assets/4a730d87-8b38-428e-bd5e-79c51921b67b)<BR />
 <BR />
 **Shader Update**: [Old WIP](https://github.com/user-attachments/assets/1a259212-3314-424f-b997-7792e8ac9066)<BR />
 **Old Video**: [Old WIP](https://github.com/user-attachments/assets/2980fe0d-1204-4a53-b6a4-cdf4f3eca072)<BR />
