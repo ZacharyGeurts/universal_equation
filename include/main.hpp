@@ -57,6 +57,9 @@ public:
         }
     }
 
+glm::vec3 userCamPos_ = glm::vec3(0.0f, 0.0f, 10.0f);
+bool isUserCamActive_ = false;
+
     ~DimensionalNavigator() {
         cleanup();
     }
@@ -667,16 +670,10 @@ void renderMode3(uint32_t imageIndex) {
     vkCmdBindVertexBuffers(commandBuffers_[imageIndex], 0, 1, vertexBuffers, offsets);
     vkCmdBindIndexBuffer(commandBuffers_[imageIndex], indexBuffer_, 0, VK_INDEX_TYPE_UINT32);
 
-    // Robust 3D camera: orbits origin for dynamic parallax
+    // Camera setup: Stationary unless user moves it
     float zoomFactor = glm::max(zoomLevel_, 0.01f);
     float aspect = static_cast<float>(width_) / glm::max(1.0f, static_cast<float>(height_));
-    float camOrbit = 0.7f * wavePhase_; // slow, smooth orbit for God-view
-    float camRadius = 16.0f * zoomFactor;
-    glm::vec3 camPos(
-        camRadius * cosf(camOrbit),
-        camRadius * sinf(camOrbit * 0.7f),
-        camRadius * sinf(camOrbit)
-    );
+    glm::vec3 camPos = isUserCamActive_ ? userCamPos_ : glm::vec3(0.0f, 0.0f, 16.0f * zoomFactor);
     glm::mat4 proj = glm::perspective(glm::radians(45.0f), aspect, 0.1f, 1000.0f);
     glm::mat4 view = glm::lookAt(camPos, glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
 
@@ -825,16 +822,10 @@ void renderMode4(uint32_t imageIndex) {
     vkCmdBindVertexBuffers(commandBuffers_[imageIndex], 0, 1, vertexBuffers, offsets);
     vkCmdBindIndexBuffer(commandBuffers_[imageIndex], indexBuffer_, 0, VK_INDEX_TYPE_UINT32);
 
-    // Robust dynamic 4D camera: tesseract orbit (projection into 3D)
+    // Camera setup: Stationary unless user moves it
     float zoomFactor = glm::max(zoomLevel_, 0.01f);
     float aspect = static_cast<float>(width_) / glm::max(1.0f, static_cast<float>(height_));
-    float camPhase = 1.2f * wavePhase_;
-    float camRadius = 13.0f * zoomFactor;
-    glm::vec3 camPos(
-        camRadius * cosf(camPhase),
-        camRadius * sinf(camPhase * 0.77f),
-        camRadius * sinf(camPhase * 1.33f)
-    );
+    glm::vec3 camPos = isUserCamActive_ ? userCamPos_ : glm::vec3(0.0f, 0.0f, 13.0f * zoomFactor);
     glm::mat4 proj = glm::perspective(glm::radians(45.0f), aspect, 0.1f, 1000.0f);
     glm::mat4 view = glm::lookAt(camPos, glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
 
@@ -987,16 +978,10 @@ void renderMode5(uint32_t imageIndex) {
     vkCmdBindVertexBuffers(commandBuffers_[imageIndex], 0, 1, vertexBuffers, offsets);
     vkCmdBindIndexBuffer(commandBuffers_[imageIndex], indexBuffer_, 0, VK_INDEX_TYPE_UINT32);
 
-    // Robust 5D camera: dynamic celestial arc for max parallax
+    // Camera setup: Stationary unless user moves it
     float zoomFactor = glm::max(zoomLevel_, 0.01f);
     float aspect = static_cast<float>(width_) / glm::max(1.0f, static_cast<float>(height_));
-    float camPhase = 0.67f * wavePhase_;
-    float camRadius = 18.0f * zoomFactor;
-    glm::vec3 camPos(
-        camRadius * cosf(camPhase),
-        camRadius * sinf(camPhase * 0.8f),
-        camRadius * sinf(camPhase * 1.5f)
-    );
+    glm::vec3 camPos = isUserCamActive_ ? userCamPos_ : glm::vec3(0.0f, 0.0f, 18.0f * zoomFactor);
     glm::mat4 proj = glm::perspective(glm::radians(60.0f), aspect, 0.1f, 1000.0f);
     glm::mat4 view = glm::lookAt(camPos, glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
 
