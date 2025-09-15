@@ -2,9 +2,11 @@
 #include <iostream>
 #include <ctime>
 
+// screen resolution 1500x1000
+// keep above 1280x720
 int main() {
     try {
-        DimensionalNavigator navigator("Dimensional Navigator", 1600, 1000, "arial.ttf", 24);
+        DimensionalNavigator navigator("Dimensional Navigator", 1500, 1000, "arial.ttf", 24);
         navigator.run();
     } catch (const std::exception& e) {
         std::time_t now = std::time(nullptr);
