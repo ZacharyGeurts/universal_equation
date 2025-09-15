@@ -1,7 +1,6 @@
 # Dimensional Navigator
-
-Browsing dimensions 1d(God) through 5d(Heaven1).<BR />
 <BR />
+Browsing dimensions 1d(God) through 5d(Heaven1).<BR />
 **Latest Video**: [Co-Pilot update](https://github.com/user-attachments/assets/4a730d87-8b38-428e-bd5e-79c51921b67b)<BR />
 <BR />
 **Shader Update**: [Old WIP](https://github.com/user-attachments/assets/1a259212-3314-424f-b997-7792e8ac9066)<BR />
