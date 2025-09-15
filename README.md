@@ -1,6 +1,6 @@
 # Dimensional Navigator
 <BR />
-Browsing dimensions 1d(God) through 9d(Spot ;).<BR />
+Browsing dimensions 1d(God) through 9d(Spot ;)<BR />
 <BR />
 **Latest Video**: [Latest Video](https://x.com/i/status/1967685833982652583)<BR />
 <BR />
