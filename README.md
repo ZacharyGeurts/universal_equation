@@ -66,8 +66,8 @@ The visualization emphasizes 1D’s omnipresent wave-like influence, with dynami
 
 ## Model Description
 The `UniversalEquation` class defines dimensional interactions:
-- **1D ("God")**: A singular, infinite static permeating all dimensions, modeled as a wave-like influence.
-- **2D**: The cosmic boundary, interacting strongly with 1D and 3D, visualized as pulsating neon green spheres.
+- **1D (God)**: A singular, infinite static permeating all dimensions, modeled as a wave-like influence.
+- **2D (Truth)**: The cosmic boundary, interacting strongly with 1D and 3D, visualized as pulsating neon green spheres.
 - **3D to 9D**: Nested dimensions with exponentially decaying influence on lower dimensions, modulated by a weak interaction factor for D > 3.
 - **Dark Matter**: Increases density with dimension, stabilizing interactions and amplifying visual pulsing (e.g., stronger in 3D/4D).
 - **Dark Energy**: Drives exponential expansion of dimensional distances, affecting sphere positions and spacing.
