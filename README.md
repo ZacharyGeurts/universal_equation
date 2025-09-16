@@ -2,7 +2,7 @@
 <BR />
 Browsing dimensions 1d(God) through 9d(Spot ;)<BR />
 <BR />
-**Latest Video**: [Latest Video](ttps://x.com/i/status/1967808016453124126)<BR />
+**Latest Video**: [Latest Video](https://x.com/i/status/1967808016453124126)<BR />
 <BR />
 **last math Video**: [older math Video](https://x.com/i/status/1967685833982652583)<BR />
 **Older Video**: [9d-1d](https://x.com/i/status/1967431708258804189)<BR />
