@@ -29,12 +29,12 @@ public:
         double strength;
     };
 
-    UniversalEquation(int maxDimensions = 9, int mode = 1, double influence = 1.0,
-                     double weak = 0.5, double collapse = 0.5, double twoD = 0.5,
-                     double threeDInfluence = 1.5, double oneDPermeation = 2.0,
+    UniversalEquation(int maxDimensions = 9, int mode = 1, double influence = 0.05,
+                     double weak = 0.01, double collapse = 0.1, double twoD = 0.0,
+                     double threeDInfluence = 0.1, double oneDPermeation = 0.1,
                      double darkMatterStrength = 0.27, double darkEnergyStrength = 0.68,
-                     double alpha = 5.0, double beta = 0.2, bool debug = false)
-        : maxDimensions_(std::max(1, std::min(9, maxDimensions))),
+                     double alpha = 2.0, double beta = 0.2, bool debug = false)
+        : maxDimensions_(maxDimensions == 0 ? 30 : std::max(1, maxDimensions)),
           currentDimension_(std::clamp(mode, 1, maxDimensions_)),
           mode_(std::clamp(mode, 1, maxDimensions_)),
           influence_(std::clamp(influence, 0.0, 10.0)),
@@ -48,14 +48,25 @@ public:
           alpha_(std::clamp(alpha, 0.1, 10.0)),
           beta_(std::clamp(beta, 0.0, 1.0)),
           debug_(debug),
-          omega_(2.0 * M_PI / (2 * maxDimensions_ - 1)),  // Precomputed omega (angular frequency for oscillations)
-          invMaxDim_(maxDimensions_ > 0 ? 1.0 / maxDimensions_ : 1e-15),  // Precomputed inverse max dimensions for scaling
+          omega_(maxDimensions_ > 0 ? 2.0 * M_PI / (2 * maxDimensions_ - 1) : 1.0),
+          invMaxDim_(maxDimensions_ > 0 ? 1.0 / maxDimensions_ : 1e-15),
+          maxVertices_(1ULL << std::min(maxDimensions_, 30)), // Cap at 2^30 vertices
           interactions_() {
-        initializeNCube();
-        updateInteractions();
-        if (debug_) {
-            std::cout << "Initialized: maxDimensions=" << maxDimensions_ << ", mode=" << mode_
-                      << ", currentDimension=" << currentDimension_ << "\n";
+        try {
+            initializeNCube();
+            updateInteractions();
+            if (debug_) {
+                std::cout << "Initialized: maxDimensions=" << maxDimensions_ << ", mode=" << mode_
+                          << ", currentDimension=" << currentDimension_ << ", maxVertices=" << maxVertices_ << "\n";
+            }
+        } catch (const std::bad_alloc& e) {
+            std::cerr << "Error: Failed to allocate memory for " << (1ULL << currentDimension_) << " vertices. Reducing to 3D.\n";
+            maxDimensions_ = 3;
+            currentDimension_ = std::clamp(mode_, 1, maxDimensions_);
+            mode_ = currentDimension_;
+            maxVertices_ = 1ULL << maxDimensions_;
+            initializeNCube();
+            updateInteractions();
         }
     }
 
@@ -95,23 +106,39 @@ public:
     void setMode(int mode) {
         mode_ = std::clamp(mode, 1, maxDimensions_);
         currentDimension_ = mode_;
-        updateInteractions();
-        if (debug_) {
-            std::cout << "Mode set to: " << mode_ << ", dimension: " << currentDimension_ << "\n";
+        try {
+            updateInteractions();
+            if (debug_) {
+                std::cout << "Mode set to: " << mode_ << ", dimension: " << currentDimension_ << "\n";
+            }
+        } catch (const std::bad_alloc& e) {
+            std::cerr << "Error: Failed to allocate memory for dimension " << mode_ << ". Reverting to dimension 3.\n";
+            mode_ = 3;
+            currentDimension_ = 3;
+            updateInteractions();
         }
     }
+
     int getMode() const { return mode_; }
 
     void setCurrentDimension(int dimension) {
         if (dimension >= 1 && dimension <= maxDimensions_) {
             currentDimension_ = dimension;
             mode_ = dimension;
-            updateInteractions();
-            if (debug_) {
-                std::cout << "Dimension set to: " << currentDimension_ << ", mode: " << mode_ << "\n";
+            try {
+                updateInteractions();
+                if (debug_) {
+                    std::cout << "Dimension set to: " << currentDimension_ << ", mode: " << mode_ << "\n";
+                }
+            } catch (const std::bad_alloc& e) {
+                std::cerr << "Error: Failed to allocate memory for dimension " << dimension << ". Reverting to dimension 3.\n";
+                currentDimension_ = 3;
+                mode_ = 3;
+                updateInteractions();
             }
         }
     }
+
     int getCurrentDimension() const { return currentDimension_; }
 
     int getMaxDimensions() const { return maxDimensions_; }
@@ -126,9 +153,16 @@ public:
             currentDimension_++;
             mode_ = currentDimension_;
         }
-        updateInteractions();
-        if (debug_) {
-            std::cout << "Cycle advanced: dimension=" << currentDimension_ << ", mode=" << mode_ << "\n";
+        try {
+            updateInteractions();
+            if (debug_) {
+                std::cout << "Cycle advanced: dimension=" << currentDimension_ << ", mode=" << mode_ << "\n";
+            }
+        } catch (const std::bad_alloc& e) {
+            std::cerr << "Error: Failed to allocate memory for dimension " << currentDimension_ << ". Reverting to dimension 3.\n";
+            currentDimension_ = 3;
+            mode_ = 3;
+            updateInteractions();
         }
     }
 
@@ -167,25 +201,29 @@ public:
         return result;
     }
 
-    // Moved to public for access in renderMode1
     double computePermeation(int vertexIndex) const {
         if (vertexIndex == 1 || currentDimension_ == 1) return oneDPermeation_;
         if (currentDimension_ == 2 && (vertexIndex % maxDimensions_ + 1) > 2) return twoD_;
         if (currentDimension_ == 3 && ((vertexIndex % maxDimensions_ + 1) == 2 || (vertexIndex % maxDimensions_ + 1) == 4)) return threeDInfluence_;
+        if (nCubeVertices_.empty() || vertexIndex < 0 || static_cast<size_t>(vertexIndex) >= nCubeVertices_.size()) {
+            if (debug_) {
+                std::cout << "Permeation(vertex=" << vertexIndex << "): Invalid vertex index, returning 1.0\n";
+            }
+            return 1.0;
+        }
         std::vector<double> vertex = nCubeVertices_[vertexIndex % nCubeVertices_.size()];
         double vertexMagnitude = 0.0;
-        for (int i = 0; i < currentDimension_; ++i) {
+        for (int i = 0; i < std::min(currentDimension_, static_cast<int>(vertex.size())); ++i) {
             vertexMagnitude += vertex[i] * vertex[i];
         }
         vertexMagnitude = std::sqrt(vertexMagnitude);
-        double result = 1.0 + beta_ * vertexMagnitude / currentDimension_;
+        double result = 1.0 + beta_ * vertexMagnitude / std::max(1, currentDimension_);
         if (debug_) {
             std::cout << "Permeation(vertex=" << vertexIndex << "): " << result << "\n";
         }
         return result;
     }
 
-    // Moved to public for access in renderMode1
     double computeDarkEnergy(double distance) const {
         double d = std::min(distance, 10.0);
         double result = darkEnergyStrength_ * std::exp(d * invMaxDim_);
@@ -197,6 +235,7 @@ public:
 
 private:
     int maxDimensions_, currentDimension_, mode_;
+    uint64_t maxVertices_; // Cap for vertex count
     double influence_, weak_, collapse_, twoD_, threeDInfluence_, oneDPermeation_;
     double darkMatterStrength_, darkEnergyStrength_, alpha_, beta_;
     bool debug_;
@@ -206,13 +245,17 @@ private:
 
     void initializeNCube() {
         nCubeVertices_.clear();
-        int numVertices = 1 << currentDimension_;
-        for (int i = 0; i < numVertices; ++i) {
+        uint64_t numVertices = std::min(static_cast<uint64_t>(1ULL << currentDimension_), maxVertices_);
+        nCubeVertices_.reserve(numVertices);
+        for (uint64_t i = 0; i < numVertices; ++i) {
             std::vector<double> vertex(currentDimension_, 0.0);
             for (int j = 0; j < currentDimension_; ++j) {
-                vertex[j] = (i & (1 << j)) ? 1.0 : -1.0;
+                vertex[j] = (i & (1ULL << j)) ? 1.0 : -1.0;
             }
             nCubeVertices_.push_back(vertex);
+        }
+        if (debug_) {
+            std::cout << "Initialized nCube with " << nCubeVertices_.size() << " vertices for dimension " << currentDimension_ << "\n";
         }
     }
 
@@ -243,20 +286,20 @@ private:
     void updateInteractions() {
         interactions_.clear();
         initializeNCube();
-        int numVertices = 1 << currentDimension_;
+        uint64_t numVertices = std::min(static_cast<uint64_t>(1ULL << currentDimension_), maxVertices_);
         interactions_.reserve(numVertices);
         std::vector<double> referenceVertex = nCubeVertices_[0];
-        for (int i = 1; i < numVertices; ++i) {
+        for (uint64_t i = 1; i < numVertices; ++i) {
             double distance = 0.0;
             for (int j = 0; j < currentDimension_; ++j) {
                 double diff = nCubeVertices_[i][j] - referenceVertex[j];
                 distance += diff * diff;
             }
             distance = std::sqrt(distance);
-            double strength = computeInteraction(i, distance);
-            interactions_.push_back({i, distance, strength});
+            double strength = computeInteraction(static_cast<int>(i), distance);
+            interactions_.push_back({static_cast<int>(i), distance, strength});
         }
-        if (currentDimension_ == 3 && maxDimensions_ >= 4) {
+        if (currentDimension_ == 3) {
             for (int adj : {2, 4}) {
                 size_t vertexIndex = static_cast<size_t>(adj - 1);
                 if (vertexIndex < nCubeVertices_.size() &&
