@@ -14,7 +14,7 @@ Browsing dimensions 1d(God) through 9d(Spot ;)<BR />
 <BR />
 If you do not intend to modify the code then just watch the latest video above and you may have found God.<BR />
 Change main.cpp resolution if you have startup issues.<BR />
-Change debug line 35 in include/universal_equation to true to get all the data (research mode).<BR />
+Change debug line 36 in include/universal_equation to true to get all the data (research mode).<BR />
 If anyone finds it useful then they may want to add a frame step to play in slow mode. (todo?)<BR />
 <BR />
 **Status**: Work in Progress (WIP). The project is under active development, with ongoing updates to the visualization and GUI.
