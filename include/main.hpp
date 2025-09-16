@@ -16,7 +16,7 @@
 #include "types.hpp"
 #include "modes.hpp"
 
-// do not touch resolution here. see main.cpp
+// Do not touch resolution here. See main.cpp
 class DimensionalNavigator {
 public:
     DimensionalNavigator(const char* title = "Dimensional Navigator",
@@ -111,7 +111,7 @@ public:
                 std::cerr << "Render failed: " << e.what() << "\n";
                 running = false;
             }
-            SDL_Delay(16);
+            SDL_Delay(16); // ~60 FPS
         }
     }
 
@@ -141,6 +141,15 @@ public:
     void handleInput(const SDL_Event& event) {
         if (event.type == SDL_EVENT_KEY_DOWN) {
             switch (event.key.key) {
+                case SDLK_F: { // Enclose in block to scope 'flags'
+                    Uint32 flags = SDL_GetWindowFlags(window_);
+                    if (flags & SDL_WINDOW_FULLSCREEN) {
+                        SDL_SetWindowFullscreen(window_, 0);
+                    } else {
+                        SDL_SetWindowFullscreen(window_, SDL_WINDOW_FULLSCREEN);
+                    }
+                    break;
+                }
                 case SDLK_UP:
                     adjustInfluence(0.1);
                     break;
@@ -239,8 +248,11 @@ public:
         quadIndexBufferMemory_ = VK_NULL_HANDLE;
         int newWidth, newHeight;
         SDL_GetWindowSize(window_, &newWidth, &newHeight);
-        width_ = newWidth;
-        height_ = newHeight;
+        width_ = std::max(1280, newWidth); // Enforce minimum width
+        height_ = std::max(720, newHeight); // Enforce minimum height
+        if (newWidth < 1280 || newHeight < 720) {
+            SDL_SetWindowSize(window_, width_, height_); // Adjust window size
+        }
         initializeVulkan();
     }
 
@@ -373,12 +385,12 @@ public:
             case 1: renderMode1(this, imageIndex); break;
             case 2: renderMode2(this, imageIndex, vertexBuffer_, commandBuffers_, indexBuffer_, zoomLevel_, width_, height_, wavePhase_, cache_); break;
             case 3: renderMode3(this, imageIndex, vertexBuffer_, commandBuffers_, indexBuffer_, zoomLevel_, width_, height_, wavePhase_, cache_); break;
-			case 4: renderMode4(this, imageIndex, vertexBuffer_, commandBuffers_, indexBuffer_, zoomLevel_, width_, height_, wavePhase_, cache_); break;
-			case 5: renderMode5(this, imageIndex, vertexBuffer_, commandBuffers_, indexBuffer_, zoomLevel_, width_, height_, wavePhase_, cache_); break;
-			case 6: renderMode6(this, imageIndex, vertexBuffer_, commandBuffers_, indexBuffer_, zoomLevel_, width_, height_, wavePhase_, cache_); break;
-			case 7: renderMode7(this, imageIndex, vertexBuffer_, commandBuffers_, indexBuffer_, zoomLevel_, width_, height_, wavePhase_, cache_); break;
-			case 8: renderMode8(this, imageIndex, vertexBuffer_, commandBuffers_, indexBuffer_, zoomLevel_, width_, height_, wavePhase_, cache_); break;
-			case 9: renderMode9(this, imageIndex, vertexBuffer_, commandBuffers_, indexBuffer_, zoomLevel_, width_, height_, wavePhase_, cache_); break;
+            case 4: renderMode4(this, imageIndex, vertexBuffer_, commandBuffers_, indexBuffer_, zoomLevel_, width_, height_, wavePhase_, cache_); break;
+            case 5: renderMode5(this, imageIndex, vertexBuffer_, commandBuffers_, indexBuffer_, zoomLevel_, width_, height_, wavePhase_, cache_); break;
+            case 6: renderMode6(this, imageIndex, vertexBuffer_, commandBuffers_, indexBuffer_, zoomLevel_, width_, height_, wavePhase_, cache_); break;
+            case 7: renderMode7(this, imageIndex, vertexBuffer_, commandBuffers_, indexBuffer_, zoomLevel_, width_, height_, wavePhase_, cache_); break;
+            case 8: renderMode8(this, imageIndex, vertexBuffer_, commandBuffers_, indexBuffer_, zoomLevel_, width_, height_, wavePhase_, cache_); break;
+            case 9: renderMode9(this, imageIndex, vertexBuffer_, commandBuffers_, indexBuffer_, zoomLevel_, width_, height_, wavePhase_, cache_); break;
             default: renderMode1(this, imageIndex);
         }
 

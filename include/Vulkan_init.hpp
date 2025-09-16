@@ -13,15 +13,17 @@
 
 class VulkanInitializer {
 public:
-    static void initializeVulkan(VkInstance& instance, VkPhysicalDevice& physicalDevice, VkDevice& device, VkSurfaceKHR& surface,
-                                 VkQueue& graphicsQueue, VkQueue& presentQueue, uint32_t& graphicsFamily, uint32_t& presentFamily,
-                                 VkSwapchainKHR& swapchain, std::vector<VkImage>& swapchainImages, std::vector<VkImageView>& swapchainImageViews,
-                                 VkRenderPass& renderPass, VkPipeline& pipeline, VkPipelineLayout& pipelineLayout,
-                                 std::vector<VkFramebuffer>& swapchainFramebuffers, VkCommandPool& commandPool,
-                                 std::vector<VkCommandBuffer>& commandBuffers, VkSemaphore& imageAvailableSemaphore,
-                                 VkSemaphore& renderFinishedSemaphore, VkFence& inFlightFence, VkBuffer& vertexBuffer,
-                                 VkDeviceMemory& vertexBufferMemory, VkBuffer& indexBuffer, VkDeviceMemory& indexBufferMemory,
-                                 const std::vector<glm::vec3>& sphereVertices, const std::vector<uint32_t>& sphereIndices, int width, int height) {
+    static void initializeVulkan(
+        VkInstance& instance, VkPhysicalDevice& physicalDevice, VkDevice& device, VkSurfaceKHR& surface,
+        VkQueue& graphicsQueue, VkQueue& presentQueue, uint32_t& graphicsFamily, uint32_t& presentFamily,
+        VkSwapchainKHR& swapchain, std::vector<VkImage>& swapchainImages, std::vector<VkImageView>& swapchainImageViews,
+        VkRenderPass& renderPass, VkPipeline& pipeline, VkPipelineLayout& pipelineLayout,
+        std::vector<VkFramebuffer>& swapchainFramebuffers, VkCommandPool& commandPool,
+        std::vector<VkCommandBuffer>& commandBuffers, VkSemaphore& imageAvailableSemaphore,
+        VkSemaphore& renderFinishedSemaphore, VkFence& inFlightFence, VkBuffer& vertexBuffer,
+        VkDeviceMemory& vertexBufferMemory, VkBuffer& indexBuffer, VkDeviceMemory& indexBufferMemory,
+        const std::vector<glm::vec3>& sphereVertices, const std::vector<uint32_t>& sphereIndices, int width, int height
+    ) {
         VkFormat swapchainFormat;
         createPhysicalDevice(instance, physicalDevice, graphicsFamily, presentFamily, surface);
         createLogicalDevice(physicalDevice, device, graphicsQueue, presentQueue, graphicsFamily, presentFamily);
@@ -36,20 +38,24 @@ public:
         createIndexBuffer(device, physicalDevice, commandPool, graphicsQueue, indexBuffer, indexBufferMemory, sphereIndices);
     }
 
-    static void initializeQuadBuffers(VkDevice device, VkPhysicalDevice physicalDevice, VkCommandPool commandPool, VkQueue graphicsQueue,
-                                     VkBuffer& vertexBuffer, VkDeviceMemory& vertexBufferMemory, VkBuffer& indexBuffer,
-                                     VkDeviceMemory& indexBufferMemory, const std::vector<glm::vec3>& vertices,
-                                     const std::vector<uint32_t>& indices) {
+    static void initializeQuadBuffers(
+        VkDevice device, VkPhysicalDevice physicalDevice, VkCommandPool commandPool, VkQueue graphicsQueue,
+        VkBuffer& vertexBuffer, VkDeviceMemory& vertexBufferMemory, VkBuffer& indexBuffer,
+        VkDeviceMemory& indexBufferMemory, const std::vector<glm::vec3>& vertices,
+        const std::vector<uint32_t>& indices
+    ) {
         createVertexBuffer(device, physicalDevice, commandPool, graphicsQueue, vertexBuffer, vertexBufferMemory, vertices);
         createIndexBuffer(device, physicalDevice, commandPool, graphicsQueue, indexBuffer, indexBufferMemory, indices);
     }
 
-    static void cleanupVulkan(VkInstance instance, VkDevice device, VkSurfaceKHR surface, VkSwapchainKHR swapchain,
-                              std::vector<VkImageView>& swapchainImageViews, std::vector<VkFramebuffer>& swapchainFramebuffers,
-                              VkPipeline pipeline, VkPipelineLayout pipelineLayout, VkRenderPass renderPass, VkCommandPool commandPool,
-                              std::vector<VkCommandBuffer>& commandBuffers, VkSemaphore imageAvailableSemaphore,
-                              VkSemaphore renderFinishedSemaphore, VkFence inFlightFence, VkBuffer vertexBuffer,
-                              VkDeviceMemory vertexBufferMemory, VkBuffer indexBuffer, VkDeviceMemory indexBufferMemory) {
+    static void cleanupVulkan(
+        VkInstance instance, VkDevice device, VkSurfaceKHR surface, VkSwapchainKHR swapchain,
+        std::vector<VkImageView>& swapchainImageViews, std::vector<VkFramebuffer>& swapchainFramebuffers,
+        VkPipeline pipeline, VkPipelineLayout pipelineLayout, VkRenderPass renderPass, VkCommandPool commandPool,
+        std::vector<VkCommandBuffer>& commandBuffers, VkSemaphore imageAvailableSemaphore,
+        VkSemaphore renderFinishedSemaphore, VkFence inFlightFence, VkBuffer vertexBuffer,
+        VkDeviceMemory vertexBufferMemory, VkBuffer indexBuffer, VkDeviceMemory indexBufferMemory
+    ) {
         if (device) {
             vkDeviceWaitIdle(device);
             if (vertexBuffer != VK_NULL_HANDLE) vkDestroyBuffer(device, vertexBuffer, nullptr);
@@ -73,8 +79,10 @@ public:
         if (instance) vkDestroyInstance(instance, nullptr);
     }
 
-    static void cleanupQuadBuffers(VkDevice device, VkBuffer vertexBuffer, VkDeviceMemory vertexBufferMemory,
-                                  VkBuffer indexBuffer, VkDeviceMemory indexBufferMemory) {
+    static void cleanupQuadBuffers(
+        VkDevice device, VkBuffer vertexBuffer, VkDeviceMemory vertexBufferMemory,
+        VkBuffer indexBuffer, VkDeviceMemory indexBufferMemory
+    ) {
         if (device) {
             vkDeviceWaitIdle(device);
             if (vertexBuffer != VK_NULL_HANDLE) vkDestroyBuffer(device, vertexBuffer, nullptr);
@@ -83,6 +91,8 @@ public:
             if (indexBufferMemory != VK_NULL_HANDLE) vkFreeMemory(device, indexBufferMemory, nullptr);
         }
     }
+
+private:
 
 private:
     static void createPhysicalDevice(VkInstance instance, VkPhysicalDevice& physicalDevice, uint32_t& graphicsFamily, uint32_t& presentFamily, VkSurfaceKHR surface) {
