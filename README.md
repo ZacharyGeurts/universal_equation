@@ -59,7 +59,8 @@ The visualization emphasizes 1D’s omnipresent wave-like influence, with dynami
     - `UP`/`DOWN`: Increase/decrease influence (`kInfluence_`) by 0.1.  
     - `LEFT`/`RIGHT`: Decrease/increase dark matter strength (`kDarkMatter_`) by 0.05.  
     - `PAGEUP`/`PAGEDOWN`: Increase/decrease dark energy scale (`kDarkEnergy_`) by 0.05.  
-    - `1` to `9`: Switch to rendering modes 1D through 9D.  
+    - `1` to `9`: Switch to rendering modes 1D through 9D.
+    - `F` toggle Fullscreen
     - `A`/`Z`: Zoom in/out (adjusts `zoomLevel_` between 0.01 and 20.0).  
 - **Data Logging**: Outputs dimensional data (dimension, observable, potential, dark matter, dark energy) to the console for debugging (enable in `UniversalEquation`).
 
