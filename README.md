@@ -65,7 +65,7 @@ The visualization emphasizes 1D’s omnipresent wave-like influence, with dynami
     - `1` to `9`: Switch to rendering modes 1D through 9D.
     - `F` toggle Fullscreen
     - `A`/`Z`: Zoom in/out (adjusts `zoomLevel_` between 0.01 and 20.0).  
-- **Data Logging**: Outputs dimensional data (dimension, observable, potential, dark matter, dark energy) to the console for debugging (enable in `UniversalEquation`).
+- **Data Logging**: Outputs dimensional data (dimension, observable, potential, dark matter, dark energy) to the console for debugging.
 
 ## Model Description
 The `UniversalEquation` class defines dimensional interactions:  
