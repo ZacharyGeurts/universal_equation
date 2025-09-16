@@ -2,8 +2,7 @@
 #include <iostream>
 #include <ctime>
 
-// screen resolution 1500x1000
-// keep above 1280x720
+// Screen resolution 1500x1000, keep above 1280x720
 int main() {
     try {
         DimensionalNavigator navigator("Dimensional Navigator", 1500, 1000, "arial.ttf", 24);

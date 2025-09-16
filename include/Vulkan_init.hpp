@@ -49,56 +49,164 @@ public:
     }
 
     static void cleanupVulkan(
-        VkInstance instance, VkDevice device, VkSurfaceKHR surface, VkSwapchainKHR swapchain,
+        VkInstance instance, VkDevice& device, VkSurfaceKHR surface, VkSwapchainKHR& swapchain,
         std::vector<VkImageView>& swapchainImageViews, std::vector<VkFramebuffer>& swapchainFramebuffers,
-        VkPipeline pipeline, VkPipelineLayout pipelineLayout, VkRenderPass renderPass, VkCommandPool commandPool,
-        std::vector<VkCommandBuffer>& commandBuffers, VkSemaphore imageAvailableSemaphore,
-        VkSemaphore renderFinishedSemaphore, VkFence inFlightFence, VkBuffer vertexBuffer,
-        VkDeviceMemory vertexBufferMemory, VkBuffer indexBuffer, VkDeviceMemory indexBufferMemory
+        VkPipeline& pipeline, VkPipelineLayout& pipelineLayout, VkRenderPass& renderPass, VkCommandPool& commandPool,
+        std::vector<VkCommandBuffer>& commandBuffers, VkSemaphore& imageAvailableSemaphore,
+        VkSemaphore& renderFinishedSemaphore, VkFence& inFlightFence, VkBuffer& vertexBuffer,
+        VkDeviceMemory& vertexBufferMemory, VkBuffer& indexBuffer, VkDeviceMemory& indexBufferMemory,
+        VkBuffer& quadVertexBuffer, VkDeviceMemory& quadVertexBufferMemory, VkBuffer& quadIndexBuffer,
+        VkDeviceMemory& quadIndexBufferMemory
     ) {
-        if (device) {
-            vkDeviceWaitIdle(device);
-            if (vertexBuffer != VK_NULL_HANDLE) vkDestroyBuffer(device, vertexBuffer, nullptr);
-            if (vertexBufferMemory != VK_NULL_HANDLE) vkFreeMemory(device, vertexBufferMemory, nullptr);
-            if (indexBuffer != VK_NULL_HANDLE) vkDestroyBuffer(device, indexBuffer, nullptr);
-            if (indexBufferMemory != VK_NULL_HANDLE) vkFreeMemory(device, indexBufferMemory, nullptr);
-            vkDestroySemaphore(device, imageAvailableSemaphore, nullptr);
-            vkDestroySemaphore(device, renderFinishedSemaphore, nullptr);
-            vkDestroyFence(device, inFlightFence, nullptr);
-            if (!commandBuffers.empty()) vkFreeCommandBuffers(device, commandPool, commandBuffers.size(), commandBuffers.data());
-            vkDestroyCommandPool(device, commandPool, nullptr);
-            for (auto fb : swapchainFramebuffers) vkDestroyFramebuffer(device, fb, nullptr);
-            vkDestroyPipeline(device, pipeline, nullptr);
-            vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
-            vkDestroyRenderPass(device, renderPass, nullptr);
-            for (auto iv : swapchainImageViews) vkDestroyImageView(device, iv, nullptr);
-            vkDestroySwapchainKHR(device, swapchain, nullptr);
-            vkDestroyDevice(device, nullptr);
+        if (device == VK_NULL_HANDLE) {
+            std::cerr << "Device is already null, skipping Vulkan cleanup\n";
+            return;
         }
-        if (instance && surface) vkDestroySurfaceKHR(instance, surface, nullptr);
-        if (instance) vkDestroyInstance(instance, nullptr);
-    }
 
-    static void cleanupQuadBuffers(
-        VkDevice device, VkBuffer vertexBuffer, VkDeviceMemory vertexBufferMemory,
-        VkBuffer indexBuffer, VkDeviceMemory indexBufferMemory
-    ) {
-        if (device) {
-            vkDeviceWaitIdle(device);
-            if (vertexBuffer != VK_NULL_HANDLE) vkDestroyBuffer(device, vertexBuffer, nullptr);
-            if (vertexBufferMemory != VK_NULL_HANDLE) vkFreeMemory(device, vertexBufferMemory, nullptr);
-            if (indexBuffer != VK_NULL_HANDLE) vkDestroyBuffer(device, indexBuffer, nullptr);
-            if (indexBufferMemory != VK_NULL_HANDLE) vkFreeMemory(device, indexBufferMemory, nullptr);
+        // Wait for device to be idle
+        VkResult result = vkDeviceWaitIdle(device);
+        if (result != VK_SUCCESS) {
+            std::cerr << "vkDeviceWaitIdle failed in cleanupVulkan: " << result << "\n";
         }
+
+        // Destroy quad buffers and memory first
+        if (quadVertexBuffer != VK_NULL_HANDLE) {
+            std::cerr << "Destroying quad vertex buffer\n";
+            vkDestroyBuffer(device, quadVertexBuffer, nullptr);
+            quadVertexBuffer = VK_NULL_HANDLE;
+        }
+        if (quadVertexBufferMemory != VK_NULL_HANDLE) {
+            std::cerr << "Freeing quad vertex buffer memory\n";
+            vkFreeMemory(device, quadVertexBufferMemory, nullptr);
+            quadVertexBufferMemory = VK_NULL_HANDLE;
+        }
+        if (quadIndexBuffer != VK_NULL_HANDLE) {
+            std::cerr << "Destroying quad index buffer\n";
+            vkDestroyBuffer(device, quadIndexBuffer, nullptr);
+            quadIndexBuffer = VK_NULL_HANDLE;
+        }
+        if (quadIndexBufferMemory != VK_NULL_HANDLE) {
+            std::cerr << "Freeing quad index buffer memory\n";
+            vkFreeMemory(device, quadIndexBufferMemory, nullptr);
+            quadIndexBufferMemory = VK_NULL_HANDLE;
+        }
+
+        // Destroy sphere buffers and memory
+        if (vertexBuffer != VK_NULL_HANDLE) {
+            std::cerr << "Destroying vertex buffer\n";
+            vkDestroyBuffer(device, vertexBuffer, nullptr);
+            vertexBuffer = VK_NULL_HANDLE;
+        }
+        if (vertexBufferMemory != VK_NULL_HANDLE) {
+            std::cerr << "Freeing vertex buffer memory\n";
+            vkFreeMemory(device, vertexBufferMemory, nullptr);
+            vertexBufferMemory = VK_NULL_HANDLE;
+        }
+        if (indexBuffer != VK_NULL_HANDLE) {
+            std::cerr << "Destroying index buffer\n";
+            vkDestroyBuffer(device, indexBuffer, nullptr);
+            indexBuffer = VK_NULL_HANDLE;
+        }
+        if (indexBufferMemory != VK_NULL_HANDLE) {
+            std::cerr << "Freeing index buffer memory\n";
+            vkFreeMemory(device, indexBufferMemory, nullptr);
+            indexBufferMemory = VK_NULL_HANDLE;
+        }
+
+        // Destroy sync objects
+        if (imageAvailableSemaphore != VK_NULL_HANDLE) {
+            std::cerr << "Destroying image available semaphore\n";
+            vkDestroySemaphore(device, imageAvailableSemaphore, nullptr);
+            imageAvailableSemaphore = VK_NULL_HANDLE;
+        }
+        if (renderFinishedSemaphore != VK_NULL_HANDLE) {
+            std::cerr << "Destroying render finished semaphore\n";
+            vkDestroySemaphore(device, renderFinishedSemaphore, nullptr);
+            renderFinishedSemaphore = VK_NULL_HANDLE;
+        }
+        if (inFlightFence != VK_NULL_HANDLE) {
+            std::cerr << "Destroying in-flight fence\n";
+            vkDestroyFence(device, inFlightFence, nullptr);
+            inFlightFence = VK_NULL_HANDLE;
+        }
+
+        // Destroy command buffers and pool
+        if (!commandBuffers.empty()) {
+            std::cerr << "Freeing command buffers\n";
+            vkFreeCommandBuffers(device, commandPool, commandBuffers.size(), commandBuffers.data());
+            commandBuffers.clear();
+        }
+        if (commandPool != VK_NULL_HANDLE) {
+            std::cerr << "Destroying command pool\n";
+            vkDestroyCommandPool(device, commandPool, nullptr);
+            commandPool = VK_NULL_HANDLE;
+        }
+
+        // Destroy framebuffers, pipeline, and render pass
+        for (auto& fb : swapchainFramebuffers) {
+            if (fb != VK_NULL_HANDLE) {
+                std::cerr << "Destroying framebuffer\n";
+                vkDestroyFramebuffer(device, fb, nullptr);
+                fb = VK_NULL_HANDLE;
+            }
+        }
+        swapchainFramebuffers.clear();
+        if (pipeline != VK_NULL_HANDLE) {
+            std::cerr << "Destroying pipeline\n";
+            vkDestroyPipeline(device, pipeline, nullptr);
+            pipeline = VK_NULL_HANDLE;
+        }
+        if (pipelineLayout != VK_NULL_HANDLE) {
+            std::cerr << "Destroying pipeline layout\n";
+            vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
+            pipelineLayout = VK_NULL_HANDLE;
+        }
+        if (renderPass != VK_NULL_HANDLE) {
+            std::cerr << "Destroying render pass\n";
+            vkDestroyRenderPass(device, renderPass, nullptr);
+            renderPass = VK_NULL_HANDLE;
+        }
+
+        // Destroy swapchain and image views
+        for (auto& iv : swapchainImageViews) {
+            if (iv != VK_NULL_HANDLE) {
+                std::cerr << "Destroying image view\n";
+                vkDestroyImageView(device, iv, nullptr);
+                iv = VK_NULL_HANDLE;
+            }
+        }
+        swapchainImageViews.clear();
+        if (swapchain != VK_NULL_HANDLE) {
+            std::cerr << "Destroying swapchain\n";
+            vkDestroySwapchainKHR(device, swapchain, nullptr);
+            swapchain = VK_NULL_HANDLE;
+        }
+
+        // Destroy device last
+        std::cerr << "Destroying device\n";
+        vkDestroyDevice(device, nullptr);
+        device = VK_NULL_HANDLE;
+
+        // Do NOT destroy instance or surface during swapchain recreation
+        // These are handled in SDL3Initializer::cleanupSDL
     }
 
 private:
     static void createPhysicalDevice(VkInstance instance, VkPhysicalDevice& physicalDevice, uint32_t& graphicsFamily, uint32_t& presentFamily, VkSurfaceKHR surface) {
+        if (instance == VK_NULL_HANDLE) {
+            throw std::runtime_error("Invalid Vulkan instance");
+        }
         uint32_t deviceCount = 0;
-        vkEnumeratePhysicalDevices(instance, &deviceCount, nullptr);
+        VkResult result = vkEnumeratePhysicalDevices(instance, &deviceCount, nullptr);
+        if (result != VK_SUCCESS) {
+            throw std::runtime_error("vkEnumeratePhysicalDevices failed: " + std::to_string(result));
+        }
         if (!deviceCount) throw std::runtime_error("No Vulkan devices found");
         std::vector<VkPhysicalDevice> devices(deviceCount);
-        vkEnumeratePhysicalDevices(instance, &deviceCount, devices.data());
+        result = vkEnumeratePhysicalDevices(instance, &deviceCount, devices.data());
+        if (result != VK_SUCCESS) {
+            throw std::runtime_error("vkEnumeratePhysicalDevices failed: " + std::to_string(result));
+        }
         for (const auto& dev : devices) {
             uint32_t queueFamilyCount = 0;
             vkGetPhysicalDeviceQueueFamilyProperties(dev, &queueFamilyCount, nullptr);

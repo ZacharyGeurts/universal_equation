@@ -141,7 +141,7 @@ public:
     void handleInput(const SDL_Event& event) {
         if (event.type == SDL_EVENT_KEY_DOWN) {
             switch (event.key.key) {
-                case SDLK_F: { // Enclose in block to scope 'flags'
+                case SDLK_F: {
                     Uint32 flags = SDL_GetWindowFlags(window_);
                     if (flags & SDL_WINDOW_FULLSCREEN) {
                         SDL_SetWindowFullscreen(window_, 0);
@@ -218,56 +218,86 @@ public:
                                                 quadIndexBufferMemory_, quadVertices_, quadIndices_);
     }
 
-    void recreateSwapchain() {
-        if (vulkanDevice_) vkDeviceWaitIdle(vulkanDevice_);
-        VulkanInitializer::cleanupVulkan(vulkanInstance_, vulkanDevice_, surface_, swapchain_, swapchainImageViews_,
-                                         swapchainFramebuffers_, pipeline_, pipelineLayout_, renderPass_,
-                                         commandPool_, commandBuffers_, imageAvailableSemaphore_, renderFinishedSemaphore_,
-                                         inFlightFence_, vertexBuffer_, vertexBufferMemory_, indexBuffer_, indexBufferMemory_);
-        VulkanInitializer::cleanupQuadBuffers(vulkanDevice_, quadVertexBuffer_, quadVertexBufferMemory_, quadIndexBuffer_, quadIndexBufferMemory_);
-        vulkanDevice_ = VK_NULL_HANDLE;
-        swapchain_ = VK_NULL_HANDLE;
-        swapchainImages_.clear();
-        swapchainImageViews_.clear();
-        swapchainFramebuffers_.clear();
-        pipeline_ = VK_NULL_HANDLE;
-        pipelineLayout_ = VK_NULL_HANDLE;
-        renderPass_ = VK_NULL_HANDLE;
-        commandPool_ = VK_NULL_HANDLE;
-        commandBuffers_.clear();
-        imageAvailableSemaphore_ = VK_NULL_HANDLE;
-        renderFinishedSemaphore_ = VK_NULL_HANDLE;
-        inFlightFence_ = VK_NULL_HANDLE;
-        vertexBuffer_ = VK_NULL_HANDLE;
-        vertexBufferMemory_ = VK_NULL_HANDLE;
-        indexBuffer_ = VK_NULL_HANDLE;
-        indexBufferMemory_ = VK_NULL_HANDLE;
-        quadVertexBuffer_ = VK_NULL_HANDLE;
-        quadVertexBufferMemory_ = VK_NULL_HANDLE;
-        quadIndexBuffer_ = VK_NULL_HANDLE;
-        quadIndexBufferMemory_ = VK_NULL_HANDLE;
-        int newWidth, newHeight;
-        SDL_GetWindowSize(window_, &newWidth, &newHeight);
-        width_ = std::max(1280, newWidth); // Enforce minimum width
-        height_ = std::max(720, newHeight); // Enforce minimum height
-        if (newWidth < 1280 || newHeight < 720) {
-            SDL_SetWindowSize(window_, width_, height_); // Adjust window size
+void recreateSwapchain() {
+    // Wait for device to be idle before cleanup
+    if (vulkanDevice_ != VK_NULL_HANDLE) {
+        VkResult result = vkDeviceWaitIdle(vulkanDevice_);
+        if (result != VK_SUCCESS) {
+            std::cerr << "vkDeviceWaitIdle failed: " << result << "\n";
         }
-        initializeVulkan();
     }
 
-    void cleanup() {
-        VulkanInitializer::cleanupVulkan(vulkanInstance_, vulkanDevice_, surface_, swapchain_, swapchainImageViews_,
-                                         swapchainFramebuffers_, pipeline_, pipelineLayout_, renderPass_,
-                                         commandPool_, commandBuffers_, imageAvailableSemaphore_, renderFinishedSemaphore_,
-                                         inFlightFence_, vertexBuffer_, vertexBufferMemory_, indexBuffer_, indexBufferMemory_);
-        VulkanInitializer::cleanupQuadBuffers(vulkanDevice_, quadVertexBuffer_, quadVertexBufferMemory_, quadIndexBuffer_, quadIndexBufferMemory_);
-        SDL3Initializer::cleanupSDL(window_, vulkanInstance_, surface_, font_);
-        window_ = nullptr;
-        font_ = nullptr;
-        vulkanInstance_ = VK_NULL_HANDLE;
-        surface_ = VK_NULL_HANDLE;
+    // Cleanup Vulkan resources
+    std::cerr << "Cleaning up Vulkan resources\n";
+    VulkanInitializer::cleanupVulkan(vulkanInstance_, vulkanDevice_, surface_, swapchain_, swapchainImageViews_,
+                                    swapchainFramebuffers_, pipeline_, pipelineLayout_, renderPass_,
+                                    commandPool_, commandBuffers_, imageAvailableSemaphore_, renderFinishedSemaphore_,
+                                    inFlightFence_, vertexBuffer_, vertexBufferMemory_, indexBuffer_, indexBufferMemory_,
+                                    quadVertexBuffer_, quadVertexBufferMemory_, quadIndexBuffer_, quadIndexBufferMemory_);
+
+    // Nullify resources after cleanup
+    std::cerr << "Nullifying Vulkan resources\n";
+    swapchain_ = VK_NULL_HANDLE;
+    swapchainImages_.clear();
+    swapchainImageViews_.clear();
+    swapchainFramebuffers_.clear();
+    pipeline_ = VK_NULL_HANDLE;
+    pipelineLayout_ = VK_NULL_HANDLE;
+    renderPass_ = VK_NULL_HANDLE;
+    commandPool_ = VK_NULL_HANDLE;
+    commandBuffers_.clear();
+    imageAvailableSemaphore_ = VK_NULL_HANDLE;
+    renderFinishedSemaphore_ = VK_NULL_HANDLE;
+    inFlightFence_ = VK_NULL_HANDLE;
+    vertexBuffer_ = VK_NULL_HANDLE;
+    vertexBufferMemory_ = VK_NULL_HANDLE;
+    indexBuffer_ = VK_NULL_HANDLE;
+    indexBufferMemory_ = VK_NULL_HANDLE;
+    quadVertexBuffer_ = VK_NULL_HANDLE;
+    quadVertexBufferMemory_ = VK_NULL_HANDLE;
+    quadIndexBuffer_ = VK_NULL_HANDLE;
+    quadIndexBufferMemory_ = VK_NULL_HANDLE;
+    vulkanDevice_ = VK_NULL_HANDLE; // Nullify device last
+
+    // Update window size
+    int newWidth, newHeight;
+    SDL_GetWindowSize(window_, &newWidth, &newHeight);
+    width_ = std::max(1280, newWidth); // Enforce minimum width
+    height_ = std::max(720, newHeight); // Enforce minimum height
+    std::cerr << "Recreating swapchain with resolution: " << width_ << "x" << height_ << "\n";
+    if (newWidth < 1280 || newHeight < 720) {
+        SDL_SetWindowSize(window_, width_, height_);
+        std::cerr << "Adjusted window size to: " << width_ << "x" << height_ << "\n";
     }
+
+    // Reinitialize Vulkan
+    initializeVulkan();
+}
+
+void cleanup() {
+    // Wait for device to be idle before cleanup
+    if (vulkanDevice_ != VK_NULL_HANDLE) {
+        VkResult result = vkDeviceWaitIdle(vulkanDevice_);
+        if (result != VK_SUCCESS) {
+            std::cerr << "vkDeviceWaitIdle failed in cleanup: " << result << "\n";
+        }
+    }
+
+    // Cleanup Vulkan resources
+    std::cerr << "Cleaning up Vulkan resources in cleanup\n";
+    VulkanInitializer::cleanupVulkan(vulkanInstance_, vulkanDevice_, surface_, swapchain_, swapchainImageViews_,
+                                    swapchainFramebuffers_, pipeline_, pipelineLayout_, renderPass_,
+                                    commandPool_, commandBuffers_, imageAvailableSemaphore_, renderFinishedSemaphore_,
+                                    inFlightFence_, vertexBuffer_, vertexBufferMemory_, indexBuffer_, indexBufferMemory_,
+                                    quadVertexBuffer_, quadVertexBufferMemory_, quadIndexBuffer_, quadIndexBufferMemory_);
+
+    // Cleanup SDL resources
+    SDL3Initializer::cleanupSDL(window_, vulkanInstance_, surface_, font_);
+    window_ = nullptr;
+    font_ = nullptr;
+    vulkanInstance_ = VK_NULL_HANDLE;
+    surface_ = VK_NULL_HANDLE;
+}
 
     void initializeSphereGeometry() {
         const int stacks = 16;
@@ -355,6 +385,7 @@ public:
     }
 
     void render() {
+        std::cerr << "Rendering with resolution: " << width_ << "x" << height_ << ", aspect ratio: " << static_cast<float>(width_) / height_ << "\n";
         vkWaitForFences(vulkanDevice_, 1, &inFlightFence_, VK_TRUE, UINT64_MAX);
         vkResetFences(vulkanDevice_, 1, &inFlightFence_);
 
