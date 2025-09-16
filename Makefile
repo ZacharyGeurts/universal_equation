@@ -1,6 +1,6 @@
 # Compiler and flags
 CXX = g++
-CXXFLAGS = -std=c++17 -Wall -Wextra -g -Iinclude
+CXXFLAGS = -std=c++17 -Wall -Wextra -g -Iinclude -Wno-unused-parameter
 LDFLAGS = -lSDL3 -lSDL3_ttf -lvulkan
 
 # Shader compiler
