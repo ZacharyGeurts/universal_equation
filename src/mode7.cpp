@@ -104,31 +104,31 @@ void renderMode7(DimensionalNavigator* navigator, uint32_t imageIndex, VkBuffer 
         }
 
         for (const auto& pair : pairs) {
-            if (pair.dimension != static_cast<int>(i + 1)) continue;
+            if (navigator->ue_.getCurrentDimension() != static_cast<int>(i + 1)) continue;
 
             float interactionStrength = static_cast<float>(
-                navigator->computeInteraction(pair.dimension, pair.distance) *
+                navigator->computeInteraction(pair.vertexIndex, pair.distance) *
                 std::exp(-glm::abs(navigator->ue_.getAlpha() * pair.distance)) *
-                navigator->computePermeation(pair.dimension) *
-                glm::max(0.0f, static_cast<float>(pair.darkMatterDensity)));
+                navigator->computePermeation(pair.vertexIndex) *
+                glm::max(0.0f, static_cast<float>(pair.strength)));
             interactionStrength *= divineGlow;
             interactionStrength = glm::clamp(interactionStrength, 0.01f, 2.5f);
 
-            float orbitRadius = 2.6f + static_cast<float>(pair.distance) * 0.6f * (1.0f + static_cast<float>(pair.darkMatterDensity) * 0.45f);
-            float angleA = wavePhase_ + pair.dimension * 2.5f + pair.distance * 0.18f;
-            float angleB = wavePhase_ * 0.95f + pair.dimension * 1.2f + pair.distance * 0.22f;
+            float orbitRadius = 2.6f + static_cast<float>(pair.distance) * 0.6f * (1.0f + static_cast<float>(pair.strength) * 0.45f);
+            float angleA = wavePhase_ + pair.vertexIndex * 2.5f + pair.distance * 0.18f;
+            float angleB = wavePhase_ * 0.95f + pair.vertexIndex * 1.2f + pair.distance * 0.22f;
             glm::vec3 orbitPos = glm::vec3(
                 cosf(angleA) * orbitRadius * zoomFactor,
                 sinf(angleA) * orbitRadius * zoomFactor,
-                sinf(angleB + pair.dimension) * orbitRadius * 0.75f * zoomFactor
+                sinf(angleB + pair.vertexIndex) * orbitRadius * 0.75f * zoomFactor
             );
             glm::mat4 interactionModel = glm::translate(glm::mat4(1.0f), orbitPos);
             interactionModel = glm::scale(interactionModel, glm::vec3(0.46f * zoomFactor * (1.0f + divineGlow)));
 
             glm::vec3 interactionColor = glm::vec3(
-                0.75f + 0.35f * sinf(wavePhase_ * 0.88f + pair.dimension),
-                0.6f + 0.3f * cosf(wavePhase_ * 0.7f + pair.dimension),
-                0.85f + 0.35f * sinf(wavePhase_ * 1.24f + pair.dimension)
+                0.75f + 0.35f * sinf(wavePhase_ * 0.88f + pair.vertexIndex),
+                0.6f + 0.3f * cosf(wavePhase_ * 0.7f + pair.vertexIndex),
+                0.85f + 0.35f * sinf(wavePhase_ * 1.24f + pair.vertexIndex)
             );
             interactionColor = glm::clamp(interactionColor, 0.0f, 1.0f);
 
@@ -138,10 +138,10 @@ void renderMode7(DimensionalNavigator* navigator, uint32_t imageIndex, VkBuffer 
                 proj,
                 interactionColor,
                 interactionStrength,
-                static_cast<float>(pair.dimension),
+                static_cast<float>(i + 1),
                 wavePhase_,
                 cycleProgress,
-                static_cast<float>(pair.darkMatterDensity) * divineGlow,
+                static_cast<float>(pair.strength) * divineGlow,
                 static_cast<float>(navigator->computeDarkEnergy(pair.distance)) * divineGlow
             };
             vkCmdPushConstants(commandBuffers_[imageIndex], navigator->pipelineLayout_,
@@ -149,7 +149,7 @@ void renderMode7(DimensionalNavigator* navigator, uint32_t imageIndex, VkBuffer 
                                0, sizeof(PushConstants), &pushConstants);
             vkCmdDrawIndexed(commandBuffers_[imageIndex], static_cast<uint32_t>(navigator->sphereIndices_.size()), 1, 0, 0, 0);
 
-            std::cerr << "Mode7 Interaction[D=" << pair.dimension << "]: strength=" << interactionStrength
+            std::cerr << "Mode7 Interaction[D=" << i + 1 << "]: strength=" << interactionStrength
                       << ", orbitRadius=" << orbitRadius << ", color=("
                       << interactionColor.x << ", " << interactionColor.y << ", " << interactionColor.z << ")\n";
         }

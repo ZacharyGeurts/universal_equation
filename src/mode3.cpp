@@ -107,20 +107,20 @@ void renderMode3(DimensionalNavigator* navigator, uint32_t imageIndex, VkBuffer 
         vkCmdDrawIndexed(commandBuffers_[imageIndex], static_cast<uint32_t>(navigator->sphereIndices_.size()), 1, 0, 0, 0);
     } else {
         for (const auto& pair : pairs) {
-            if (pair.dimension != 1 && pair.dimension != 2 && pair.dimension != 3 && pair.dimension != 4) continue;
+            if (pair.vertexIndex != 1 && pair.vertexIndex != 2 && pair.vertexIndex != 3 && pair.vertexIndex != 4) continue;
 
             float interactionStrength = static_cast<float>(
-                navigator->computeInteraction(pair.dimension, pair.distance) *
+                navigator->computeInteraction(pair.vertexIndex, pair.distance) *
                 std::exp(-glm::abs(navigator->ue_.getAlpha() * pair.distance)) *
-                navigator->computePermeation(pair.dimension) *
-                glm::max(0.0f, static_cast<float>(pair.darkMatterDensity))
+                navigator->computePermeation(pair.vertexIndex) *
+                glm::max(0.0f, static_cast<float>(pair.strength))
             );
             interactionStrength = glm::clamp(interactionStrength, 0.01f, 2.0f);
 
             // 3D orbit positioning
-            float orbitRadius = 1.5f + static_cast<float>(pair.distance) * 0.5f * (1.0f + static_cast<float>(pair.darkMatterDensity) * 0.2f);
-            float angleA = wavePhase_ + pair.dimension * 2.0f + pair.distance * 0.13f;
-            float angleB = wavePhase_ * 0.7f + pair.dimension * 0.9f + pair.distance * 0.17f;
+            float orbitRadius = 1.5f + static_cast<float>(pair.distance) * 0.5f * (1.0f + static_cast<float>(pair.strength) * 0.2f);
+            float angleA = wavePhase_ + pair.vertexIndex * 2.0f + pair.distance * 0.13f;
+            float angleB = wavePhase_ * 0.7f + pair.vertexIndex * 0.9f + pair.distance * 0.17f;
             glm::vec3 orbitPos = glm::vec3(
                 cosf(angleA) * orbitRadius * zoomFactor,
                 sinf(angleA) * orbitRadius * zoomFactor,
@@ -145,7 +145,7 @@ void renderMode3(DimensionalNavigator* navigator, uint32_t imageIndex, VkBuffer 
                 3.0f,
                 wavePhase_,
                 cycleProgress,
-                static_cast<float>(pair.darkMatterDensity),
+                static_cast<float>(pair.strength),
                 static_cast<float>(navigator->computeDarkEnergy(pair.distance))
             };
             vkCmdPushConstants(commandBuffers_[imageIndex], navigator->pipelineLayout_,
@@ -153,7 +153,7 @@ void renderMode3(DimensionalNavigator* navigator, uint32_t imageIndex, VkBuffer 
                                0, sizeof(PushConstants), &pushConstants);
             vkCmdDrawIndexed(commandBuffers_[imageIndex], static_cast<uint32_t>(navigator->sphereIndices_.size()), 1, 0, 0, 0);
 
-            std::cerr << "Mode3 Interaction[D=" << pair.dimension << "]: strength=" << interactionStrength
+            std::cerr << "Mode3 Interaction[vertex=" << pair.vertexIndex << "]: strength=" << interactionStrength
                       << ", orbitRadius=" << orbitRadius << ", pos=("
                       << orbitPos.x << ", " << orbitPos.y << ", " << orbitPos.z << ")\n";
         }

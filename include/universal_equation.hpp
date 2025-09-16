@@ -7,6 +7,7 @@
 #include <limits>
 #include <iostream>
 #include <algorithm>
+#include <glm/glm.hpp>
 
 class UniversalEquation {
 public:
@@ -24,9 +25,9 @@ public:
     };
 
     struct DimensionInteraction {
-        int dimension;
+        int vertexIndex;
         double distance;
-        double darkMatterDensity;
+        double strength;
     };
 
     UniversalEquation(int maxDimensions = 9, int mode = 1, double influence = 1.0,
@@ -34,7 +35,7 @@ public:
                      double threeDInfluence = 1.5, double oneDPermeation = 2.0,
                      double darkMatterStrength = 0.27, double darkEnergyStrength = 0.68,
                      double alpha = 5.0, double beta = 0.2, bool debug = false)
-        : maxDimensions_(std::max(1, maxDimensions)),
+        : maxDimensions_(std::max(1, std::min(9, maxDimensions))),
           currentDimension_(std::clamp(mode, 1, maxDimensions_)),
           mode_(std::clamp(mode, 1, maxDimensions_)),
           influence_(std::clamp(influence, 0.0, 10.0)),
@@ -51,10 +52,7 @@ public:
           omega_(2.0 * M_PI / (2 * maxDimensions_ - 1)),
           invMaxDim_(maxDimensions_ > 0 ? 1.0 / maxDimensions_ : 1e-15),
           interactions_() {
-        if (maxDimensions_ == std::numeric_limits<int>::max()) {
-            maxDimensions_ = 9;
-            invMaxDim_ = 1.0 / maxDimensions_;
-        }
+        initializeNCube();
         updateInteractions();
         if (debug_) {
             std::cout << "Initialized: maxDimensions=" << maxDimensions_ << ", mode=" << mode_
@@ -62,41 +60,34 @@ public:
         }
     }
 
-    // --- Getter and Setter Methods: ---
-    void setInfluence(double value) { influence_ = std::clamp(value, 0.0, 10.0); }
+    void setInfluence(double value) { influence_ = std::clamp(value, 0.0, 10.0); updateInteractions(); }
     double getInfluence() const { return influence_; }
 
-    void setWeak(double value) { weak_ = std::clamp(value, 0.0, 1.0); }
+    void setWeak(double value) { weak_ = std::clamp(value, 0.0, 1.0); updateInteractions(); }
     double getWeak() const { return weak_; }
 
     void setCollapse(double value) { collapse_ = std::clamp(value, 0.0, 5.0); }
     double getCollapse() const { return collapse_; }
 
-    void setTwoD(double value) { twoD_ = std::clamp(value, 0.0, 5.0); }
+    void setTwoD(double value) { twoD_ = std::clamp(value, 0.0, 5.0); updateInteractions(); }
     double getTwoD() const { return twoD_; }
 
-    void setThreeDInfluence(double value) { threeDInfluence_ = std::clamp(value, 0.0, 5.0); }
+    void setThreeDInfluence(double value) { threeDInfluence_ = std::clamp(value, 0.0, 5.0); updateInteractions(); }
     double getThreeDInfluence() const { return threeDInfluence_; }
 
-    void setOneDPermeation(double value) { oneDPermeation_ = std::clamp(value, 0.0, 5.0); }
+    void setOneDPermeation(double value) { oneDPermeation_ = std::clamp(value, 0.0, 5.0); updateInteractions(); }
     double getOneDPermeation() const { return oneDPermeation_; }
 
-    void setDarkMatterStrength(double value) {
-        darkMatterStrength_ = std::clamp(value, 0.0, 1.0);
-        updateInteractions();
-    }
+    void setDarkMatterStrength(double value) { darkMatterStrength_ = std::clamp(value, 0.0, 1.0); updateInteractions(); }
     double getDarkMatterStrength() const { return darkMatterStrength_; }
 
-    void setDarkEnergyStrength(double value) {
-        darkEnergyStrength_ = std::clamp(value, 0.0, 2.0);
-        updateInteractions();
-    }
+    void setDarkEnergyStrength(double value) { darkEnergyStrength_ = std::clamp(value, 0.0, 2.0); updateInteractions(); }
     double getDarkEnergyStrength() const { return darkEnergyStrength_; }
 
-    void setAlpha(double value) { alpha_ = std::clamp(value, 0.1, 10.0); }
+    void setAlpha(double value) { alpha_ = std::clamp(value, 0.1, 10.0); updateInteractions(); }
     double getAlpha() const { return alpha_; }
 
-    void setBeta(double value) { beta_ = std::clamp(value, 0.0, 1.0); }
+    void setBeta(double value) { beta_ = std::clamp(value, 0.0, 1.0); updateInteractions(); }
     double getBeta() const { return beta_; }
 
     void setDebug(bool value) { debug_ = value; }
@@ -113,7 +104,7 @@ public:
     int getMode() const { return mode_; }
 
     void setCurrentDimension(int dimension) {
-        if (dimension >= 1 && (dimension <= maxDimensions_)) {
+        if (dimension >= 1 && dimension <= maxDimensions_) {
             currentDimension_ = dimension;
             mode_ = dimension;
             updateInteractions();
@@ -128,15 +119,10 @@ public:
 
     std::vector<DimensionInteraction> getInteractions() const { return interactions_; }
 
-    // --- End of Getter and Setter Methods ---
-
     void advanceCycle() {
         if (currentDimension_ == maxDimensions_) {
             currentDimension_ = 1;
             mode_ = 1;
-        } else if (currentDimension_ == 1) {
-            currentDimension_ = 2;
-            mode_ = 2;
         } else {
             currentDimension_++;
             mode_ = currentDimension_;
@@ -148,30 +134,30 @@ public:
     }
 
     EnergyResult compute() const {
-        double totalInfluence = influence_;
+        double observable = influence_;
         if (currentDimension_ >= 2) {
-            totalInfluence += twoD_ * std::cos(omega_ * currentDimension_);
+            observable += twoD_ * std::cos(omega_ * currentDimension_);
         }
         if (currentDimension_ == 3) {
-            totalInfluence += threeDInfluence_;
+            observable += threeDInfluence_;
         }
 
         double totalDarkMatter = 0.0, totalDarkEnergy = 0.0, interactionSum = 0.0;
         for (const auto& interaction : interactions_) {
-            double influence = computeInteraction(interaction.dimension, interaction.distance);
-            double darkMatter = interaction.darkMatterDensity;
+            double influence = computeInteraction(interaction.vertexIndex, interaction.distance);
+            double darkMatter = interaction.strength * darkMatterStrength_;
             double darkEnergy = computeDarkEnergy(interaction.distance);
             interactionSum += influence * std::exp(-alpha_ * interaction.distance) *
-                              computePermeation(interaction.dimension) * darkMatter;
+                              computePermeation(interaction.vertexIndex) * darkMatter;
             totalDarkMatter += darkMatter * influence;
             totalDarkEnergy += darkEnergy * influence;
         }
-        totalInfluence += interactionSum;
+        observable += interactionSum;
 
         double collapse = computeCollapse();
         EnergyResult result = {
-            totalInfluence + collapse,
-            std::max(0.0, totalInfluence - collapse),
+            observable + collapse,
+            std::max(0.0, observable - collapse),
             totalDarkMatter,
             totalDarkEnergy
         };
@@ -189,25 +175,48 @@ private:
     bool debug_;
     double omega_, invMaxDim_;
     std::vector<DimensionInteraction> interactions_;
+    std::vector<std::vector<double>> nCubeVertices_;
 
-    double computeInteraction(int dimension, double distance) const {
-        double denom = std::max(1e-15, std::pow(static_cast<double>(currentDimension_), dimension));
-        double modifier = (currentDimension_ > 3 && dimension > 3) ? weak_ : 1.0;
-        if (currentDimension_ == 3 && (dimension == 2 || dimension == 4)) {
+    void initializeNCube() {
+        nCubeVertices_.clear();
+        int numVertices = 1 << currentDimension_;
+        for (int i = 0; i < numVertices; ++i) {
+            std::vector<double> vertex(currentDimension_, 0.0);
+            for (int j = 0; j < currentDimension_; ++j) {
+                vertex[j] = (i & (1 << j)) ? 1.0 : -1.0;
+            }
+            nCubeVertices_.push_back(vertex);
+        }
+    }
+
+    double computeInteraction(int vertexIndex, double distance) const {
+        double denom = std::max(1e-15, std::pow(static_cast<double>(currentDimension_), vertexIndex % maxDimensions_ + 1));
+        double modifier = (currentDimension_ > 3 && (vertexIndex % maxDimensions_ + 1) > 3) ? weak_ : 1.0;
+        if (currentDimension_ == 3 && ((vertexIndex % maxDimensions_ + 1) == 2 || (vertexIndex % maxDimensions_ + 1) == 4)) {
             modifier *= threeDInfluence_;
         }
         double result = influence_ * (1.0 / (denom * (1.0 + distance))) * modifier;
         if (debug_) {
-            std::cout << "Interaction(D=" << dimension << ", dist=" << distance << "): " << result << "\n";
+            std::cout << "Interaction(vertex=" << vertexIndex << ", dist=" << distance << "): " << result << "\n";
         }
         return result;
     }
 
-    double computePermeation(int dimension) const {
-        if (dimension == 1 || currentDimension_ == 1) return 1.0;
-        if (currentDimension_ == 2 && dimension > 2) return twoD_;
-        if (currentDimension_ == 3 && (dimension == 2 || dimension == 4)) return threeDInfluence_;
-        return 1.0;
+    double computePermeation(int vertexIndex) const {
+        if (vertexIndex == 1 || currentDimension_ == 1) return oneDPermeation_;
+        if (currentDimension_ == 2 && (vertexIndex % maxDimensions_ + 1) > 2) return twoD_;
+        if (currentDimension_ == 3 && ((vertexIndex % maxDimensions_ + 1) == 2 || (vertexIndex % maxDimensions_ + 1) == 4)) return threeDInfluence_;
+        std::vector<double> vertex = nCubeVertices_[vertexIndex % nCubeVertices_.size()];
+        double vertexMagnitude = 0.0;
+        for (int i = 0; i < currentDimension_; ++i) {
+            vertexMagnitude += vertex[i] * vertex[i];
+        }
+        vertexMagnitude = std::sqrt(vertexMagnitude);
+        double result = 1.0 + beta_ * vertexMagnitude / currentDimension_;
+        if (debug_) {
+            std::cout << "Permeation(vertex=" << vertexIndex << "): " << result << "\n";
+        }
+        return result;
     }
 
     double computeCollapse() const {
@@ -230,46 +239,44 @@ private:
         return result;
     }
 
-    double computeDarkMatterDensity(int dimension) const {
-        double density = darkMatterStrength_ * (1.0 + dimension * invMaxDim_);
-        if (dimension > 3) {
-            density *= (1.0 + 0.1 * (dimension - 3));
-        }
-        if (debug_) {
-            std::cout << "DarkMatter(D=" << dimension << "): " << density << "\n";
-        }
-        return std::max(1e-15, density);
-    }
-
     void updateInteractions() {
         interactions_.clear();
-        int interactionLimit = (maxDimensions_ == 9 && maxDimensions_ == std::numeric_limits<int>::max()) ? 9 : maxDimensions_;
-        interactions_.reserve(interactionLimit + 2);
-        int start = std::max(1, currentDimension_ - 1);
-        int end = std::min(interactionLimit, currentDimension_ + 1);
-        for (int d = start; d <= end; ++d) {
-            double distance = std::abs(currentDimension_ - d) * (1.0 + darkEnergyStrength_ * invMaxDim_);
-            interactions_.push_back({d, distance, computeDarkMatterDensity(d)});
-        }
-        for (int priv : {1, 2}) {
-            if (priv != currentDimension_ && priv <= maxDimensions_) {
-                double distance = std::abs(currentDimension_ - priv) * (1.0 + darkEnergyStrength_ * invMaxDim_);
-                interactions_.push_back({priv, distance, computeDarkMatterDensity(priv)});
+        initializeNCube();
+        int numVertices = 1 << currentDimension_;
+        interactions_.reserve(numVertices);
+        std::vector<double> referenceVertex = nCubeVertices_[0];
+        for (int i = 1; i < numVertices; ++i) {
+            double distance = 0.0;
+            for (int j = 0; j < currentDimension_; ++j) {
+                double diff = nCubeVertices_[i][j] - referenceVertex[j];
+                distance += diff * diff;
             }
+            distance = std::sqrt(distance);
+            double strength = computeInteraction(i, distance) * computePermeation(i);
+            interactions_.push_back({i, distance, strength});
         }
         if (currentDimension_ == 3 && maxDimensions_ >= 4) {
             for (int adj : {2, 4}) {
                 if (std::none_of(interactions_.begin(), interactions_.end(),
-                                 [adj](const auto& i) { return i.dimension == adj; })) {
-                    double distance = std::abs(currentDimension_ - adj) * (1.0 + darkEnergyStrength_ * invMaxDim_);
-                    interactions_.push_back({adj, distance, computeDarkMatterDensity(adj)});
+                                 [adj](const auto& i) { return (i.vertexIndex % 9 + 1) == adj; })) {
+                    size_t vertexIndex = static_cast<size_t>(adj - 1);
+                    if (vertexIndex < nCubeVertices_.size()) {
+                        double distance = 0.0;
+                        for (int j = 0; j < currentDimension_; ++j) {
+                            double diff = nCubeVertices_[vertexIndex][j] - referenceVertex[j];
+                            distance += diff * diff;
+                        }
+                        distance = std::sqrt(distance);
+                        double strength = computeInteraction(static_cast<int>(vertexIndex), distance) * computePermeation(static_cast<int>(vertexIndex));
+                        interactions_.push_back({static_cast<int>(vertexIndex), distance, strength});
+                    }
                 }
             }
         }
         if (debug_) {
             std::cout << "Interactions(D=" << currentDimension_ << "): ";
             for (const auto& i : interactions_) {
-                std::cout << "(D=" << i.dimension << ", dist=" << i.distance << ", DM=" << i.darkMatterDensity << ") ";
+                std::cout << "(vertex=" << i.vertexIndex << ", dist=" << i.distance << ", strength=" << i.strength << ") ";
             }
             std::cout << "\n";
         }

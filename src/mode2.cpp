@@ -123,19 +123,19 @@ void renderMode2(DimensionalNavigator* navigator, uint32_t imageIndex, VkBuffer 
         vkCmdDrawIndexed(commandBuffers_[imageIndex], static_cast<uint32_t>(navigator->sphereIndices_.size()), 1, 0, 0, 0);
     } else {
         for (const auto& pair : pairs) {
-            if (pair.dimension != 2) continue;
+            if (navigator->ue_.getCurrentDimension() != 2) continue;
 
             float interactionStrength = static_cast<float>(
-                navigator->computeInteraction(pair.dimension, pair.distance) *
+                navigator->computeInteraction(pair.vertexIndex, pair.distance) *
                 std::exp(-glm::abs(navigator->ue_.getAlpha() * pair.distance)) *
-                navigator->computePermeation(pair.dimension) *
-                glm::max(0.0, pair.darkMatterDensity)
+                navigator->computePermeation(pair.vertexIndex) *
+                glm::max(0.0f, static_cast<float>(pair.strength))
             );
             interactionStrength = glm::max(interactionStrength, 0.01f);
             interactionStrength = glm::min(interactionStrength, 2.0f);
 
-            float offset = static_cast<float>(pair.distance) * 0.5f * (1.0f + static_cast<float>(pair.darkMatterDensity) * 0.2f);
-            float angle = wavePhase_ + pair.dimension * 2.0f + pair.distance * 0.1f;
+            float offset = static_cast<float>(pair.distance) * 0.5f * (1.0f + static_cast<float>(pair.strength) * 0.2f);
+            float angle = wavePhase_ + pair.vertexIndex * 2.0f + pair.distance * 0.1f;
             glm::vec3 offsetPos = glm::vec3(
                 offset * sinf(angle) * zoomFactor,
                 offset * cosf(angle) * zoomFactor,
@@ -159,7 +159,7 @@ void renderMode2(DimensionalNavigator* navigator, uint32_t imageIndex, VkBuffer 
                 2.0f,
                 wavePhase_,
                 cycleProgress,
-                static_cast<float>(pair.darkMatterDensity),
+                static_cast<float>(pair.strength),
                 static_cast<float>(navigator->computeDarkEnergy(pair.distance))
             };
             vkCmdPushConstants(commandBuffers_[imageIndex], navigator->pipelineLayout_,

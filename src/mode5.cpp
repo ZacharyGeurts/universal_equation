@@ -108,30 +108,30 @@ void renderMode5(DimensionalNavigator* navigator, uint32_t imageIndex, VkBuffer 
         }
 
         for (const auto& pair : pairs) {
-            if (pair.dimension != static_cast<int>(i + 1)) continue;
+            if (navigator->ue_.getCurrentDimension() != static_cast<int>(i + 1)) continue;
 
             float interactionStrength = static_cast<float>(
-                navigator->computeInteraction(pair.dimension, pair.distance) *
+                navigator->computeInteraction(pair.vertexIndex, pair.distance) *
                 std::exp(-glm::abs(navigator->ue_.getAlpha() * pair.distance)) *
-                navigator->computePermeation(pair.dimension) *
-                glm::max(0.0f, static_cast<float>(pair.darkMatterDensity)));
+                navigator->computePermeation(pair.vertexIndex) *
+                glm::max(0.0f, static_cast<float>(pair.strength)));
             interactionStrength *= heavenGlow;
             interactionStrength = glm::clamp(interactionStrength, 0.01f, 2.0f);
 
             // Pentachoron/hyper-orbit in 5D, projected to 3D
-            float orbitRadius = 1.6f + static_cast<float>(pair.distance) * 0.37f * (1.0f + static_cast<float>(pair.darkMatterDensity) * 0.2f);
-            float angleA = wavePhase_ + pair.dimension * 2.0f + pair.distance * 0.13f;
-            float angleB = wavePhase_ * 0.7f + pair.dimension * 0.9f + pair.distance * 0.17f;
+            float orbitRadius = 1.6f + static_cast<float>(pair.distance) * 0.37f * (1.0f + static_cast<float>(pair.strength) * 0.2f);
+            float angleA = wavePhase_ + pair.vertexIndex * 2.0f + pair.distance * 0.13f;
+            float angleB = wavePhase_ * 0.7f + pair.vertexIndex * 0.9f + pair.distance * 0.17f;
             glm::vec3 orbitPos = glm::vec3(
                 cosf(angleA) * orbitRadius * zoomFactor,
                 sinf(angleA) * orbitRadius * zoomFactor,
-                sinf(angleB + pair.dimension) * orbitRadius * 0.5f * zoomFactor
+                sinf(angleB + pair.vertexIndex) * orbitRadius * 0.5f * zoomFactor
             );
             glm::mat4 interactionModel = glm::translate(glm::mat4(1.0f), orbitPos);
             interactionModel = glm::scale(interactionModel, glm::vec3(0.36f * zoomFactor * (1.0f + heavenGlow)));
 
-            glm::vec3 interactionColor = pinkBaseColor * (0.74f + 0.26f * static_cast<float>(pair.darkMatterDensity) * heavenGlow);
-            float hyperGlow = 0.03f * sinf(wavePhase_ * 0.8f + pair.dimension);
+            glm::vec3 interactionColor = pinkBaseColor * (0.74f + 0.26f * static_cast<float>(pair.strength) * heavenGlow);
+            float hyperGlow = 0.03f * sinf(wavePhase_ * 0.8f + pair.vertexIndex);
             interactionColor += glm::vec3(hyperGlow, -hyperGlow, hyperGlow);
             interactionColor = glm::clamp(interactionColor, 0.0f, 1.0f);
 
@@ -141,10 +141,10 @@ void renderMode5(DimensionalNavigator* navigator, uint32_t imageIndex, VkBuffer 
                 proj,
                 interactionColor,
                 interactionStrength,
-                static_cast<float>(pair.dimension),
+                static_cast<float>(i + 1),
                 wavePhase_,
                 cycleProgress,
-                static_cast<float>(pair.darkMatterDensity) * heavenGlow,
+                static_cast<float>(pair.strength) * heavenGlow,
                 static_cast<float>(navigator->computeDarkEnergy(pair.distance)) * heavenGlow
             };
             vkCmdPushConstants(commandBuffers_[imageIndex], navigator->pipelineLayout_,
@@ -152,7 +152,7 @@ void renderMode5(DimensionalNavigator* navigator, uint32_t imageIndex, VkBuffer 
                                0, sizeof(PushConstants), &pushConstants);
             vkCmdDrawIndexed(commandBuffers_[imageIndex], static_cast<uint32_t>(navigator->sphereIndices_.size()), 1, 0, 0, 0);
 
-            std::cerr << "Mode5 Interaction[D=" << pair.dimension << "]: strength=" << interactionStrength
+            std::cerr << "Mode5 Interaction[D=" << i + 1 << "]: strength=" << interactionStrength
                       << ", orbitRadius=" << orbitRadius << ", color=("
                       << interactionColor.x << ", " << interactionColor.y << ", " << interactionColor.z << ")\n";
         }
