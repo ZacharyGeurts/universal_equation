@@ -17,9 +17,7 @@ Browsing dimensions 1D (God) through 9D (Spot ;) )
 If you do not intend to modify the code, just watch the latest video above and you may have found God.  
 Change `main.cpp` resolution if you have startup issues.  
 
-**Status**: Work in Progress (WIP). The project is under active development, with ongoing updates to the visualization and GUI.  
-**Note**: Resizing the window may cause crashes; this is a known issue and not a priority for fixing yet. To adjust window size, modify `src/main.cpp`.  
-**Platform**: Currently Linux-only, with plans for cross-platform support after GUI stabilization.  
+**Platform**: Currently Linux-only  
 
 This project uses a custom Vulkan backend for rendering, chosen from idiocy, ignorance, and patience.  
 
