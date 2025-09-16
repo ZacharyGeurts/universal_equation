@@ -1,7 +1,7 @@
 # Compiler and flags
 CXX = g++
 CXXFLAGS = -std=c++17 -Wall -Wextra -g -Iinclude -Wno-unused-parameter
-LDFLAGS = -lSDL3 -lSDL3_ttf -lvulkan
+LDFLAGS = -lSDL3 -lvulkan
 
 # Shader compiler
 GLSLC = glslc
@@ -17,8 +17,6 @@ BIN_DIR = bin
 SOURCES = $(wildcard $(SRC_DIR)/*.cpp)
 OBJECTS = $(patsubst $(SRC_DIR)/%.cpp,$(BUILD_DIR)/%.o,$(SOURCES))
 EXECUTABLE = $(BIN_DIR)/Navigator
-FONT_FILE = arial.ttf
-FONT_DEST = $(BIN_DIR)/arial.ttf
 SHADER_SOURCES = $(wildcard $(SHADER_DIR)/*.vert) $(wildcard $(SHADER_DIR)/*.frag)
 SHADER_OBJECTS = $(patsubst $(SHADER_DIR)/%.vert,$(SHADER_DIR)/%.spv,$(SHADER_SOURCES:.frag=.spv))
 
@@ -52,11 +50,6 @@ $(SHADER_DIR)/%.spv: $(SHADER_DIR)/%.frag
 copy-shaders: $(SHADER_OBJECTS)
 	@echo "Copying shader files to $(BIN_DIR)"
 	@cp $(SHADER_DIR)/*.spv $(BIN_DIR)/
-
-# Copy font file to bin directory
-copy-font: $(FONT_FILE)
-	@echo "Copying font file to $(BIN_DIR)"
-	@cp $(FONT_FILE) $(BIN_DIR)
 
 # Clean build artifacts
 clean:

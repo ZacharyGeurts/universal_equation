@@ -1,11 +1,21 @@
+// src/main.cpp
 #include "main.hpp"
 #include <iostream>
 #include <ctime>
+#include <stdexcept>
 
-// Screen resolution 1500x1000, keep above 1280x720
+// keep above 1280x720
 int main() {
     try {
-        DimensionalNavigator navigator("Dimensional Navigator", 1500, 1000, "arial.ttf", 24);
+        // Validate resolution
+        const int width = 1280;
+        const int height = 720;
+        if (width < 1280 || height < 720) {
+            throw std::runtime_error("Resolution must be at least 1280x720");
+        }
+
+        // Updated constructor call to match main.hpp (removed fontPath and fontSize)
+        DimensionalNavigator navigator("Dimensional Navigator", width, height);
         navigator.run();
     } catch (const std::exception& e) {
         std::time_t now = std::time(nullptr);

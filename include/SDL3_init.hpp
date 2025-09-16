@@ -1,9 +1,9 @@
+// SDL3_init.hpp
 #ifndef SDL3_INIT_HPP
 #define SDL3_INIT_HPP
 
 #include "SDL3/SDL.h"
 #include "SDL3/SDL_vulkan.h"
-#include "SDL3_ttf/SDL_ttf.h"
 #include "vulkan/vulkan.h"
 #include <stdexcept>
 #include <vector>
@@ -20,25 +20,17 @@ public:
         SDL_Window*& window,
         VkInstance& vkInstance,
         VkSurfaceKHR& vkSurface,
-        TTF_Font*& font,
         const char* title,
         int width,
         int height,
-        const char* fontPath,
-        int fontSize,
         Uint32 windowFlags = SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE
     ) {
         if (SDL_Init(SDL_INIT_VIDEO) == 0) {
             throw std::runtime_error("SDL_Init failed: " + std::string(SDL_GetError()));
         }
-        if (TTF_Init() == 0) {
-            SDL_Quit();
-            throw std::runtime_error("TTF_Init failed: " + std::string(SDL_GetError()));
-        }
 
         window = SDL_CreateWindow(title, width, height, windowFlags);
         if (!window) {
-            TTF_Quit();
             SDL_Quit();
             throw std::runtime_error("SDL_CreateWindow failed: " + std::string(SDL_GetError()));
         }
@@ -48,7 +40,6 @@ public:
         const char* const* exts = SDL_Vulkan_GetInstanceExtensions(&extCount);
         if (!exts || extCount == 0) {
             SDL_DestroyWindow(window);
-            TTF_Quit();
             SDL_Quit();
             throw std::runtime_error("SDL_Vulkan_GetInstanceExtensions failed: " + std::string(SDL_GetError()));
         }
@@ -79,7 +70,6 @@ public:
         VkResult result = vkCreateInstance(&createInfo, nullptr, &vkInstance);
         if (result != VK_SUCCESS) {
             SDL_DestroyWindow(window);
-            TTF_Quit();
             SDL_Quit();
             throw std::runtime_error("vkCreateInstance failed");
         }
@@ -87,19 +77,8 @@ public:
         if (!SDL_Vulkan_CreateSurface(window, vkInstance, nullptr, &vkSurface)) {
             vkDestroyInstance(vkInstance, nullptr);
             SDL_DestroyWindow(window);
-            TTF_Quit();
             SDL_Quit();
             throw std::runtime_error("SDL_Vulkan_CreateSurface failed: " + std::string(SDL_GetError()));
-        }
-
-        font = TTF_OpenFont(fontPath, fontSize);
-        if (!font) {
-            vkDestroySurfaceKHR(vkInstance, vkSurface, nullptr);
-            vkDestroyInstance(vkInstance, nullptr);
-            SDL_DestroyWindow(window);
-            TTF_Quit();
-            SDL_Quit();
-            throw std::runtime_error("TTF_OpenFont failed: " + std::string(SDL_GetError()));
         }
     }
 
@@ -148,12 +127,10 @@ public:
         }
     }
 
-    static void cleanupSDL(SDL_Window* window, VkInstance vkInstance, VkSurfaceKHR vkSurface, TTF_Font* font) {
-        if (font) TTF_CloseFont(font);
+    static void cleanupSDL(SDL_Window* window, VkInstance vkInstance, VkSurfaceKHR vkSurface) {
         if (vkInstance && vkSurface) vkDestroySurfaceKHR(vkInstance, vkSurface, nullptr);
         if (vkInstance) vkDestroyInstance(vkInstance, nullptr);
         if (window) SDL_DestroyWindow(window);
-        TTF_Quit();
         SDL_Quit();
     }
 };
