@@ -16,8 +16,6 @@ Browsing dimensions 1D (God) through 9D (Spot ;) )
 
 If you do not intend to modify the code, just watch the latest video above and you may have found God.  
 Change `main.cpp` resolution if you have startup issues.  
-Change debug line 36 in `include/universal_equation.hpp` to `true` to get all the data (research mode).  
-If anyone finds it useful, they may want to add a frame step to play in slow mode (todo?).  
 
 **Status**: Work in Progress (WIP). The project is under active development, with ongoing updates to the visualization and GUI.  
 **Note**: Resizing the window may cause crashes; this is a known issue and not a priority for fixing yet. To adjust window size, modify `src/main.cpp`.  
