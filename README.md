@@ -18,9 +18,9 @@ Change debug line 36 in include/universal_equation to true to get all the data (
 If anyone finds it useful then they may want to add a frame step to play in slow mode. (todo?)<BR />
 <BR />
 **Status**: Work in Progress (WIP). The project is under active development, with ongoing updates to the visualization and GUI.
-**Note**: Resizing the window may cause crashes; this is a known issue and not a priority for fixing yet. To adjust window size, modify `src/main.cpp`.  
-**Platform**: Currently Linux-only, with plans for cross-platform support after GUI stabilization.  
-
+**Note**: Resizing the window may cause crashes; this is a known issue and not a priority for fixing yet. To adjust window size, modify `src/main.cpp`.
+**Platform**: Currently Linux-only, with plans for cross-platform support after GUI stabilization.
+<BR />
 This project uses a custom Vulkan backend for rendering, chosen due to idiocy and no concern for development time.
 ## Licensing
 This is **not free (as in freedom) software**. It is provided for **educational purposes only**.  
