@@ -1,4 +1,6 @@
 # Dimensional Navigator
+Note: vulkan, glm, and SDL3 and SDL3_ttf headers included for easier building.
+
 Browsing dimensions 1D (God) through 9D (Spot ;) )
 
 **Latest Video**: [Latest Video](https://x.com/i/status/1967808016453124126)
