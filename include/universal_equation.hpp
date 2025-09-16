@@ -37,6 +37,7 @@ public:
         : maxDimensions_(maxDimensions == 0 ? 30 : std::max(1, maxDimensions)),
           currentDimension_(std::clamp(mode, 1, maxDimensions_)),
           mode_(std::clamp(mode, 1, maxDimensions_)),
+          maxVertices_(1ULL << std::min(maxDimensions_, 30)), // Cap at 2^30 vertices
           influence_(std::clamp(influence, 0.0, 10.0)),
           weak_(std::clamp(weak, 0.0, 1.0)),
           collapse_(std::clamp(collapse, 0.0, 5.0)),
@@ -50,8 +51,8 @@ public:
           debug_(debug),
           omega_(maxDimensions_ > 0 ? 2.0 * M_PI / (2 * maxDimensions_ - 1) : 1.0),
           invMaxDim_(maxDimensions_ > 0 ? 1.0 / maxDimensions_ : 1e-15),
-          maxVertices_(1ULL << std::min(maxDimensions_, 30)), // Cap at 2^30 vertices
-          interactions_() {
+          interactions_(),
+          nCubeVertices_() {
         try {
             initializeNCube();
             updateInteractions();
@@ -234,12 +235,23 @@ public:
     }
 
 private:
-    int maxDimensions_, currentDimension_, mode_;
+    int maxDimensions_;
+    int currentDimension_;
+    int mode_;
     uint64_t maxVertices_; // Cap for vertex count
-    double influence_, weak_, collapse_, twoD_, threeDInfluence_, oneDPermeation_;
-    double darkMatterStrength_, darkEnergyStrength_, alpha_, beta_;
+    double influence_;
+    double weak_;
+    double collapse_;
+    double twoD_;
+    double threeDInfluence_;
+    double oneDPermeation_;
+    double darkMatterStrength_;
+    double darkEnergyStrength_;
+    double alpha_;
+    double beta_;
     bool debug_;
-    double omega_, invMaxDim_;
+    double omega_;
+    double invMaxDim_;
     std::vector<DimensionInteraction> interactions_;
     std::vector<std::vector<double>> nCubeVertices_;
 
