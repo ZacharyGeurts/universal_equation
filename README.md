@@ -95,8 +95,10 @@ universal_equation/<BR />
 │   ├── universal_equation.hpp # UniversalEquation class<BR />
 │   ├── SDL3_init.hpp         # SDL3 initialization<BR />
 │   ├── Vulkan_init.hpp       # Vulkan initialization<BR />
+│   ├── modes.hpp             # Visualizer initalizer<BR />
 ├── src/<BR />
 │   ├── main.cpp              # Entry point (set window size here)<BR />
+│   ├── modeX.cpp             # A visualizer (keyboard map)<BR />
 ├── shaders/<BR />
 │   ├── vertex.vert           # Vertex shader<BR />
 │   ├── fragment.frag           # Fragment shader<BR />
