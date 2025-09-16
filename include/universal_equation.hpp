@@ -7,7 +7,6 @@
 #include <limits>
 #include <iostream>
 #include <algorithm>
-#include <glm/glm.hpp>
 
 class UniversalEquation {
 public:
@@ -49,8 +48,8 @@ public:
           alpha_(std::clamp(alpha, 0.1, 10.0)),
           beta_(std::clamp(beta, 0.0, 1.0)),
           debug_(debug),
-          omega_(2.0 * M_PI / (2 * maxDimensions_ - 1)),
-          invMaxDim_(maxDimensions_ > 0 ? 1.0 / maxDimensions_ : 1e-15),
+          omega_(2.0 * M_PI / (2 * maxDimensions_ - 1)),  // Precomputed omega (angular frequency for oscillations)
+          invMaxDim_(maxDimensions_ > 0 ? 1.0 / maxDimensions_ : 1e-15),  // Precomputed inverse max dimensions for scaling
           interactions_() {
         initializeNCube();
         updateInteractions();
@@ -144,13 +143,13 @@ public:
 
         double totalDarkMatter = 0.0, totalDarkEnergy = 0.0, interactionSum = 0.0;
         for (const auto& interaction : interactions_) {
-            double influence = computeInteraction(interaction.vertexIndex, interaction.distance);
-            double darkMatter = interaction.strength * darkMatterStrength_;
+            double influence = interaction.strength;
+            double permeation = computePermeation(interaction.vertexIndex);
+            double darkMatter = darkMatterStrength_;
             double darkEnergy = computeDarkEnergy(interaction.distance);
-            interactionSum += influence * std::exp(-alpha_ * interaction.distance) *
-                              computePermeation(interaction.vertexIndex) * darkMatter;
-            totalDarkMatter += darkMatter * influence;
-            totalDarkEnergy += darkEnergy * influence;
+            interactionSum += influence * std::exp(-alpha_ * interaction.distance) * permeation * darkMatter;
+            totalDarkMatter += darkMatter * influence * permeation;
+            totalDarkEnergy += darkEnergy * influence * permeation;
         }
         observable += interactionSum;
 
@@ -164,6 +163,34 @@ public:
 
         if (debug_) {
             std::cout << "Compute(D=" << currentDimension_ << "): " << result.toString() << "\n";
+        }
+        return result;
+    }
+
+    // Moved to public for access in renderMode1
+    double computePermeation(int vertexIndex) const {
+        if (vertexIndex == 1 || currentDimension_ == 1) return oneDPermeation_;
+        if (currentDimension_ == 2 && (vertexIndex % maxDimensions_ + 1) > 2) return twoD_;
+        if (currentDimension_ == 3 && ((vertexIndex % maxDimensions_ + 1) == 2 || (vertexIndex % maxDimensions_ + 1) == 4)) return threeDInfluence_;
+        std::vector<double> vertex = nCubeVertices_[vertexIndex % nCubeVertices_.size()];
+        double vertexMagnitude = 0.0;
+        for (int i = 0; i < currentDimension_; ++i) {
+            vertexMagnitude += vertex[i] * vertex[i];
+        }
+        vertexMagnitude = std::sqrt(vertexMagnitude);
+        double result = 1.0 + beta_ * vertexMagnitude / currentDimension_;
+        if (debug_) {
+            std::cout << "Permeation(vertex=" << vertexIndex << "): " << result << "\n";
+        }
+        return result;
+    }
+
+    // Moved to public for access in renderMode1
+    double computeDarkEnergy(double distance) const {
+        double d = std::min(distance, 10.0);
+        double result = darkEnergyStrength_ * std::exp(d * invMaxDim_);
+        if (debug_) {
+            std::cout << "DarkEnergy(dist=" << distance << "): " << result << "\n";
         }
         return result;
     }
@@ -202,23 +229,6 @@ private:
         return result;
     }
 
-    double computePermeation(int vertexIndex) const {
-        if (vertexIndex == 1 || currentDimension_ == 1) return oneDPermeation_;
-        if (currentDimension_ == 2 && (vertexIndex % maxDimensions_ + 1) > 2) return twoD_;
-        if (currentDimension_ == 3 && ((vertexIndex % maxDimensions_ + 1) == 2 || (vertexIndex % maxDimensions_ + 1) == 4)) return threeDInfluence_;
-        std::vector<double> vertex = nCubeVertices_[vertexIndex % nCubeVertices_.size()];
-        double vertexMagnitude = 0.0;
-        for (int i = 0; i < currentDimension_; ++i) {
-            vertexMagnitude += vertex[i] * vertex[i];
-        }
-        vertexMagnitude = std::sqrt(vertexMagnitude);
-        double result = 1.0 + beta_ * vertexMagnitude / currentDimension_;
-        if (debug_) {
-            std::cout << "Permeation(vertex=" << vertexIndex << "): " << result << "\n";
-        }
-        return result;
-    }
-
     double computeCollapse() const {
         if (currentDimension_ == 1) return 0.0;
         double phase = static_cast<double>(currentDimension_) / (2 * maxDimensions_);
@@ -226,15 +236,6 @@ private:
         double result = std::max(0.0, collapse_ * currentDimension_ * std::exp(-beta_ * (currentDimension_ - 1)) * (0.8 * osc + 0.2));
         if (debug_) {
             std::cout << "Collapse(D=" << currentDimension_ << "): " << result << "\n";
-        }
-        return result;
-    }
-
-    double computeDarkEnergy(double distance) const {
-        double d = std::min(distance, 10.0);
-        double result = darkEnergyStrength_ * std::exp(d * invMaxDim_);
-        if (debug_) {
-            std::cout << "DarkEnergy(dist=" << distance << "): " << result << "\n";
         }
         return result;
     }
@@ -252,24 +253,23 @@ private:
                 distance += diff * diff;
             }
             distance = std::sqrt(distance);
-            double strength = computeInteraction(i, distance) * computePermeation(i);
+            double strength = computeInteraction(i, distance);
             interactions_.push_back({i, distance, strength});
         }
         if (currentDimension_ == 3 && maxDimensions_ >= 4) {
             for (int adj : {2, 4}) {
-                if (std::none_of(interactions_.begin(), interactions_.end(),
-                                 [adj](const auto& i) { return (i.vertexIndex % 9 + 1) == adj; })) {
-                    size_t vertexIndex = static_cast<size_t>(adj - 1);
-                    if (vertexIndex < nCubeVertices_.size()) {
-                        double distance = 0.0;
-                        for (int j = 0; j < currentDimension_; ++j) {
-                            double diff = nCubeVertices_[vertexIndex][j] - referenceVertex[j];
-                            distance += diff * diff;
-                        }
-                        distance = std::sqrt(distance);
-                        double strength = computeInteraction(static_cast<int>(vertexIndex), distance) * computePermeation(static_cast<int>(vertexIndex));
-                        interactions_.push_back({static_cast<int>(vertexIndex), distance, strength});
+                size_t vertexIndex = static_cast<size_t>(adj - 1);
+                if (vertexIndex < nCubeVertices_.size() &&
+                    std::none_of(interactions_.begin(), interactions_.end(),
+                                 [adj](const auto& i) { return i.vertexIndex == adj; })) {
+                    double distance = 0.0;
+                    for (int j = 0; j < currentDimension_; ++j) {
+                        double diff = nCubeVertices_[vertexIndex][j] - referenceVertex[j];
+                        distance += diff * diff;
                     }
+                    distance = std::sqrt(distance);
+                    double strength = computeInteraction(static_cast<int>(vertexIndex), distance);
+                    interactions_.push_back({static_cast<int>(vertexIndex), distance, strength});
                 }
             }
         }
