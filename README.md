@@ -2,8 +2,9 @@
 <BR />
 Browsing dimensions 1d(God) through 9d(Spot ;)<BR />
 <BR />
-**Latest Video**: [Latest Video](https://x.com/i/status/1967685833982652583)<BR />
+**Latest Video**: [Latest Video](ttps://x.com/i/status/1967808016453124126)<BR />
 <BR />
+**last math Video**: [older math Video](https://x.com/i/status/1967685833982652583)<BR />
 **Older Video**: [9d-1d](https://x.com/i/status/1967431708258804189)<BR />
 **Older Video**: [Co-Pilot update](https://github.com/user-attachments/assets/4a730d87-8b38-428e-bd5e-79c51921b67b)<BR />
 **Shader Update**: [Old WIP](https://github.com/user-attachments/assets/1a259212-3314-424f-b997-7792e8ac9066)<BR />
