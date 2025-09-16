@@ -21,7 +21,7 @@ If anyone finds it useful, they may want to add a frame step to play in slow mod
 **Note**: Resizing the window may cause crashes; this is a known issue and not a priority for fixing yet. To adjust window size, modify `src/main.cpp`.  
 **Platform**: Currently Linux-only, with plans for cross-platform support after GUI stabilization.  
 
-This project uses a custom Vulkan backend for rendering, chosen for performance and flexibility.  
+This project uses a custom Vulkan backend for rendering, chosen from idiocy, ignorance, and patience.  
 
 ## Licensing
 This is **not free (as in freedom) software**. It is provided for **educational purposes only**.  
@@ -85,6 +85,7 @@ Resolution 1920x1080 or higher.
 - **Font**: `arial.ttf` (included in the repository).  
 - **Shader Compiler**: `glslc` (from Vulkan SDK).
 
+I do not condone violence, incorrectness, or the new Oxford comma.
 
 ## Build Instructions
 ```bash
