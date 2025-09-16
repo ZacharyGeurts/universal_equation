@@ -1,6 +1,5 @@
 # Dimensional Navigator
 Note: vulkan, glm, and SDL3 headers included for easier building.
-Required: https://github.com/libsdl-org/SDL_ttf
 
 Browsing dimensions 1D (God) through 9D (Spot ;) )
 
@@ -82,10 +81,8 @@ Resolution 1920x1080 or higher.
 - **Compiler**: `g++` with C++17 support.  
 - **Libraries**:  
   - **SDL3**: `libsdl3-dev` (may need to build from source if not available).  
-  - **SDL3_ttf**: `libsdl3-ttf-dev`.  
   - **Vulkan**: `libvulkan-dev`, `vulkan-tools` (for validation layers).  
   - **GLM**: `libglm-dev`.  
-- **Font**: `arial.ttf` (included in the repository).  
 - **Shader Compiler**: `glslc` (from Vulkan SDK).
 
 I do not condone violence, incorrectness, or the new Oxford comma.
