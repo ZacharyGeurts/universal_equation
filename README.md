@@ -1,4 +1,4 @@
-# Dimensional Navigator  
+# Dimensional Navigator
 <BR />
 Browsing dimensions 1d(God) through 9d(Spot ;)<BR />
 <BR />
@@ -17,20 +17,20 @@ Change main.cpp resolution if you have startup issues.<BR />
 Change debug line 36 in include/universal_equation to true to get all the data (research mode).<BR />
 If anyone finds it useful then they may want to add a frame step to play in slow mode. (todo?)<BR />
 <BR />
-**Status**: Work in Progress (WIP). The project is under active development, with ongoing updates to the visualization and GUI.  
+**Status**: Work in Progress (WIP). The project is under active development, with ongoing updates to the visualization and GUI.
 **Note**: Resizing the window may cause crashes; this is a known issue and not a priority for fixing yet. To adjust window size, modify `src/main.cpp`.  
 **Platform**: Currently Linux-only, with plans for cross-platform support after GUI stabilization.  
-<BR />
-This project uses a custom Vulkan backend for rendering, chosen due to idiocy and no concern for development time.  
-## Licensing  
+
+This project uses a custom Vulkan backend for rendering, chosen due to idiocy and no concern for development time.
+## Licensing
 This is **not free (as in freedom) software**. It is provided for **educational purposes only**.  
 - **Restrictions**: You may not sell this software or require any compensation from users.  
 - **Distribution**: Projects using this code must be distributed freely (no cost).  
 - **Source**: Obtain the software exclusively from [https://github.com/ZacharyGeurts/universal_equation](https://github.com/ZacharyGeurts/universal_equation).  
 - **Cost**: Free of charge.
 
-## Overview  
-The **Dimensional Navigator** is a computational visualization tool built in C++ using SDL3, SDL3_ttf, Vulkan, and GLM. It graphs the outputs of the `UniversalEquation` class, modeling dimensional interactions across dimensions 1 to 9. The visualization displays symmetric positive and negative energy fluctuations, influenced by dark matter and dark energy, with real-time interactivity.  
+## Overview
+The **Dimensional Navigator** is a computational visualization tool built in C++ using SDL3, SDL3_ttf, Vulkan, and GLM. It graphs the outputs of the `UniversalEquation` class, modeling dimensional interactions across dimensions 1 to 9. The visualization displays symmetric positive and negative energy fluctuations, influenced by dark matter and dark energy, with real-time interactivity.
 
 The UniversalEquation class models a universe with multiple dimensions, each of which can influence the system’s total energy. The class allows you to set parameters like "influence," "weak force," "collapse," and the strengths of dark matter and dark energy. 
 
