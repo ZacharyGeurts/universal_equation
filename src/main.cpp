@@ -4,14 +4,14 @@
 #include <ctime>
 #include <stdexcept>
 
-// keep above 1280x720
+// Change resolution here.
 int main() {
     try {
         // Validate resolution
-        const int width = 1280;
-        const int height = 720;
-        if (width < 1280 || height < 720) {
-            throw std::runtime_error("Resolution must be at least 1280x720");
+        const int width = 640;
+        const int height = 480;
+        if (width < 320 || height < 200) {
+            throw std::runtime_error("Resolution must be at least 320x200");
         }
 
         // Updated constructor call to match main.hpp (removed fontPath and fontSize)
