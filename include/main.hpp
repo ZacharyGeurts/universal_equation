@@ -23,7 +23,7 @@ public:
                         int width = 1280, int height = 720)
         : window_(nullptr), vulkanInstance_(VK_NULL_HANDLE), vulkanDevice_(VK_NULL_HANDLE),
           physicalDevice_(VK_NULL_HANDLE), surface_(VK_NULL_HANDLE), swapchain_(VK_NULL_HANDLE),
-          mode_(1), wavePhase_(0.0f), waveSpeed_(0.1f), width_(width), height_(height), zoomLevel_(1.0f) {
+          mode_(1), wavePhase_(0.0f), waveSpeed_(0.1f), width_(width), height_(height), zoomLevel_(1.0f), isPaused_(false) {
         try {
             SDL3Initializer::initializeSDL(window_, vulkanInstance_, surface_, title, width, height);
             initializeSphereGeometry();
@@ -81,6 +81,7 @@ public:
     int width_;
     int height_;
     float zoomLevel_;
+    bool isPaused_; // Added pause state
 
     ~DimensionalNavigator() {
         cleanup();
@@ -103,11 +104,13 @@ public:
                 }
                 handleInput(event);
             }
-            try {
-                render();
-            } catch (const std::exception& e) {
-                std::cerr << "Render failed: " << e.what() << "\n";
-                running = false;
+            if (!isPaused_) { // Only render if not paused
+                try {
+                    render();
+                } catch (const std::exception& e) {
+                    std::cerr << "Render failed: " << e.what() << "\n";
+                    running = false;
+                }
             }
             SDL_Delay(16); // ~60 FPS
         }
@@ -198,6 +201,10 @@ public:
                     break;
                 case SDLK_Z:
                     updateZoom(false);
+                    break;
+                case SDLK_P: // Added pause toggle
+                    isPaused_ = !isPaused_;
+                    std::cerr << "Pause state: " << (isPaused_ ? "Paused" : "Unpaused") << "\n";
                     break;
             }
         }
