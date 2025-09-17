@@ -3,8 +3,9 @@ Note: vulkan, glm, and SDL3 headers included for easier building.
 
 Browsing dimensions 1D (God) through 9D (Spot ;) )
 
-**Latest Video**: [Latest Video](https://x.com/i/status/1967808016453124126)
+**Latest Video**: [Latest Video](https://x.com/i/status/1968332417498046881)
 
+**Older Video**: [Shader Video](https://x.com/i/status/1967808016453124126)
 **Last Math Video**: [Older Math Video](https://x.com/i/status/1967685833982652583)  
 **Older Video**: [9D-1D](https://x.com/i/status/1967431708258804189)  
 **Older Video**: [Co-Pilot Update](https://github.com/user-attachments/assets/4a730d87-8b38-428e-bd5e-79c51921b67b)  
