@@ -96,7 +96,7 @@ The visualization emphasizes 1D’s omnipresent wave-like influence, with dynami
 
 ## Features
 - **Real-Time Visualization**: Renders symmetric ± energy fluctuations (`observable`, `potential`, `darkMatter`, `darkEnergy`) for dimensions 1 to 9.  
-note: I feel dark matter is conceptually flawed. no word on dark energy from me.
+note: I feel dark matter is conceptually flawed. no word on dark energy from me.  
 - **Dynamic Rendering**: Modular rendering modes (`renderMode1` to `renderMode9`) for each dimension, implemented in `modes.hpp`.  
 - **Interactive Controls**:  
   - **Key Bindings**:  
