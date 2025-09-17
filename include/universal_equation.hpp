@@ -202,6 +202,19 @@ public:
         return result;
     }
 
+    double computeInteraction(int vertexIndex, double distance) const {
+        double denom = std::max(1e-15, std::pow(static_cast<double>(currentDimension_), vertexIndex % maxDimensions_ + 1));
+        double modifier = (currentDimension_ > 3 && (vertexIndex % maxDimensions_ + 1) > 3) ? weak_ : 1.0;
+        if (currentDimension_ == 3 && ((vertexIndex % maxDimensions_ + 1) == 2 || (vertexIndex % maxDimensions_ + 1) == 4)) {
+            modifier *= threeDInfluence_;
+        }
+        double result = influence_ * (1.0 / (denom * (1.0 + distance))) * modifier;
+        if (debug_) {
+            std::cout << "Interaction(vertex=" << vertexIndex << ", dist=" << distance << "): " << result << "\n";
+        }
+        return result;
+    }
+
     double computePermeation(int vertexIndex) const {
         if (vertexIndex == 1 || currentDimension_ == 1) return oneDPermeation_;
         if (currentDimension_ == 2 && (vertexIndex % maxDimensions_ + 1) > 2) return twoD_;
@@ -269,19 +282,6 @@ private:
         if (debug_) {
             std::cout << "Initialized nCube with " << nCubeVertices_.size() << " vertices for dimension " << currentDimension_ << "\n";
         }
-    }
-
-    double computeInteraction(int vertexIndex, double distance) const {
-        double denom = std::max(1e-15, std::pow(static_cast<double>(currentDimension_), vertexIndex % maxDimensions_ + 1));
-        double modifier = (currentDimension_ > 3 && (vertexIndex % maxDimensions_ + 1) > 3) ? weak_ : 1.0;
-        if (currentDimension_ == 3 && ((vertexIndex % maxDimensions_ + 1) == 2 || (vertexIndex % maxDimensions_ + 1) == 4)) {
-            modifier *= threeDInfluence_;
-        }
-        double result = influence_ * (1.0 / (denom * (1.0 + distance))) * modifier;
-        if (debug_) {
-            std::cout << "Interaction(vertex=" << vertexIndex << ", dist=" << distance << "): " << result << "\n";
-        }
-        return result;
     }
 
     double computeCollapse() const {
