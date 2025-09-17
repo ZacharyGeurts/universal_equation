@@ -5,7 +5,7 @@ Browsing dimensions 1D (God) through 9D (Spot ;) )
 
 **Latest Video**: [Latest Video](https://x.com/i/status/1968332417498046881)
 
-**Older Video**: [Shader Video](https://x.com/i/status/1967808016453124126)
+**Older Video**: [Shader Video](https://x.com/i/status/1967808016453124126)  
 **Last Math Video**: [Older Math Video](https://x.com/i/status/1967685833982652583)  
 **Older Video**: [9D-1D](https://x.com/i/status/1967431708258804189)  
 **Older Video**: [Co-Pilot Update](https://github.com/user-attachments/assets/4a730d87-8b38-428e-bd5e-79c51921b67b)  
@@ -39,7 +39,7 @@ The `compute()` method aggregates influences, "dark matter", "dark energy", and 
 This class transforms the philosophical idea that “as big as God is small—infinite” into a mathematical playground for exploring the interplay of scales and forces.
 
 ## Interpretation 1: 
-Philosophical Perspective (Ontology/Epistemology)Statement Reinterpretation: 
+Philosophical Perspective (Ontology/Epistemology)Statement Reinterpretation:  
 The statement "as big as God is small—infinite" can be understood as describing the nature of existence or knowledge, where "God" represents the ultimate reality or truth, "big" and "small" refer to the scope of human understanding (broad or narrow), and "infinite" signifies the boundless nature of reality or truth.Explanation:In philosophy, "God" can symbolize the totality of existence, truth, or the ultimate source of meaning (without religious connotations). "Big" refers to comprehensive, universal knowledge (e.g., grand theories of everything), while "small" refers to specific, localized understanding (e.g., individual facts or experiences).
 The statement suggests that whether we approach reality through broad, all-encompassing perspectives or narrow, detailed insights, both lead to the same infinite truth. This is true because reality is boundless—every level of understanding, whether expansive or minute, connects to the same infinite essence.
 
