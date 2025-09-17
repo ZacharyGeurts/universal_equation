@@ -94,7 +94,6 @@ The `UniversalEquation` class defines dimensional interactions:
 - **Outputs**: Symmetric ± energy fluctuations (`observable`, `potential`) reflect frequency and field dynamics, with contributions from `darkMatter` and `darkEnergy`, compatible with relativistic principles.
 
 ## Requirements
-Resolution 1920x1080 or higher.  
 - **OS**: Linux (Ubuntu/Debian recommended; other distros may require building SDL3 from source).  
 - **Compiler**: `g++` with C++17 support.  
 - **Libraries**:  
