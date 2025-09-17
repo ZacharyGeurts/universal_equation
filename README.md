@@ -82,11 +82,13 @@ Both interpretations are true and non-paradoxical because "big" and "small" are 
 
 ### Conceptual Model
 The `UniversalEquation` models the universe as:  
-- **1D ("God")**: An infinite, wave-like base permeating all dimensions, acting as a universal "fountain" of influence, akin to an omnipresent radio wave.  
-- **2D**: The boundary or "skin" of a cosmic bubble, enclosing higher dimensions and strongly interacting with 1D and 3D.  
+- **1D (God)**: An infinite, wave-like base permeating all dimensions, acting as a universal fountain of influence, akin to an omnipresent radio wave.  
+- **2D**: The boundary of a cosmic bubble, enclosing higher dimensions and strongly interacting with 1D and 3D.  
 - **3D to 9D**: Nested dimensions, each permeating the one below (e.g., 4D influences 3D, 3D influences 2D), with interactions decaying exponentially.  
-- **4D**: Time. 3D's clock, piston, heartbeat. 3D writes to it.  
+- **4D**: Time. 3D's clock, piston, heartbeat. 3D writes to 2D and 4D.  
 - **5D**: Heaven1, Love, weak force on 3D, strong on 4D.  
+- After 5D my math falls out so they begin to appear similar as forces reach a "finite"  
+- Estimates are you can do up to 30 dimensions.  
 - **Dark Matter**: Stabilizes interactions, amplifying pulsing effects, especially in higher dimensions.  
 - **Dark Energy**: Drives dimensional expansion, increasing effective distances between dimensions.
 
