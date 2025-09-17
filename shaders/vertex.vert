@@ -29,9 +29,12 @@ const float ALPHA = 5.0;
 const float BETA = 0.2;
 const float OMEGA = 2.0 * 3.14159265359 / (2.0 * 9.0 - 1.0);
 
-// Wave-like displacement for visualizer effect
-float waveDisplacement(float dim, float phase, float cycle) {
-    return 0.05 * sin(dim * 2.0 + phase * 3.0 + cycle * OMEGA) * (0.5 + 0.5 * pushConstants.value);
+// Crystal-like displacement for subtle faceting
+float crystalDisplacement(float dim, float phase, float cycle) {
+    float wave = 0.05 * sin(dim * 2.0 + phase * 3.0 + cycle * OMEGA) * (0.5 + 0.5 * pushConstants.value);
+    // Use inPosition for spatial variation instead of gl_FragCoord
+    float facet = 0.02 * sin(inPosition.x * 10.0 + phase) * cos(inPosition.y * 8.0 + cycle);
+    return wave + facet;
 }
 
 float computeDarkMatterDensity(float dim) {
@@ -57,11 +60,11 @@ void main() {
     
     float dim = max(1.0, pushConstants.dimension);
     float collapse = computeCollapse(dim);
-    float waveDisp = waveDisplacement(dim, pushConstants.wavePhase, pushConstants.cycleProgress);
+    float crystalDisp = crystalDisplacement(dim, pushConstants.wavePhase, pushConstants.cycleProgress);
     pos += vec3(
-        waveDisp * cos(pushConstants.cycleProgress * OMEGA),
-        waveDisp * sin(pushConstants.wavePhase + pushConstants.cycleProgress * OMEGA),
-        waveDisp * 0.5
+        crystalDisp * cos(pushConstants.cycleProgress * OMEGA),
+        crystalDisp * sin(pushConstants.wavePhase + pushConstants.cycleProgress * OMEGA),
+        crystalDisp * 0.5
     );
 
     gl_Position = pushConstants.proj * pushConstants.view * pushConstants.model * vec4(pos, 1.0);
