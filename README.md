@@ -20,7 +20,7 @@ Change `main.cpp` resolution if you have startup issues.
 
 **Platform**: Currently Linux-only  
 
-This project uses a custom Vulkan backend for rendering, chosen from idiocy, ignorance, and patience.  
+This project uses a Vulkan backend for rendering, chosen from idiocy, ignorance, and patience.  
 
 ## Licensing
 This is **not free (as in freedom) software**. It is provided for **educational purposes only**.  
