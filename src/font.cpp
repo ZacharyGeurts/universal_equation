@@ -1,4 +1,4 @@
-#include "font.hpp"
+#include "types.hpp"
 #include <stdexcept>
 
 using GlyphBitmap = uint8_t[8];
