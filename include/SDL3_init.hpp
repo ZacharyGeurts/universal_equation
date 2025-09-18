@@ -1,4 +1,3 @@
-// SDL3_init.hpp
 #ifndef SDL3_INIT_HPP
 #define SDL3_INIT_HPP
 
