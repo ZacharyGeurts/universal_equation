@@ -1,3 +1,4 @@
+// main.hpp
 #ifndef MAIN_HPP
 #define MAIN_HPP
 
@@ -15,14 +16,14 @@
 #include "types.hpp"
 #include "modes.hpp"
 
+// Do not touch resolution here. See main.cpp
 class DimensionalNavigator {
 public:
     DimensionalNavigator(const char* title = "Dimensional Navigator",
                         int width = 1280, int height = 720)
         : window_(nullptr), vulkanInstance_(VK_NULL_HANDLE), vulkanDevice_(VK_NULL_HANDLE),
           physicalDevice_(VK_NULL_HANDLE), surface_(VK_NULL_HANDLE), swapchain_(VK_NULL_HANDLE),
-          mode_(1), wavePhase_(0.0f), waveSpeed_(0.1f), width_(width), height_(height),
-          zoomLevel_(1.0f), isPaused_(false), isSwapchainValid_(true) {
+          mode_(1), wavePhase_(0.0f), waveSpeed_(0.1f), width_(width), height_(height), zoomLevel_(1.0f), isPaused_(false) {
         try {
             SDL3Initializer::initializeSDL(window_, vulkanInstance_, surface_, title, width, height);
             initializeSphereGeometry();
@@ -80,8 +81,7 @@ public:
     int width_;
     int height_;
     float zoomLevel_;
-    bool isPaused_;
-    bool isSwapchainValid_; // Added to track swapchain validity
+    bool isPaused_; // Added pause state
 
     ~DimensionalNavigator() {
         cleanup();
@@ -104,7 +104,7 @@ public:
                 }
                 handleInput(event);
             }
-            if (!isPaused_ && isSwapchainValid_) { // Only render if not paused and swapchain is valid
+            if (!isPaused_) { // Only render if not paused
                 try {
                     render();
                 } catch (const std::exception& e) {
@@ -202,7 +202,7 @@ public:
                 case SDLK_Z:
                     updateZoom(false);
                     break;
-                case SDLK_P:
+                case SDLK_P: // Added pause toggle
                     isPaused_ = !isPaused_;
                     std::cerr << "Pause state: " << (isPaused_ ? "Paused" : "Unpaused") << "\n";
                     break;
@@ -221,21 +221,9 @@ public:
         VulkanInitializer::initializeQuadBuffers(vulkanDevice_, physicalDevice_, commandPool_, graphicsQueue_,
                                                 quadVertexBuffer_, quadVertexBufferMemory_, quadIndexBuffer_,
                                                 quadIndexBufferMemory_, quadVertices_, quadIndices_);
-        isSwapchainValid_ = true; // Mark swapchain as valid after initialization
     }
 
     void recreateSwapchain() {
-        // Mark swapchain as invalid
-        isSwapchainValid_ = false;
-
-        // Check for minimized window
-        int newWidth, newHeight;
-        SDL_GetWindowSize(window_, &newWidth, &newHeight);
-        if (newWidth == 0 || newHeight == 0) {
-            std::cerr << "Window is minimized, skipping swapchain recreation\n";
-            return;
-        }
-
         // Wait for device to be idle before cleanup
         if (vulkanDevice_ != VK_NULL_HANDLE) {
             VkResult result = vkDeviceWaitIdle(vulkanDevice_);
@@ -252,7 +240,7 @@ public:
                                         inFlightFence_, vertexBuffer_, vertexBufferMemory_, indexBuffer_, indexBufferMemory_,
                                         quadVertexBuffer_, quadVertexBufferMemory_, quadIndexBuffer_, quadIndexBufferMemory_);
 
-        // Nullify resources after cleanup (except vulkanDevice_)
+        // Nullify resources after cleanup
         std::cerr << "Nullifying Vulkan resources\n";
         swapchain_ = VK_NULL_HANDLE;
         swapchainImages_.clear();
@@ -274,8 +262,11 @@ public:
         quadVertexBufferMemory_ = VK_NULL_HANDLE;
         quadIndexBuffer_ = VK_NULL_HANDLE;
         quadIndexBufferMemory_ = VK_NULL_HANDLE;
+        vulkanDevice_ = VK_NULL_HANDLE; // Nullify device last
 
         // Update window size
+        int newWidth, newHeight;
+        SDL_GetWindowSize(window_, &newWidth, &newHeight);
         width_ = std::max(1280, newWidth); // Enforce minimum width
         height_ = std::max(720, newHeight); // Enforce minimum height
         std::cerr << "Recreating swapchain with resolution: " << width_ << "x" << height_ << "\n";
@@ -285,12 +276,7 @@ public:
         }
 
         // Reinitialize Vulkan
-        try {
-            initializeVulkan();
-        } catch (const std::exception& e) {
-            std::cerr << "Failed to reinitialize Vulkan: " << e.what() << "\n";
-            throw;
-        }
+        initializeVulkan();
     }
 
     void cleanup() {
@@ -357,7 +343,7 @@ public:
     }
 
     void initializeCalculator() {
-        ue_ = UniversalEquation(9, 1, 1.0, 0.5, 0.5, 0.5, 1.5, 2.0, 0.27, 0.68, 5.0, 0.2, true);
+        ue_ = UniversalEquation(9, 1, 1.0, 0.5, 0.5, 0.5, 1.5, 2.0, 0.27, 0.68, 5.0, 0.2, true); // Enable debug
         updateCache();
     }
 
@@ -403,18 +389,13 @@ public:
     }
 
     void render() {
-        if (!isSwapchainValid_) {
-            std::cerr << "Swapchain is invalid, skipping render\n";
-            return;
-        }
-
         std::cerr << "Rendering with resolution: " << width_ << "x" << height_ << ", aspect ratio: " << static_cast<float>(width_) / height_ << "\n";
         vkWaitForFences(vulkanDevice_, 1, &inFlightFence_, VK_TRUE, UINT64_MAX);
         vkResetFences(vulkanDevice_, 1, &inFlightFence_);
 
         uint32_t imageIndex;
         VkResult result = vkAcquireNextImageKHR(vulkanDevice_, swapchain_, UINT64_MAX, imageAvailableSemaphore_, VK_NULL_HANDLE, &imageIndex);
-        if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
+        if (result == VK_ERROR_OUT_OF_DATE_KHR) {
             recreateSwapchain();
             return;
         }
@@ -433,13 +414,6 @@ public:
         VkRenderPassBeginInfo renderPassInfo = {VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO, nullptr, renderPass_, swapchainFramebuffers_[imageIndex], {{0, 0}, {(uint32_t)width_, (uint32_t)height_}}, 1, &clearColor};
         vkCmdBeginRenderPass(commandBuffers_[imageIndex], &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
         vkCmdBindPipeline(commandBuffers_[imageIndex], VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_);
-
-        // Set viewport and scissor
-        VkViewport viewport = {0.0f, 0.0f, (float)width_, (float)height_, 0.0f, 1.0f};
-        vkCmdSetViewport(commandBuffers_[imageIndex], 0, 1, &viewport);
-
-        VkRect2D scissor = {{0, 0}, {(uint32_t)width_, (uint32_t)height_}};
-        vkCmdSetScissor(commandBuffers_[imageIndex], 0, 1, &scissor);
 
         updateCache();
         switch (mode_) {
@@ -468,7 +442,7 @@ public:
 
         VkPresentInfoKHR presentInfo = {VK_STRUCTURE_TYPE_PRESENT_INFO_KHR, nullptr, 1, &renderFinishedSemaphore_, 1, &swapchain_, &imageIndex, nullptr};
         result = vkQueuePresentKHR(presentQueue_, &presentInfo);
-        if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
+        if (result == VK_ERROR_OUT_OF_DATE_KHR) {
             recreateSwapchain();
             return;
         }
