@@ -233,13 +233,17 @@ private:
         std::vector<VkExtensionProperties> exts(extCount);
         vkEnumerateDeviceExtensionProperties(physicalDevice, nullptr, &extCount, exts.data());
         bool hasSwapchain = false;
+        bool hasRayTracing = false;
         for (const auto& ext : exts) {
             if (strcmp(ext.extensionName, VK_KHR_SWAPCHAIN_EXTENSION_NAME) == 0) {
                 hasSwapchain = true;
-                break;
+            }
+            if (strcmp(ext.extensionName, VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME) == 0) {
+                hasRayTracing = true;
             }
         }
         if (!hasSwapchain) throw std::runtime_error("No swapchain support");
+        if (!hasRayTracing) throw std::runtime_error("No ray tracing pipeline support");
         float priority = 1.0f;
         std::vector<VkDeviceQueueCreateInfo> queueInfos;
         VkDeviceQueueCreateInfo info = { VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO, nullptr, 0, graphicsFamily, 1, &priority };
@@ -248,9 +252,41 @@ private:
             info.queueFamilyIndex = presentFamily;
             queueInfos.push_back(info);
         }
-        const char* extsArray[] = { VK_KHR_SWAPCHAIN_EXTENSION_NAME };
+        const char* extsArray[] = { 
+            VK_KHR_SWAPCHAIN_EXTENSION_NAME,
+            VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME,
+            VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,
+            VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME
+        };
         VkPhysicalDeviceFeatures features = {};
-        VkDeviceCreateInfo deviceInfo = { VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO, nullptr, 0, (uint32_t)queueInfos.size(), queueInfos.data(), 0, nullptr, 1, extsArray, &features };
+        VkPhysicalDeviceRayTracingPipelineFeaturesKHR rtFeatures = { 
+            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_FEATURES_KHR, 
+            nullptr, 
+            VK_TRUE, 
+            VK_FALSE, 
+            VK_FALSE, 
+            VK_FALSE, 
+            VK_FALSE 
+        };
+        VkPhysicalDeviceAccelerationStructureFeaturesKHR asFeatures = { 
+            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR, 
+            &rtFeatures, 
+            VK_TRUE, 
+            VK_FALSE, 
+            VK_FALSE, 
+            VK_FALSE, 
+            VK_FALSE 
+        };
+        VkDeviceCreateInfo deviceInfo = { 
+            VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO, 
+            &asFeatures, 
+            0, 
+            (uint32_t)queueInfos.size(), 
+            queueInfos.data(), 
+            0, nullptr, 
+            4, extsArray, 
+            &features 
+        };
         if (vkCreateDevice(physicalDevice, &deviceInfo, nullptr, &device) != VK_SUCCESS) throw std::runtime_error("Device creation failed");
         vkGetDeviceQueue(device, graphicsFamily, 0, &graphicsQueue);
         vkGetDeviceQueue(device, presentFamily, 0, &presentQueue);
@@ -481,6 +517,270 @@ private:
         copyBuffer(device, commandPool, graphicsQueue, staging, indexBuffer, size);
         vkDestroyBuffer(device, staging, nullptr);
         vkFreeMemory(device, stagingMem, nullptr);
+    }
+
+    static void createRayTracingPipeline(VkDevice device, VkPipeline& pipeline, VkPipelineLayout& rtPipelineLayout) {
+        // Load ray tracing shaders
+        VkShaderModule raygenShader = createShaderModule(device, "raygen.rgen.spv");
+        VkShaderModule missShader = createShaderModule(device, "miss.rmiss.spv");
+        VkShaderModule closestHitShader = createShaderModule(device, "closest_hit.rchit.spv");
+
+        // Define shader stages
+        VkPipelineShaderStageCreateInfo stages[3] = {
+            {
+                VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+                nullptr,
+                0,
+                VK_SHADER_STAGE_RAYGEN_BIT_KHR,
+                raygenShader,
+                "main",
+                nullptr
+            },
+            {
+                VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+                nullptr,
+                0,
+                VK_SHADER_STAGE_MISS_BIT_KHR,
+                missShader,
+                "main",
+                nullptr
+            },
+            {
+                VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+                nullptr,
+                0,
+                VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR,
+                closestHitShader,
+                "main",
+                nullptr
+            }
+        };
+
+        // Define shader groups
+        VkRayTracingShaderGroupCreateInfoKHR groups[3] = {
+            // Raygen group
+            {
+                VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR,
+                nullptr,
+                VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_KHR,
+                0, // raygen shader index
+                VK_SHADER_UNUSED_KHR,
+                VK_SHADER_UNUSED_KHR,
+                VK_SHADER_UNUSED_KHR,
+                nullptr
+            },
+            // Miss group
+            {
+                VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR,
+                nullptr,
+                VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_KHR,
+                1, // miss shader index
+                VK_SHADER_UNUSED_KHR,
+                VK_SHADER_UNUSED_KHR,
+                VK_SHADER_UNUSED_KHR,
+                nullptr
+            },
+            // Closest hit group
+            {
+                VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR,
+                nullptr,
+                VK_RAY_TRACING_SHADER_GROUP_TYPE_TRIANGLES_HIT_GROUP_KHR,
+                VK_SHADER_UNUSED_KHR,
+                2, // closest hit shader index
+                VK_SHADER_UNUSED_KHR,
+                VK_SHADER_UNUSED_KHR,
+                nullptr
+            }
+        };
+
+        // Create pipeline layout (assuming minimal setup, no descriptor sets for simplicity)
+        VkPipelineLayoutCreateInfo layoutInfo = {
+            VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+            nullptr,
+            0,
+            0, nullptr, // No descriptor sets
+            0, nullptr  // No push constants for simplicity
+        };
+        if (vkCreatePipelineLayout(device, &layoutInfo, nullptr, &rtPipelineLayout) != VK_SUCCESS) {
+            throw std::runtime_error("Failed to create ray tracing pipeline layout");
+        }
+
+        // Define pipeline interface
+        VkRayTracingPipelineInterfaceCreateInfoKHR pipelineInterfaceInfo = {
+            VK_STRUCTURE_TYPE_RAY_TRACING_PIPELINE_INTERFACE_CREATE_INFO_KHR,
+            nullptr,
+            256, // maxPipelineRayPayloadSize (example size)
+            32  // maxPipelineRayHitAttributeSize
+        };
+
+        // Create ray tracing pipeline
+        VkRayTracingPipelineCreateInfoKHR createInfo = {
+            VK_STRUCTURE_TYPE_RAY_TRACING_PIPELINE_CREATE_INFO_KHR,
+            nullptr,
+            0, // flags
+            3, // stageCount
+            stages,
+            3, // groupCount
+            groups,
+            2, // maxPipelineRayRecursionDepth
+            nullptr, // pLibraryInfo
+            &pipelineInterfaceInfo,
+            nullptr, // pDynamicState
+            rtPipelineLayout,
+            VK_NULL_HANDLE,
+            0
+        };
+
+        if (vkCreateRayTracingPipelinesKHR(device, VK_NULL_HANDLE, VK_NULL_HANDLE, 1, &createInfo, nullptr, &pipeline) != VK_SUCCESS) {
+            throw std::runtime_error("Failed to create ray tracing pipeline");
+        }
+
+        // Cleanup shader modules
+        vkDestroyShaderModule(device, raygenShader, nullptr);
+        vkDestroyShaderModule(device, missShader, nullptr);
+        vkDestroyShaderModule(device, closestHitShader, nullptr);
+    }
+
+    static void createBottomLevelAS(VkDevice device, VkPhysicalDevice physicalDevice, VkCommandPool commandPool, VkQueue queue, 
+                                    const std::vector<VkAccelerationStructureGeometryKHR>& geometries, 
+                                    const std::vector<VkAccelerationStructureBuildRangeInfoKHR>& buildRanges, 
+                                    VkAccelerationStructureKHR& as, VkBuffer& asBuffer, VkDeviceMemory& asMemory) {
+        // Ensure input vectors are not empty
+        if (geometries.empty() || buildRanges.empty()) {
+            throw std::runtime_error("Geometries or build ranges are empty");
+        }
+
+        uint32_t geoCount = static_cast<uint32_t>(geometries.size());
+
+        // Prepare build geometry info
+        VkAccelerationStructureBuildGeometryInfoKHR buildInfo = {
+            VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR,
+            nullptr,
+            VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR,
+            VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_UPDATE_BIT_KHR, // Allow updates for flexibility
+            VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR,
+            VK_NULL_HANDLE, // dstAccelerationStructure
+            VK_NULL_HANDLE, // srcAccelerationStructure
+            geoCount,
+            geometries.data(),
+            nullptr, // pGeometries
+            {}       // scratchData
+        };
+
+        // Get build sizes
+        std::vector<uint32_t> maxPrimitiveCounts(buildRanges.size());
+        for (size_t i = 0; i < buildRanges.size(); ++i) {
+            maxPrimitiveCounts[i] = buildRanges[i].primitiveCount;
+        }
+
+        VkAccelerationStructureBuildSizesInfoKHR sizeInfo = {
+            VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR,
+            nullptr,
+            0, // accelerationStructureSize
+            0, // updateScratchSize
+            0  // buildScratchSize
+        };
+
+        vkGetAccelerationStructureBuildSizesKHR(device, VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR, &buildInfo, maxPrimitiveCounts.data(), &sizeInfo);
+
+        // Create acceleration structure buffer
+        createBuffer(device, physicalDevice, sizeInfo.accelerationStructureSize, 
+                     VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT, 
+                     VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, asBuffer, asMemory);
+
+        // Create acceleration structure
+        VkAccelerationStructureCreateInfoKHR createInfo = {
+            VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR,
+            nullptr,
+            0, // createFlags
+            asBuffer,
+            0, // offset
+            sizeInfo.accelerationStructureSize,
+            VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR,
+            0  // deviceAddress
+        };
+
+        if (vkCreateAccelerationStructureKHR(device, &createInfo, nullptr, &as) != VK_SUCCESS) {
+            throw std::runtime_error("Failed to create bottom-level acceleration structure");
+        }
+
+        // Create scratch buffer for building
+        VkBuffer scratchBuffer;
+        VkDeviceMemory scratchMemory;
+        createBuffer(device, physicalDevice, sizeInfo.buildScratchSize, 
+                     VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT, 
+                     VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, scratchBuffer, scratchMemory);
+
+        // Get scratch buffer device address
+        VkBufferDeviceAddressInfo scratchAddressInfo = {
+            VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO,
+            nullptr,
+            scratchBuffer
+        };
+        VkDeviceAddress scratchAddress = vkGetBufferDeviceAddress(device, &scratchAddressInfo);
+
+        // Update build info with scratch data and destination
+        buildInfo.dstAccelerationStructure = as;
+        buildInfo.scratchData.deviceAddress = scratchAddress;
+
+        // Allocate command buffer
+        VkCommandBufferAllocateInfo cmdAllocInfo = {
+            VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+            nullptr,
+            commandPool,
+            VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+            1
+        };
+        VkCommandBuffer cmdBuffer;
+        if (vkAllocateCommandBuffers(device, &cmdAllocInfo, &cmdBuffer) != VK_SUCCESS) {
+            throw std::runtime_error("Failed to allocate command buffer for AS build");
+        }
+
+        // Begin command buffer
+        VkCommandBufferBeginInfo cmdBeginInfo = {
+            VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+            nullptr,
+            VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
+            nullptr
+        };
+        if (vkBeginCommandBuffer(cmdBuffer, &cmdBeginInfo) != VK_SUCCESS) {
+            throw std::runtime_error("Failed to begin command buffer for AS build");
+        }
+
+        // Build acceleration structure
+        std::vector<VkAccelerationStructureBuildRangeInfoKHR*> rangeInfoPtrs;
+        for (const auto& range : buildRanges) {
+            rangeInfoPtrs.push_back(const_cast<VkAccelerationStructureBuildRangeInfoKHR*>(&range));
+        }
+
+        vkCmdBuildAccelerationStructuresKHR(cmdBuffer, 1, &buildInfo, rangeInfoPtrs.data());
+
+        // End command buffer
+        if (vkEndCommandBuffer(cmdBuffer) != VK_SUCCESS) {
+            throw std::runtime_error("Failed to end command buffer for AS build");
+        }
+
+        // Submit command buffer
+        VkSubmitInfo submitInfo = {
+            VK_STRUCTURE_TYPE_SUBMIT_INFO,
+            nullptr,
+            0, nullptr, nullptr,
+            1, &cmdBuffer,
+            0, nullptr
+        };
+        if (vkQueueSubmit(queue, 1, &submitInfo, VK_NULL_HANDLE) != VK_SUCCESS) {
+            throw std::runtime_error("Failed to submit command buffer for AS build");
+        }
+
+        // Wait for completion
+        vkQueueWaitIdle(queue);
+
+        // Free command buffer
+        vkFreeCommandBuffers(device, commandPool, 1, &cmdBuffer);
+
+        // Clean up scratch buffer
+        vkDestroyBuffer(device, scratchBuffer, nullptr);
+        vkFreeMemory(device, scratchMemory, nullptr);
     }
 };
 
