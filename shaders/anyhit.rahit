@@ -1,0 +1,9 @@
+#version 460
+#extension GL_EXT_nonuniform_qualifier : enable
+
+layout(binding = 3, set = 0) uniform sampler2D image;
+
+void main()
+{
+
+}

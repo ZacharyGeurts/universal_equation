@@ -17,8 +17,20 @@ BIN_DIR = bin
 SOURCES = $(wildcard $(SRC_DIR)/*.cpp)
 OBJECTS = $(patsubst $(SRC_DIR)/%.cpp,$(BUILD_DIR)/%.o,$(SOURCES))
 EXECUTABLE = $(BIN_DIR)/Navigator
-SHADER_SOURCES = $(wildcard $(SHADER_DIR)/*.vert) $(wildcard $(SHADER_DIR)/*.frag)
-SHADER_OBJECTS = $(patsubst $(SHADER_DIR)/%.vert,$(SHADER_DIR)/%.spv,$(SHADER_SOURCES:.frag=.spv))
+
+# Shader source files (vertex, fragment, and ray-tracing shaders)
+SHADER_SOURCES = $(wildcard $(SHADER_DIR)/*.vert) \
+				$(wildcard $(SHADER_DIR)/*.frag) \
+				$(wildcard $(SHADER_DIR)/*.rahit) \
+				$(wildcard $(SHADER_DIR)/*.rchit) \
+				$(wildcard $(SHADER_DIR)/*.rmiss) \
+				$(wildcard $(SHADER_DIR)/*.rgen)
+SHADER_OBJECTS = $(patsubst $(SHADER_DIR)/%.vert,$(SHADER_DIR)/%.spv,$(SHADER_SOURCES)) \
+				$(patsubst $(SHADER_DIR)/%.frag,$(SHADER_DIR)/%.spv,$(SHADER_SOURCES)) \
+				$(patsubst $(SHADER_DIR)/%.rahit,$(SHADER_DIR)/%.spv,$(SHADER_SOURCES)) \
+				$(patsubst $(SHADER_DIR)/%.rchit,$(SHADER_DIR)/%.spv,$(SHADER_SOURCES)) \
+				$(patsubst $(SHADER_DIR)/%.rmiss,$(SHADER_DIR)/%.spv,$(SHADER_SOURCES)) \
+				$(patsubst $(SHADER_DIR)/%.rgen,$(SHADER_DIR)/%.spv,$(SHADER_SOURCES))
 
 # Default target
 all: directories $(EXECUTABLE) copy-shaders copy-font
@@ -44,6 +56,22 @@ $(SHADER_DIR)/%.spv: $(SHADER_DIR)/%.vert
 
 $(SHADER_DIR)/%.spv: $(SHADER_DIR)/%.frag
 	@echo "Compiling fragment shader: $<"
+	$(GLSLC) $< -o $@
+
+$(SHADER_DIR)/%.spv: $(SHADER_DIR)/%.rahit
+	@echo "Compiling anyhit shader: $<"
+	$(GLSLC) $< -o $@
+
+$(SHADER_DIR)/%.spv: $(SHADER_DIR)/%.rchit
+	@echo "Compiling closesthit shader: $<"
+	$(GLSLC) $< -o $@
+
+$(SHADER_DIR)/%.spv: $(SHADER_DIR)/%.rmiss
+	@echo "Compiling miss shader: $<"
+	$(GLSLC) $< -o $@
+
+$(SHADER_DIR)/%.spv: $(SHADER_DIR)/%.rgen
+	@echo "Compiling raygen shader: $<"
 	$(GLSLC) $< -o $@
 
 # Copy shader files to bin directory
