@@ -21,11 +21,21 @@ class DimensionalNavigator {
 public:
     DimensionalNavigator(const char* title = "Dimensional Navigator",
                         int width = 1280, int height = 720)
-        : window_(nullptr), vulkanInstance_(VK_NULL_HANDLE), vulkanDevice_(VK_NULL_HANDLE),
-          physicalDevice_(VK_NULL_HANDLE), surface_(VK_NULL_HANDLE), swapchain_(VK_NULL_HANDLE),
-          mode_(1), wavePhase_(0.0f), waveSpeed_(0.1f), width_(width), height_(height), zoomLevel_(1.0f), isPaused_(false) {
+        : vulkanDevice_(VK_NULL_HANDLE),
+          physicalDevice_(VK_NULL_HANDLE),
+          swapchain_(VK_NULL_HANDLE),
+          mode_(1),
+          wavePhase_(0.0f),
+          waveSpeed_(0.1f),
+          width_(width),
+          height_(height),
+          zoomLevel_(1.0f),
+          isPaused_(false) {
         try {
-            SDL3Initializer::initializeSDL(window_, vulkanInstance_, surface_, title, width, height);
+            sdlInitializer_.initialize(title, width, height);
+            window_ = sdlInitializer_.getWindow();
+            vulkanInstance_ = sdlInitializer_.getVkInstance();
+            surface_ = sdlInitializer_.getVkSurface();
             initializeSphereGeometry();
             initializeQuadGeometry();
             initializeVulkan();
@@ -37,6 +47,7 @@ public:
         }
     }
 
+    SDL3Initializer sdlInitializer_;
     SDL_Window* window_;
     VkInstance vulkanInstance_;
     VkDevice vulkanDevice_;
@@ -81,39 +92,28 @@ public:
     int width_;
     int height_;
     float zoomLevel_;
-    bool isPaused_; // Added pause state
+    bool isPaused_;
 
     ~DimensionalNavigator() {
         cleanup();
     }
 
     void run() {
-        bool running = true;
-        SDL_Event event;
-        while (running) {
-            while (SDL_PollEvent(&event)) {
-                if (event.type == SDL_EVENT_QUIT) {
-                    running = false;
-                } else if (event.type == SDL_EVENT_WINDOW_RESIZED) {
-                    try {
-                        recreateSwapchain();
-                    } catch (const std::exception& e) {
-                        std::cerr << "Swapchain recreation failed: " << e.what() << "\n";
-                        running = false;
-                    }
-                }
-                handleInput(event);
-            }
-            if (!isPaused_) { // Only render if not paused
+        sdlInitializer_.eventLoop(
+            [this]() { render(); },
+            [this](int w, int h) {
+                width_ = std::max(1280, w);
+                height_ = std::max(720, h);
                 try {
-                    render();
+                    recreateSwapchain();
                 } catch (const std::exception& e) {
-                    std::cerr << "Render failed: " << e.what() << "\n";
-                    running = false;
+                    std::cerr << "Swapchain recreation failed: " << e.what() << "\n";
+                    throw;
                 }
-            }
-            SDL_Delay(16); // ~60 FPS
-        }
+            },
+            true,
+            [this](const SDL_KeyboardEvent& key) { handleInput({key}); }
+        );
     }
 
     void adjustInfluence(double delta) {
@@ -139,9 +139,9 @@ public:
         }
     }
 
-    void handleInput(const SDL_Event& event) {
-        if (event.type == SDL_EVENT_KEY_DOWN) {
-            switch (event.key.key) {
+    void handleInput(const SDL_KeyboardEvent& key) {
+        if (key.type == SDL_EVENT_KEY_DOWN) {
+            switch (key.key) {
                 case SDLK_F: {
                     Uint32 flags = SDL_GetWindowFlags(window_);
                     if (flags & SDL_WINDOW_FULLSCREEN) {
@@ -202,7 +202,7 @@ public:
                 case SDLK_Z:
                     updateZoom(false);
                     break;
-                case SDLK_P: // Added pause toggle
+                case SDLK_P:
                     isPaused_ = !isPaused_;
                     std::cerr << "Pause state: " << (isPaused_ ? "Paused" : "Unpaused") << "\n";
                     break;
@@ -224,7 +224,6 @@ public:
     }
 
     void recreateSwapchain() {
-        // Wait for device to be idle before cleanup
         if (vulkanDevice_ != VK_NULL_HANDLE) {
             VkResult result = vkDeviceWaitIdle(vulkanDevice_);
             if (result != VK_SUCCESS) {
@@ -232,16 +231,12 @@ public:
             }
         }
 
-        // Cleanup Vulkan resources
-        std::cerr << "Cleaning up Vulkan resources\n";
         VulkanInitializer::cleanupVulkan(vulkanInstance_, vulkanDevice_, surface_, swapchain_, swapchainImageViews_,
                                         swapchainFramebuffers_, pipeline_, pipelineLayout_, renderPass_,
                                         commandPool_, commandBuffers_, imageAvailableSemaphore_, renderFinishedSemaphore_,
                                         inFlightFence_, vertexBuffer_, vertexBufferMemory_, indexBuffer_, indexBufferMemory_,
                                         quadVertexBuffer_, quadVertexBufferMemory_, quadIndexBuffer_, quadIndexBufferMemory_);
 
-        // Nullify resources after cleanup
-        std::cerr << "Nullifying Vulkan resources\n";
         swapchain_ = VK_NULL_HANDLE;
         swapchainImages_.clear();
         swapchainImageViews_.clear();
@@ -262,25 +257,22 @@ public:
         quadVertexBufferMemory_ = VK_NULL_HANDLE;
         quadIndexBuffer_ = VK_NULL_HANDLE;
         quadIndexBufferMemory_ = VK_NULL_HANDLE;
-        vulkanDevice_ = VK_NULL_HANDLE; // Nullify device last
+        vulkanDevice_ = VK_NULL_HANDLE;
 
-        // Update window size
         int newWidth, newHeight;
         SDL_GetWindowSize(window_, &newWidth, &newHeight);
-        width_ = std::max(1280, newWidth); // Enforce minimum width
-        height_ = std::max(720, newHeight); // Enforce minimum height
+        width_ = std::max(1280, newWidth);
+        height_ = std::max(720, newHeight);
         std::cerr << "Recreating swapchain with resolution: " << width_ << "x" << height_ << "\n";
         if (newWidth < 1280 || newHeight < 720) {
             SDL_SetWindowSize(window_, width_, height_);
             std::cerr << "Adjusted window size to: " << width_ << "x" << height_ << "\n";
         }
 
-        // Reinitialize Vulkan
         initializeVulkan();
     }
 
     void cleanup() {
-        // Wait for device to be idle before cleanup
         if (vulkanDevice_ != VK_NULL_HANDLE) {
             VkResult result = vkDeviceWaitIdle(vulkanDevice_);
             if (result != VK_SUCCESS) {
@@ -288,16 +280,13 @@ public:
             }
         }
 
-        // Cleanup Vulkan resources
-        std::cerr << "Cleaning up Vulkan resources in cleanup\n";
         VulkanInitializer::cleanupVulkan(vulkanInstance_, vulkanDevice_, surface_, swapchain_, swapchainImageViews_,
                                         swapchainFramebuffers_, pipeline_, pipelineLayout_, renderPass_,
                                         commandPool_, commandBuffers_, imageAvailableSemaphore_, renderFinishedSemaphore_,
                                         inFlightFence_, vertexBuffer_, vertexBufferMemory_, indexBuffer_, indexBufferMemory_,
                                         quadVertexBuffer_, quadVertexBufferMemory_, quadIndexBuffer_, quadIndexBufferMemory_);
 
-        // Cleanup SDL resources
-        SDL3Initializer::cleanupSDL(window_, vulkanInstance_, surface_);
+        sdlInitializer_.cleanup();
         window_ = nullptr;
         vulkanInstance_ = VK_NULL_HANDLE;
         surface_ = VK_NULL_HANDLE;
@@ -343,7 +332,7 @@ public:
     }
 
     void initializeCalculator() {
-        ue_ = UniversalEquation(9, 1, 1.0, 0.5, 0.5, 0.5, 1.5, 2.0, 0.27, 0.68, 5.0, 0.2, true); // Enable debug
+        ue_ = UniversalEquation(9, 1, 1.0, 0.5, 0.5, 0.5, 1.5, 2.0, 0.27, 0.68, 5.0, 0.2, true);
         updateCache();
     }
 
@@ -389,6 +378,8 @@ public:
     }
 
     void render() {
+        if (isPaused_) return;
+
         std::cerr << "Rendering with resolution: " << width_ << "x" << height_ << ", aspect ratio: " << static_cast<float>(width_) / height_ << "\n";
         vkWaitForFences(vulkanDevice_, 1, &inFlightFence_, VK_TRUE, UINT64_MAX);
         vkResetFences(vulkanDevice_, 1, &inFlightFence_);
