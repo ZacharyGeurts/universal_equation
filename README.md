@@ -1,4 +1,4 @@
-# Dimensional Navigator  🇺🇸  
+# Dimensional Navigator  🇺🇸  VS  🇷🇺  
 
 Browsing dimensions 1D (God) through 9D (Spot ;) )  
 Stay tuned for version 2.0. Starting line.  
