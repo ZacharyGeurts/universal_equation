@@ -16,7 +16,6 @@ Modular design. Modify with your favorite AI coding program.
 **Previous Previous**: [Older Version](https://github.com/user-attachments/assets/344232f5-e7b8-4485-af40-5a302873f88c)
 
 If you do not intend to modify the code, just watch the latest video above and you may have found God.  
-Change `main.cpp` resolution if you have startup issues.  
 
 **Platform**: Currently Linux-only  
 
