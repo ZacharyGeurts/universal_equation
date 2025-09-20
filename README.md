@@ -125,7 +125,8 @@ The `UniversalEquation` class defines dimensional interactions:
 - **OS**: Linux (Ubuntu/Debian recommended; other distros may require building SDL3 from source).  
 - **Compiler**: `g++` with C++17 support.  
 - **Libraries**:  
-  - **SDL3**: `libsdl3-dev` (may need to build from source if not available).  
+  - **SDL3**: `libsdl3-dev` (may need to build from source if not available).
+  - **SDL3_ttf**: `libsdl3-ttf-dev` (may need to build from source if not available).  
   - **Vulkan**: `libvulkan-dev`, `vulkan-tools` (for validation layers).  
   - **GLM**: `libglm-dev`.  
 - **Shader Compiler**: `glslc` (from Vulkan SDK).
@@ -134,12 +135,16 @@ I do not condone violence, incorrectness, or the new Oxford comma.
 
 ## Build Instructions
 ```bash
+# Update package lists and install base dependencies
 sudo apt update
-sudo apt install -y git g++ libvulkan-dev vulkan-tools vulkan-sdk libglm-dev libasound2-dev libpulse-dev libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxss-dev libasound2-dev libpulse-dev libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxss-dev
+sudo apt install -y git g++ libvulkan-dev vulkan-tools vulkan-sdk libglm-dev libfreetype-dev libasound2-dev libpulse-dev libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxss-dev
 
+# Add LunarG Vulkan repository for glslc
 wget -qO - https://packages.lunarg.com/lunarg-signing-key-pub.asc | sudo apt-key add -
 sudo wget -qO /etc/apt/sources.list.d/lunarg-vulkan-jammy.list https://packages.lunarg.com/vulkan/lunarg-vulkan-jammy.list
+sudo apt update
 
+# Build and install SDL3 from source
 git clone https://github.com/libsdl-org/SDL.git
 cd SDL
 mkdir build
@@ -149,6 +154,17 @@ make
 sudo make install
 cd ../..
 
+# Build and install SDL3_ttf from source
+git clone https://github.com/libsdl-org/SDL_ttf.git
+cd SDL_ttf
+mkdir build
+cd build
+../configure
+make
+sudo make install
+cd ../..
+
+# Build the project
 git clone https://github.com/ZacharyGeurts/universal_equation
 cd universal_equation
 make
