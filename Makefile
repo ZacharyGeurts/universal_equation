@@ -55,11 +55,11 @@ $(BUILD_DIR)/%.o: $(SRC_DIR)/%.cpp
 # Compile shader files to SPIR-V
 $(SHADER_DIR)/%.spv: $(SHADER_DIR)/%.vert
 	@echo "Compiling vertex shader: $<"
-	$(GLSLC) $< -o $@
+	$(GLSLC) $< -o $@ --target-env=vulkan1.4
 
 $(SHADER_DIR)/%.spv: $(SHADER_DIR)/%.frag
 	@echo "Compiling fragment shader: $<"
-	$(GLSLC) $< -o $@
+	$(GLSLC) $< -o $@ --target-env=vulkan1.4
 
 $(SHADER_DIR)/%.spv: $(SHADER_DIR)/%.rahit $(COMMON_GLSL)
 	@echo "Compiling anyhit shader: $<"
