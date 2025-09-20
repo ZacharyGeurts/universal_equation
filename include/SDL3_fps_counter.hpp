@@ -1,4 +1,3 @@
-// SDL3_fps_counter.hpp
 #ifndef SDL3_FPS_COUNTER_HPP
 #define SDL3_FPS_COUNTER_HPP
 
@@ -11,7 +10,7 @@
 class FPSCounter {
 public:
     FPSCounter(SDL_Window* window, TTF_Font* font) 
-        : m_window(window), m_font(font), m_showFPS(false), m_frameCount(0), m_lastTime(0) {
+        : m_window(window), m_font(font), m_showFPS(false), m_frameCount(0), m_lastTime(0), m_mode(1) {
         m_textColor = {255, 255, 255, 255}; // White text
     }
 
@@ -19,6 +18,10 @@ public:
         if (key.type == SDL_EVENT_KEY_DOWN && key.key == SDLK_F1) {
             m_showFPS = !m_showFPS; // Toggle FPS display on F1 press
         }
+    }
+
+    void setMode(int mode) {
+        m_mode = mode; // Update the current render mode
     }
 
     void update() {
@@ -31,12 +34,12 @@ public:
             m_frameCount = 0;
             m_lastTime = currentTime;
 
-            // Update FPS text
+            // Update FPS and mode text
             std::stringstream ss;
-            ss << "FPS: " << m_fps;
+            ss << "FPS: " << m_fps << " | Mode: " << m_mode << "D";
             m_fpsText = ss.str();
 
-            // Create texture for FPS text
+            // Create texture for FPS and mode text
             SDL_Surface* surface = TTF_RenderText_Blended(m_font, m_fpsText.c_str(), m_fpsText.length(), m_textColor);
             if (!surface) {
                 throw std::runtime_error("TTF_RenderText_Blended failed: " + std::string(SDL_GetError()));
@@ -71,6 +74,7 @@ private:
     int m_frameCount;
     Uint64 m_lastTime;
     int m_fps = 0;
+    int m_mode; // Current render mode
     std::string m_fpsText;
     SDL_Color m_textColor;
     std::unique_ptr<SDL_Texture, SDLTextureDeleter> m_texture;
