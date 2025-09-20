@@ -231,6 +231,17 @@ public:
     		vkGetPhysicalDeviceProperties(device, &props);
     		std::cerr << "Device: " << props.deviceName << "\n";
 		}
+		
+		uint32_t queueFamilyCount = 0;
+		vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice_, &queueFamilyCount, nullptr);
+		std::vector<VkQueueFamilyProperties> queueFamilies(queueFamilyCount);
+		vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice_, &queueFamilyCount, queueFamilies.data());
+		for (uint32_t i = 0; i < queueFamilyCount; ++i) {
+    		std::cerr << "Queue Family " << i << ": flags=" << queueFamilies[i].queueFlags << "\n";
+    		VkBool32 presentSupport = VK_FALSE;
+    		vkGetPhysicalDeviceSurfaceSupportKHR(physicalDevice_, i, surface_, &presentSupport);
+    		std::cerr << "  Present support: " << presentSupport << "\n";
+		}
     }
 
     void recreateSwapchain() {
