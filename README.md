@@ -138,7 +138,7 @@ sudo apt install -y git g++ libvulkan-dev vulkan-tools vulkan-sdk libglm-dev lib
 wget -qO - https://packages.lunarg.com/lunarg-signing-key-pub.asc | sudo apt-key add -
 sudo wget -qO /etc/apt/sources.list.d/lunarg-vulkan-jammy.list https://packages.lunarg.com/vulkan/lunarg-vulkan-jammy.list
 
-git clone https://github.com/libsdl-org/SDL.git -b SDL3
+git clone https://github.com/libsdl-org/SDL.git
 cd SDL
 mkdir build
 cd build
