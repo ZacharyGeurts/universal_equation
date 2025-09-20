@@ -221,6 +221,16 @@ public:
         VulkanInitializer::initializeQuadBuffers(vulkanDevice_, physicalDevice_, commandPool_, graphicsQueue_,
                                                 quadVertexBuffer_, quadVertexBufferMemory_, quadIndexBuffer_,
                                                 quadIndexBufferMemory_, quadVertices_, quadIndices_);
+		uint32_t deviceCount = 0;
+		vkEnumeratePhysicalDevices(vulkanInstance_, &deviceCount, nullptr);
+		std::vector<VkPhysicalDevice> devices(deviceCount);
+		vkEnumeratePhysicalDevices(vulkanInstance_, &deviceCount, devices.data());
+		std::cerr << "Found " << deviceCount << " physical devices\n";
+		for (const auto& device : devices) {
+    		VkPhysicalDeviceProperties props;
+    		vkGetPhysicalDeviceProperties(device, &props);
+    		std::cerr << "Device: " << props.deviceName << "\n";
+		}
     }
 
     void recreateSwapchain() {
