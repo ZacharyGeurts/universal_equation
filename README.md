@@ -27,11 +27,10 @@ Grok3 wanted GLM and it seems to cook.
 ## Licensing
 This is **not free (as in freedom) software**. It is provided for **educational purposes only**.  
 - **Restrictions**: You may not sell this software or require any compensation from users.  
-- **Distribution**: Projects using this code must be distributed freely (no cost).
-- Commercial interests please see below.  
+- **Distribution**: Projects using this code must also be distributed freely (no cost).
+- **Commercial use of engine**
 - **Distribution**: https://www.twitch.tv/amouranth handles distribution of AMOURANTH RTX engine  
 - **Source**: Obtain the software exclusively from [https://github.com/ZacharyGeurts/universal_equation](https://github.com/ZacharyGeurts/universal_equation).  
-- **Cost**: Free of charge.
 
 ## Overview
 The **Dimensional Navigator** is a computational visualization tool built in C++ using SDL3, Vulkan, and GLM. It graphs the outputs of the `UniversalEquation` class, modeling dimensional interactions across dimensions 1 to 9. The visualization displays symmetric positive and negative energy fluctuations, influenced by dark matter and dark energy, with real-time interactivity.
