@@ -10,6 +10,7 @@ GLSLC = glslc
 SRC_DIR = src
 INCLUDE_DIR = include
 SHADER_DIR = shaders
+FONT_DIR = fonts
 BUILD_DIR = build
 BIN_DIR = bin
 
@@ -81,6 +82,9 @@ $(SHADER_DIR)/%.spv: $(SHADER_DIR)/%.rgen $(COMMON_GLSL)
 copy-shaders: $(SHADER_OBJECTS)
 	@echo "Copying shader files to $(BIN_DIR)"
 	@cp $(SHADER_DIR)/*.spv $(BIN_DIR)/
+
+	@echo "Copying font files to $(BIN_DIR)"
+	@cp $(FONT_DIR)/*.ttf $(BIN_DIR)/
 
 # Clean build artifacts
 clean:
