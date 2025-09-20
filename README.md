@@ -1,4 +1,4 @@
-# Dimensional Navigator  
+# Dimensional Navigator  🇺🇸  
 
 Browsing dimensions 1D (God) through 9D (Spot ;) )  
 Modular design. Modify with your favorite AI coding program.  
