@@ -366,8 +366,8 @@ private:
     }
 
     static void createGraphicsPipeline(VkDevice device, VkRenderPass renderPass, VkPipeline& pipeline, VkPipelineLayout& pipelineLayout, int width, int height) {
-        VkShaderModule vert = createShaderModule(device, "vertex.spv");
-        VkShaderModule frag = createShaderModule(device, "fragment.spv");
+        VkShaderModule vert = createShaderModule(device, "assets/shaders/vertex.spv");
+        VkShaderModule frag = createShaderModule(device, "assets/shaders/fragment.spv");
         VkPipelineShaderStageCreateInfo stages[] = {
             { VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, nullptr, 0, VK_SHADER_STAGE_VERTEX_BIT, vert, "main", nullptr },
             { VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, nullptr, 0, VK_SHADER_STAGE_FRAGMENT_BIT, frag, "main", nullptr }
@@ -521,9 +521,9 @@ private:
 
     static void createRayTracingPipeline(VkDevice device, VkPipeline& pipeline, VkPipelineLayout& rtPipelineLayout) {
         // Load ray tracing shaders
-        VkShaderModule raygenShader = createShaderModule(device, "raygen.rgen.spv");
-        VkShaderModule missShader = createShaderModule(device, "miss.rmiss.spv");
-        VkShaderModule closestHitShader = createShaderModule(device, "closest_hit.rchit.spv");
+        VkShaderModule raygenShader = createShaderModule(device, "assets/shaders/raygen.rgen.spv");
+        VkShaderModule missShader = createShaderModule(device, "assets/shaders/miss.rmiss.spv");
+        VkShaderModule closestHitShader = createShaderModule(device, "assets/shaders/closest_hit.rchit.spv");
 
         // Define shader stages
         VkPipelineShaderStageCreateInfo stages[3] = {

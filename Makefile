@@ -80,11 +80,15 @@ $(SHADER_DIR)/%.spv: $(SHADER_DIR)/%.rgen $(COMMON_GLSL)
 
 # Copy shader files to bin directory
 copy-shaders: $(SHADER_OBJECTS)
-	@echo "Copying shader files to $(BIN_DIR)"
-	@cp $(SHADER_DIR)/*.spv $(BIN_DIR)/
+	@echo "Creating paths"
+	@mkdir $(BIN_DIR)/assets
+	@echo "Copying shader files to $(BIN_DIR)/assets/shaders"
+	@mkdir $(BIN_DIR)/assets/shaders
+	@cp $(SHADER_DIR)/*.spv $(BIN_DIR)/assets/shaders
 
-	@echo "Copying font files to $(BIN_DIR)"
-	@cp $(FONT_DIR)/*.ttf $(BIN_DIR)/
+	@echo "Copying font files to $(BIN_DIR)/assets/fonts"
+	@mkdir $(BIN_DIR)/assets/fonts
+	@cp $(FONT_DIR)/*.ttf $(BIN_DIR)/assets/fonts
 
 # Clean build artifacts
 clean:

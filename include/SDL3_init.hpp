@@ -98,17 +98,20 @@ public:
     }
 
     void cleanup() {
-        for (auto& [id, gp] : m_gamepads) SDL_CloseGamepad(gp);
-        m_gamepads.clear();
-        if (m_audioStream) SDL_DestroyAudioStream(m_audioStream);
-        if (m_audioDevice) SDL_CloseAudioDevice(m_audioDevice);
-        if (m_font) TTF_CloseFont(m_font);
-        TTF_Quit();
-        m_surface.reset();
-        m_instance.reset();
-        m_window.reset();
-        SDL_Quit();
-    }
+    	for (auto& [id, gp] : m_gamepads) SDL_CloseGamepad(gp);
+    	m_gamepads.clear();
+    	if (m_audioStream) SDL_DestroyAudioStream(m_audioStream);
+    	if (m_audioDevice) SDL_CloseAudioDevice(m_audioDevice);
+    	if (m_font) {
+        	TTF_CloseFont(m_font);
+        	m_font = nullptr; // Set to nullptr after closing
+    	}
+    	TTF_Quit();
+    	m_surface.reset();
+    	m_instance.reset();
+    	m_window.reset();
+    	SDL_Quit();
+	}
 
     SDL_Window* getWindow() const { return m_window.get(); }
     VkInstance getVkInstance() const { return m_instance.get(); }
@@ -133,7 +136,7 @@ private:
             throw std::runtime_error("TTF_Init failed: " + std::string(SDL_GetError()));
         m_window = std::unique_ptr<SDL_Window, SDLWindowDeleter>(SDL_CreateWindow(title, w, h, flags));
         if (!m_window) throw std::runtime_error("SDL_CreateWindow failed: " + std::string(SDL_GetError()));
-        m_font = TTF_OpenFont("sf-plasmatica-open.ttf", 24);
+        m_font = TTF_OpenFont("assets/fonts/sf-plasmatica-open.ttf", 24);
         if (!m_font) throw std::runtime_error("TTF_OpenFont failed: " + std::string(SDL_GetError()));
         Uint32 extCount;
         auto exts = SDL_Vulkan_GetInstanceExtensions(&extCount);
@@ -160,7 +163,7 @@ private:
 #ifndef NDEBUG
         layers.push_back("VK_LAYER_KHRONOS_validation");
 #endif
-        VkApplicationInfo appInfo{VK_STRUCTURE_TYPE_APPLICATION_INFO, nullptr, title, VK_MAKE_API_VERSION(0, 1, 0, 0), "AMOURANTH", VK_MAKE_API_VERSION(0, 1, 0, 0), VK_API_VERSION_1_3};
+        VkApplicationInfo appInfo{VK_STRUCTURE_TYPE_APPLICATION_INFO, nullptr, title, VK_MAKE_API_VERSION(0, 1, 0, 0), "AMOURANTH RTX", VK_MAKE_API_VERSION(0, 1, 0, 0), VK_API_VERSION_1_3};
         VkInstanceCreateInfo ci{VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO, nullptr, 0, &appInfo, (uint32_t)layers.size(), layers.data(), (uint32_t)extensions.size(), extensions.data()};
         VkInstance instance;
         if (vkCreateInstance(&ci, nullptr, &instance) != VK_SUCCESS)
