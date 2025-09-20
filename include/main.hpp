@@ -1,4 +1,3 @@
-// main.hpp
 #ifndef MAIN_HPP
 #define MAIN_HPP
 
@@ -16,7 +15,6 @@
 #include "types.hpp"
 #include "modes.hpp"
 
-// Do not touch resolution here. See main.cpp
 class DimensionalNavigator {
 public:
     DimensionalNavigator(const char* title = "Dimensional Navigator",
@@ -112,7 +110,7 @@ public:
                 }
             },
             true,
-            [this](const SDL_KeyboardEvent& key) { handleInput({key}); }
+            [this](const SDL_KeyboardEvent& key) { handleInput(key); }
         );
     }
 
@@ -139,76 +137,27 @@ public:
         }
     }
 
-    void handleInput(const SDL_KeyboardEvent& key) {
-        if (key.type == SDL_EVENT_KEY_DOWN) {
-            switch (key.key) {
-                case SDLK_F: {
-                    Uint32 flags = SDL_GetWindowFlags(window_);
-                    if (flags & SDL_WINDOW_FULLSCREEN) {
-                        SDL_SetWindowFullscreen(window_, 0);
-                    } else {
-                        SDL_SetWindowFullscreen(window_, SDL_WINDOW_FULLSCREEN);
-                    }
-                    break;
-                }
-                case SDLK_UP:
-                    adjustInfluence(0.1);
-                    break;
-                case SDLK_DOWN:
-                    adjustInfluence(-0.1);
-                    break;
-                case SDLK_LEFT:
-                    adjustDarkMatter(-0.05);
-                    break;
-                case SDLK_RIGHT:
-                    adjustDarkMatter(0.05);
-                    break;
-                case SDLK_PAGEUP:
-                    adjustDarkEnergy(0.05);
-                    break;
-                case SDLK_PAGEDOWN:
-                    adjustDarkEnergy(-0.05);
-                    break;
-                case SDLK_1:
-                    mode_ = 1;
-                    break;
-                case SDLK_2:
-                    mode_ = 2;
-                    break;
-                case SDLK_3:
-                    mode_ = 3;
-                    break;
-                case SDLK_4:
-                    mode_ = 4;
-                    break;
-                case SDLK_5:
-                    mode_ = 5;
-                    break;
-                case SDLK_6:
-                    mode_ = 6;
-                    break;
-                case SDLK_7:
-                    mode_ = 7;
-                    break;
-                case SDLK_8:
-                    mode_ = 8;
-                    break;
-                case SDLK_9:
-                    mode_ = 9;
-                    break;
-                case SDLK_A:
-                    updateZoom(true);
-                    break;
-                case SDLK_Z:
-                    updateZoom(false);
-                    break;
-                case SDLK_P:
-                    isPaused_ = !isPaused_;
-                    std::cerr << "Pause state: " << (isPaused_ ? "Paused" : "Unpaused") << "\n";
-                    break;
-            }
-        }
-    }
+	void handleInput(const SDL_KeyboardEvent& key) {
+    	if (key.type == SDL_EVENT_KEY_DOWN) {
+        	switch (key.key) {
+            	case SDLK_F:
+                	SDL_SetWindowFullscreen(window_, SDL_GetWindowFlags(window_) & SDL_WINDOW_FULLSCREEN ? 0 : SDL_WINDOW_FULLSCREEN);
+                	break;
+            	case SDLK_UP: adjustInfluence(0.1); break;
+            	case SDLK_DOWN: adjustInfluence(-0.1); break;
+            	case SDLK_LEFT: adjustDarkMatter(-0.05); break;
+            	case SDLK_RIGHT: adjustDarkMatter(0.05); break;
+            	case SDLK_PAGEUP: adjustDarkEnergy(0.05); break;
+            	case SDLK_PAGEDOWN: adjustDarkEnergy(-0.05); break;
+            	case SDLK_1: case SDLK_2: case SDLK_3: case SDLK_4: case SDLK_5: case SDLK_6: case SDLK_7: case SDLK_8: case SDLK_9:
+                	mode_ = key.key - SDLK_0; // Sets mode_ to 1-9 based on key pressed
+                	break;
+            	case SDLK_A: updateZoom(true); break;
+            	case SDLK_Z: updateZoom(false); break;
+            	case SDLK_P: isPaused_ = !isPaused_; break;
+        	}
+    	}
+	}
 
     void initializeVulkan() {
         VulkanInitializer::initializeVulkan(vulkanInstance_, physicalDevice_, vulkanDevice_, surface_,
@@ -221,27 +170,6 @@ public:
         VulkanInitializer::initializeQuadBuffers(vulkanDevice_, physicalDevice_, commandPool_, graphicsQueue_,
                                                 quadVertexBuffer_, quadVertexBufferMemory_, quadIndexBuffer_,
                                                 quadIndexBufferMemory_, quadVertices_, quadIndices_);
-		uint32_t deviceCount = 0;
-		vkEnumeratePhysicalDevices(vulkanInstance_, &deviceCount, nullptr);
-		std::vector<VkPhysicalDevice> devices(deviceCount);
-		vkEnumeratePhysicalDevices(vulkanInstance_, &deviceCount, devices.data());
-		std::cerr << "Found " << deviceCount << " physical devices\n";
-		for (const auto& device : devices) {
-    		VkPhysicalDeviceProperties props;
-    		vkGetPhysicalDeviceProperties(device, &props);
-    		std::cerr << "Device: " << props.deviceName << "\n";
-		}
-		
-		uint32_t queueFamilyCount = 0;
-		vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice_, &queueFamilyCount, nullptr);
-		std::vector<VkQueueFamilyProperties> queueFamilies(queueFamilyCount);
-		vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice_, &queueFamilyCount, queueFamilies.data());
-		for (uint32_t i = 0; i < queueFamilyCount; ++i) {
-    		std::cerr << "Queue Family " << i << ": flags=" << queueFamilies[i].queueFlags << "\n";
-    		VkBool32 presentSupport = VK_FALSE;
-    		vkGetPhysicalDeviceSurfaceSupportKHR(physicalDevice_, i, surface_, &presentSupport);
-    		std::cerr << "  Present support: " << presentSupport << "\n";
-		}
     }
 
     void recreateSwapchain() {
@@ -284,10 +212,8 @@ public:
         SDL_GetWindowSize(window_, &newWidth, &newHeight);
         width_ = std::max(1280, newWidth);
         height_ = std::max(720, newHeight);
-        std::cerr << "Recreating swapchain with resolution: " << width_ << "x" << height_ << "\n";
         if (newWidth < 1280 || newHeight < 720) {
             SDL_SetWindowSize(window_, width_, height_);
-            std::cerr << "Adjusted window size to: " << width_ << "x" << height_ << "\n";
         }
 
         initializeVulkan();
@@ -340,8 +266,6 @@ public:
                 sphereIndices_.insert(sphereIndices_.end(), {v0, v1, v2, v2, v1, v3});
             }
         }
-
-        std::cerr << "Initialized sphere: " << sphereVertices_.size() << " vertices, " << sphereIndices_.size() << " indices\n";
     }
 
     void initializeQuadGeometry() {
@@ -349,7 +273,6 @@ public:
             {-1.0f, -1.0f, 0.0f}, {1.0f, -1.0f, 0.0f}, {1.0f, 1.0f, 0.0f}, {-1.0f, 1.0f, 0.0f}
         };
         quadIndices_ = {0, 1, 2, 2, 3, 0};
-        std::cerr << "Initialized quad: " << quadVertices_.size() << " vertices, " << quadIndices_.size() << " indices\n";
     }
 
     void initializeCalculator() {
@@ -364,9 +287,6 @@ public:
             ue_.setCurrentDimension(d);
             auto result = ue_.compute();
             cache_.push_back({d, result.observable, result.potential, result.darkMatter, result.darkEnergy});
-            if (ue_.getDebug()) {
-                std::cerr << "Cache[D=" << d << "]: " << result.toString() << "\n";
-            }
         }
     }
 
@@ -376,11 +296,7 @@ public:
         if (ue_.getCurrentDimension() == 3 && (dimension == 2 || dimension == 4)) {
             modifier *= ue_.getThreeDInfluence();
         }
-        double result = ue_.getInfluence() * (distance / denom) * modifier;
-        if (ue_.getDebug()) {
-            std::cout << "Interaction(D=" << dimension << ", dist=" << distance << "): " << result << "\n";
-        }
-        return result;
+        return ue_.getInfluence() * (distance / denom) * modifier;
     }
 
     double computePermeation(int dimension) const {
@@ -391,17 +307,12 @@ public:
     }
 
     double computeDarkEnergy(double distance) const {
-        double result = ue_.getDarkEnergyStrength() * std::exp(distance * (ue_.getMaxDimensions() > 0 ? 1.0 / ue_.getMaxDimensions() : 1e-15));
-        if (ue_.getDebug()) {
-            std::cout << "DarkEnergy(dist=" << distance << "): " << result << "\n";
-        }
-        return result;
+        return ue_.getDarkEnergyStrength() * std::exp(distance * (ue_.getMaxDimensions() > 0 ? 1.0 / ue_.getMaxDimensions() : 1e-15));
     }
 
     void render() {
         if (isPaused_) return;
 
-        std::cerr << "Rendering with resolution: " << width_ << "x" << height_ << ", aspect ratio: " << static_cast<float>(width_) / height_ << "\n";
         vkWaitForFences(vulkanDevice_, 1, &inFlightFence_, VK_TRUE, UINT64_MAX);
         vkResetFences(vulkanDevice_, 1, &inFlightFence_);
 
