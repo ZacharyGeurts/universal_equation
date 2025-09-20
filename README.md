@@ -28,8 +28,8 @@ Grok3 wanted GLM and it seems to cook.
 This is **not free (as in freedom) software**. It is provided for **educational purposes only**.  
 - **Restrictions**: You may not sell this software or require any compensation from users.  
 - **Distribution**: Projects using this code must also be distributed freely (no cost).
-- **Commercial use of engine**
-- **Distribution**: https://www.twitch.tv/amouranth handles distribution of AMOURANTH RTX engine  
+- **Commercial use of engine requires license**
+- **Distribution**: https://www.twitch.tv/amouranth for AMOURANTH RTX engine license  
 - **Source**: Obtain the software exclusively from [https://github.com/ZacharyGeurts/universal_equation](https://github.com/ZacharyGeurts/universal_equation).  
 
 ## Overview
