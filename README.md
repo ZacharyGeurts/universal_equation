@@ -150,3 +150,5 @@ cd ../..
 git clone https://github.com/ZacharyGeurts/universal_equation
 cd universal_equation
 make
+cd bin
+./Navigator
