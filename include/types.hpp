@@ -3,38 +3,24 @@
 
 #include "glm/glm.hpp"
 #include <SDL3/SDL.h>
+#include <SDL3/SDL_ttf.h>
 #include <string>
 #include <unordered_map>
-#include <cstdint>
 
 struct DimensionData {
     int dimension;
-    double observable;
-    double potential;
-    double darkMatter;
-    double darkEnergy;
+    double observable, potential, darkMatter, darkEnergy;
 };
 
 struct PushConstants {
-    glm::mat4 model;
-    glm::mat4 view;
-    glm::mat4 proj;
+    glm::mat4 model, view, proj;
     glm::vec3 baseColor;
-    float value;
-    float dimension;
-    float wavePhase;
-    float cycleProgress;
-    float darkMatter;
-    float darkEnergy;
+    float value, dimension, wavePhase, cycleProgress, darkMatter, darkEnergy;
 };
 
 struct Glyph {
     SDL_Texture* texture;
-    int width;
-    int height;
-    int advance;
-    int offset_x;
-    int offset_y;
+    int width, height, advance, offset_x, offset_y;
 };
 
 class Font {
@@ -47,8 +33,8 @@ public:
 private:
     std::unordered_map<char, Glyph> glyphs_;
     SDL_Renderer* renderer_;
-    int char_width_;
-    int char_height_;
+    TTF_Font* font_ = nullptr;
+    int char_width_, char_height_;
     bool load_font();
     void free_glyphs();
 };
