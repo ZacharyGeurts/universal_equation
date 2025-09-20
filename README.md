@@ -25,7 +25,8 @@ Grok3 wanted GLM and it seems to cook.
 ## Licensing
 This is **not free (as in freedom) software**. It is provided for **educational purposes only**.  
 - **Restrictions**: You may not sell this software or require any compensation from users.  
-- **Distribution**: Projects using this code must be distributed freely (no cost).  
+- **Distribution**: Projects using this code must be distributed freely (no cost).
+- Commercial interests please see below.  
 - **Distribution**: https://www.twitch.tv/amouranth handles distribution of AMOURANTH AMORANTH  
 - **Source**: Obtain the software exclusively from [https://github.com/ZacharyGeurts/universal_equation](https://github.com/ZacharyGeurts/universal_equation).  
 - **Cost**: Free of charge.
