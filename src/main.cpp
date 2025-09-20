@@ -8,8 +8,8 @@
 int main() {
     try {
         // Validate resolution
-        const int width = 640;
-        const int height = 480;
+        const int width = 1280;
+        const int height = 720;
         if (width < 320 || height < 200) {
             throw std::runtime_error("Resolution must be at least 320x200");
         }

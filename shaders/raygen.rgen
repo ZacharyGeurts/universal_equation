@@ -1,8 +1,72 @@
 #version 460
-#extension GL_EXT_ray_tracing : require
+#extension GL_NV_ray_tracing : require
 #extension GL_EXT_scalar_block_layout : require
-#extension GL_EXT_buffer_reference : enable  // Optional, for advanced use
+#extension GL_EXT_buffer_reference : enable
+
+// Output image
+layout(binding = 0, rgba32f) uniform image2D outputImage;
+
+// Acceleration structure
+layout(binding = 1) uniform accelerationStructureNV topLevelAS;
+
+// Push constants
+layout(push_constant) uniform PushConstants {
+    mat4 model;
+    mat4 view;
+    mat4 proj;
+    vec3 baseColor;
+    float value;
+    float dimension;
+    float wavePhase;
+    float cycleProgress;
+    float darkMatter;
+    float darkEnergy;
+    vec3 lightColor;
+} push;
+
+// Ray payload
+layout(location = 0) rayPayloadNV vec3 rayPayload;
 
 void main() {
+    // Get the pixel coordinates from the dispatch ID
+    const vec2 pixelCenter = vec2(gl_LaunchIDNV.xy) + vec2(0.5);
+    const vec2 inUV = pixelCenter / vec2(gl_LaunchSizeNV.xy);
+    const vec2 d = inUV * 2.0 - 1.0;
 
+    // Compute ray origin and direction from camera
+    vec4 origin = push.view * vec4(0.0, 0.0, 0.0, 1.0);
+    vec4 target = push.proj * vec4(d.x, d.y, 1.0, 1.0);
+    vec4 direction = push.view * vec4(normalize(target.xyz / target.w), 0.0);
+
+    // Initialize ray payload
+    rayPayload = vec3(0.0);
+
+    // Trace ray
+    traceNV(topLevelAS,          // Acceleration structure
+            gl_RayFlagsOpaqueNV, // Ray flags
+            0xFF,                // Cull mask
+            0,                   // SBT record offset
+            0,                   // SBT record stride
+            0,                   // Miss index
+            origin.xyz,          // Ray origin
+            0.001,               // Tmin
+            direction.xyz,       // Ray direction
+            1000.0,              // Tmax
+            0                    // Payload location
+    );
+
+    // Modulate color with push constants
+    vec3 color = rayPayload * push.baseColor;
+    color *= (1.0 - push.darkMatter * 0.5) * (1.0 + push.darkEnergy * 0.3);
+    color *= clamp(push.dimension * 0.5, 0.1, 1.0);
+
+    // Apply wave phase and cycle progress for dynamic effect
+    float modulation = sin(push.wavePhase + push.cycleProgress * 6.28318530718) * push.value * 0.1 + 1.0;
+    color *= modulation;
+
+    // Combine with light color
+    color *= push.lightColor;
+
+    // Store result in output image
+    imageStore(outputImage, ivec2(gl_LaunchIDNV.xy), vec4(color, 1.0));
 }
