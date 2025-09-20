@@ -8,6 +8,7 @@
 #include <SDL3/SDL_mouse.h>
 #include <SDL3/SDL_gamepad.h>
 #include <SDL3/SDL_touch.h>
+#include <SDL3/SDL_ttf.h>
 #include <vulkan/vulkan.h>
 #include <stdexcept>
 #include <vector>
@@ -216,6 +217,11 @@ public:
             SDL_CloseAudioDevice(m_audioDevice);
             m_audioDevice = 0;
         }
+        if (m_font) {
+            TTF_CloseFont(m_font);
+            m_font = nullptr;
+        }
+        TTF_Quit();
         m_surface.reset();
         m_instance.reset();
         m_window.reset();
@@ -228,6 +234,7 @@ public:
     VkSurfaceKHR getVkSurface() const { return m_surface.get(); }
     SDL_AudioDeviceID getAudioDevice() const { return m_audioDevice; }
     const std::map<SDL_JoystickID, SDL_Gamepad*>& getGamepads() const { return m_gamepads; }
+    TTF_Font* getFont() const { return m_font; }
 
 private:
     std::unique_ptr<SDL_Window, SDLWindowDeleter> m_window;
@@ -236,114 +243,126 @@ private:
     SDL_AudioDeviceID m_audioDevice = 0;
     SDL_AudioStream* m_audioStream = nullptr;
     std::map<SDL_JoystickID, SDL_Gamepad*> m_gamepads;
+    TTF_Font* m_font = nullptr;
 
-void initializeSDL(
-    const char* title,
-    int width,
-    int height,
-    Uint32 windowFlags,
-    bool enableRayTracing
-) {
-    // Initialize SDL with required subsystems
-    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_GAMEPAD | SDL_INIT_EVENTS) == 0) {
-        throw std::runtime_error("SDL_Init failed: " + std::string(SDL_GetError()));
-    }
+    void initializeSDL(
+        const char* title,
+        int width,
+        int height,
+        Uint32 windowFlags,
+        bool enableRayTracing
+    ) {
+        // Initialize SDL with required subsystems
+        if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_GAMEPAD | SDL_INIT_EVENTS) == 0) {
+            throw std::runtime_error("SDL_Init failed: " + std::string(SDL_GetError()));
+        }
 
-    // Create the window
-    m_window = std::unique_ptr<SDL_Window, SDLWindowDeleter>(
-        SDL_CreateWindow(title, width, height, windowFlags)
-    );
-    if (!m_window) {
-        SDL_Quit();
-        throw std::runtime_error("SDL_CreateWindow failed: " + std::string(SDL_GetError()));
-    }
+        // Initialize SDL_ttf
+        if (!TTF_Init()) {
+            throw std::runtime_error("TTF_Init failed: " + std::string(SDL_GetError()));
+        }
 
-    // Get required Vulkan instance extensions for SDL
-    Uint32 extCount = 0;
-    const char* const* exts = SDL_Vulkan_GetInstanceExtensions(&extCount);
-    if (!exts || extCount == 0) {
-        throw std::runtime_error("SDL_Vulkan_GetInstanceExtensions failed: " + std::string(SDL_GetError()));
-    }
+        // Create the window
+        m_window = std::unique_ptr<SDL_Window, SDLWindowDeleter>(
+            SDL_CreateWindow(title, width, height, windowFlags)
+        );
+        if (!m_window) {
+            SDL_Quit();
+            throw std::runtime_error("SDL_CreateWindow failed: " + std::string(SDL_GetError()));
+        }
 
-    // Add SDL Vulkan extensions
-    std::vector<const char*> extensions(exts, exts + extCount);
+        // Load font
+        m_font = TTF_OpenFont("sf-plasmatica-open.ttf", 24);
+        if (!m_font) {
+            throw std::runtime_error("TTF_OpenFont failed: " + std::string(SDL_GetError()));
+        }
 
-    // Ensure surface extension is included
-    if (std::find_if(extensions.begin(), extensions.end(),
-                     [](const char* ext) { return strcmp(ext, VK_KHR_SURFACE_EXTENSION_NAME) == 0; }) == extensions.end()) {
-        extensions.push_back(VK_KHR_SURFACE_EXTENSION_NAME);
-    }
+        // Get required Vulkan instance extensions for SDL
+        Uint32 extCount = 0;
+        const char* const* exts = SDL_Vulkan_GetInstanceExtensions(&extCount);
+        if (!exts || extCount == 0) {
+            throw std::runtime_error("SDL_Vulkan_GetInstanceExtensions failed: " + std::string(SDL_GetError()));
+        }
 
-    // Add ray tracing related extensions if enabled and supported
-    if (enableRayTracing) {
-        // Check available extensions
-        uint32_t availableExtCount = 0;
-        vkEnumerateInstanceExtensionProperties(nullptr, &availableExtCount, nullptr);
-        std::vector<VkExtensionProperties> availableExtensions(availableExtCount);
-        vkEnumerateInstanceExtensionProperties(nullptr, &availableExtCount, availableExtensions.data());
+        // Add SDL Vulkan extensions
+        std::vector<const char*> extensions(exts, exts + extCount);
 
-        auto isExtensionSupported = [&](const char* extName) {
-            return std::find_if(availableExtensions.begin(), availableExtensions.end(),
-                                [extName](const VkExtensionProperties& ext) { return strcmp(ext.extensionName, extName) == 0; }) != availableExtensions.end();
-        };
+        // Ensure surface extension is included
+        if (std::find_if(extensions.begin(), extensions.end(),
+                         [](const char* ext) { return strcmp(ext, VK_KHR_SURFACE_EXTENSION_NAME) == 0; }) == extensions.end()) {
+            extensions.push_back(VK_KHR_SURFACE_EXTENSION_NAME);
+        }
 
-        const char* rayTracingExtensions[] = {
-            VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME,
-            VK_KHR_EXTERNAL_MEMORY_CAPABILITIES_EXTENSION_NAME,
-            VK_KHR_EXTERNAL_SEMAPHORE_CAPABILITIES_EXTENSION_NAME,
-            VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME
-        };
+        // Add ray tracing related extensions if enabled and supported
+        if (enableRayTracing) {
+            // Check available extensions
+            uint32_t availableExtCount = 0;
+            vkEnumerateInstanceExtensionProperties(nullptr, &availableExtCount, nullptr);
+            std::vector<VkExtensionProperties> availableExtensions(availableExtCount);
+            vkEnumerateInstanceExtensionProperties(nullptr, &availableExtCount, availableExtensions.data());
 
-        for (const char* ext : rayTracingExtensions) {
-            if (isExtensionSupported(ext)) {
-                extensions.push_back(ext);
-            } else {
-                std::cerr << "Warning: Vulkan extension " << ext << " not supported, skipping." << std::endl;
+            auto isExtensionSupported = [&](const char* extName) {
+                return std::find_if(availableExtensions.begin(), availableExtensions.end(),
+                                    [extName](const VkExtensionProperties& ext) { return strcmp(ext.extensionName, extName) == 0; }) != availableExtensions.end();
+            };
+
+            const char* rayTracingExtensions[] = {
+                VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME,
+                VK_KHR_EXTERNAL_MEMORY_CAPABILITIES_EXTENSION_NAME,
+                VK_KHR_EXTERNAL_SEMAPHORE_CAPABILITIES_EXTENSION_NAME,
+                VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME
+            };
+
+            for (const char* ext : rayTracingExtensions) {
+                if (isExtensionSupported(ext)) {
+                    extensions.push_back(ext);
+                } else {
+                    std::cerr << "Warning: Vulkan extension " << ext << " not supported, skipping." << std::endl;
+                }
             }
         }
-    }
 
-    // Validation layers (disabled in release builds)
-    std::vector<const char*> layers;
+        // Validation layers (disabled in release builds)
+        std::vector<const char*> layers;
 #ifndef NDEBUG
-    layers.push_back("VK_LAYER_KHRONOS_validation");
+        layers.push_back("VK_LAYER_KHRONOS_validation");
 #endif
 
-    // Application info
-    VkApplicationInfo appInfo = {};
-    appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
-    appInfo.pApplicationName = title;
-    appInfo.applicationVersion = VK_MAKE_API_VERSION(0, 1, 0, 0);
-    appInfo.pEngineName = "No Engine";
-    appInfo.engineVersion = VK_MAKE_API_VERSION(0, 1, 0, 0);
-    appInfo.apiVersion = VK_API_VERSION_1_2; // Lowered to 1.2 for broader compatibility
+        // Application info
+        VkApplicationInfo appInfo = {};
+        appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
+        appInfo.pApplicationName = title;
+        appInfo.applicationVersion = VK_MAKE_API_VERSION(0, 1, 0, 0);
+        appInfo.pEngineName = "AMOURANTH";
+        appInfo.engineVersion = VK_MAKE_API_VERSION(0, 1, 0, 0);
+        appInfo.apiVersion = VK_API_VERSION_1_3;
 
-    // Instance create info
-    VkInstanceCreateInfo createInfo = {};
-    createInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
-    createInfo.pApplicationInfo = &appInfo;
-    createInfo.enabledLayerCount = static_cast<uint32_t>(layers.size());
-    createInfo.ppEnabledLayerNames = layers.data();
-    createInfo.enabledExtensionCount = static_cast<uint32_t>(extensions.size());
-    createInfo.ppEnabledExtensionNames = extensions.data();
+        // Instance create info
+        VkInstanceCreateInfo createInfo = {};
+        createInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
+        createInfo.pApplicationInfo = &appInfo;
+        createInfo.enabledLayerCount = static_cast<uint32_t>(layers.size());
+        createInfo.ppEnabledLayerNames = layers.data();
+        createInfo.enabledExtensionCount = static_cast<uint32_t>(extensions.size());
+        createInfo.ppEnabledExtensionNames = extensions.data();
 
-    // Create Vulkan instance
-    VkInstance instance;
-    VkResult result = vkCreateInstance(&createInfo, nullptr, &instance);
-    if (result != VK_SUCCESS) {
-        throw std::runtime_error("vkCreateInstance failed: " + std::to_string(result));
+        // Create Vulkan instance
+        VkInstance instance;
+        VkResult result = vkCreateInstance(&createInfo, nullptr, &instance);
+        if (result != VK_SUCCESS) {
+            throw std::runtime_error("vkCreateInstance failed: " + std::to_string(result));
+        }
+        m_instance = std::unique_ptr<std::remove_pointer_t<VkInstance>, VulkanInstanceDeleter>(instance);
+
+        // Create Vulkan surface
+        VkSurfaceKHR surface;
+        if (!SDL_Vulkan_CreateSurface(m_window.get(), m_instance.get(), nullptr, &surface)) {
+            throw std::runtime_error("SDL_Vulkan_CreateSurface failed: " + std::string(SDL_GetError()));
+        }
+        m_surface = std::unique_ptr<std::remove_pointer_t<VkSurfaceKHR>, VulkanSurfaceDeleter>(
+            surface, VulkanSurfaceDeleter{m_instance.get()}
+        );
     }
-    m_instance = std::unique_ptr<std::remove_pointer_t<VkInstance>, VulkanInstanceDeleter>(instance);
-
-    // Create Vulkan surface
-    VkSurfaceKHR surface;
-    if (!SDL_Vulkan_CreateSurface(m_window.get(), m_instance.get(), nullptr, &surface)) {
-        throw std::runtime_error("SDL_Vulkan_CreateSurface failed: " + std::string(SDL_GetError()));
-    }
-    m_surface = std::unique_ptr<std::remove_pointer_t<VkSurfaceKHR>, VulkanSurfaceDeleter>(
-        surface, VulkanSurfaceDeleter{m_instance.get()}
-    );
-}
 
     void initializeAudio(const AudioConfig& config) {
         // Desired audio spec
