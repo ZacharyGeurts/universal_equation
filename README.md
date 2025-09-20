@@ -1,6 +1,7 @@
 # Dimensional Navigator  🇺🇸  
 
 Browsing dimensions 1D (God) through 9D (Spot ;) )  
+Stay tuned for version 1.6. Starting line.
 Modular design. Modify with your favorite AI coding program.  
 
 **Latest Video**: [Latest Video](https://x.com/i/status/1968332417498046881)
