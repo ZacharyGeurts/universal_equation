@@ -19,7 +19,7 @@ If you do not intend to modify the code, just watch the latest video above and y
 
 **Platform**: Currently Linux-only  
 
-This project uses a Vulkan backend for rendering, chosen from idiocy, ignorance, and patience.  
+This project uses an SDL3 and Vulkan backend for rendering, chosen from idiocy, ignorance, and patience.  
 
 ## Licensing
 This is **not free (as in freedom) software**. It is provided for **educational purposes only**.  
