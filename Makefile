@@ -1,7 +1,7 @@
 # Compiler and flags
 CXX = g++
 CXXFLAGS = -std=c++17 -Wall -Wextra -g -Iinclude -Wno-unused-parameter
-LDFLAGS = -lSDL3 -lvulkan
+LDFLAGS = -lSDL3 -lvulkan -lSDL3_ttf
 
 # Shader compiler
 GLSLC = glslc
