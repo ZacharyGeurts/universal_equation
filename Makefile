@@ -32,6 +32,9 @@ SHADER_OBJECTS = $(patsubst $(SHADER_DIR)/%.vert,$(SHADER_DIR)/%.spv,$(SHADER_SO
 				$(patsubst $(SHADER_DIR)/%.rmiss,$(SHADER_DIR)/%.spv,$(SHADER_SOURCES)) \
 				$(patsubst $(SHADER_DIR)/%.rgen,$(SHADER_DIR)/%.spv,$(SHADER_SOURCES))
 
+# Common GLSL file
+COMMON_GLSL = $(SHADER_DIR)/common.glsl
+
 # Default target
 all: directories $(EXECUTABLE) copy-shaders copy-font
 
@@ -40,7 +43,7 @@ directories:
 	@mkdir -p $(BUILD_DIR) $(BIN_DIR) $(SHADER_DIR)
 
 # Link object files to create executable
-$(EXECUTABLE): $(OBJECTS)
+$(EXECUTABLE): $(OBJECTS) $(SHADER_OBJECTS)
 	@echo "Linking the executable: $@"
 	$(CXX) $(OBJECTS) -o $@ $(LDFLAGS)
 
@@ -58,21 +61,21 @@ $(SHADER_DIR)/%.spv: $(SHADER_DIR)/%.frag
 	@echo "Compiling fragment shader: $<"
 	$(GLSLC) $< -o $@
 
-$(SHADER_DIR)/%.spv: $(SHADER_DIR)/%.rahit
+$(SHADER_DIR)/%.spv: $(SHADER_DIR)/%.rahit $(COMMON_GLSL)
 	@echo "Compiling anyhit shader: $<"
-	$(GLSLC) $< -o $@
+	$(GLSLC) $< -o $@ --target-env=vulkan1.4
 
-$(SHADER_DIR)/%.spv: $(SHADER_DIR)/%.rchit
+$(SHADER_DIR)/%.spv: $(SHADER_DIR)/%.rchit $(COMMON_GLSL)
 	@echo "Compiling closesthit shader: $<"
-	$(GLSLC) $< -o $@
+	$(GLSLC) $< -o $@ --target-env=vulkan1.4
 
-$(SHADER_DIR)/%.spv: $(SHADER_DIR)/%.rmiss
+$(SHADER_DIR)/%.spv: $(SHADER_DIR)/%.rmiss $(COMMON_GLSL)
 	@echo "Compiling miss shader: $<"
-	$(GLSLC) $< -o $@
+	$(GLSLC) $< -o $@ --target-env=vulkan1.4
 
-$(SHADER_DIR)/%.spv: $(SHADER_DIR)/%.rgen
+$(SHADER_DIR)/%.spv: $(SHADER_DIR)/%.rgen $(COMMON_GLSL)
 	@echo "Compiling raygen shader: $<"
-	$(GLSLC) $< -o $@
+	$(GLSLC) $< -o $@ --target-env=vulkan1.4
 
 # Copy shader files to bin directory
 copy-shaders: $(SHADER_OBJECTS)
