@@ -1,5 +1,4 @@
-# Dimensional Navigator
-Note: vulkan, glm, and SDL3 headers included for easier building.
+# Dimensional Navigator  
 
 Browsing dimensions 1D (God) through 9D (Spot ;) )  
 Modular design. Modify with your favorite AI coding program.  
