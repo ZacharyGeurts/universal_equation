@@ -1,4 +1,4 @@
-# Dimensional Navigator  🇺🇸  VS  🇷🇺  
+# Dimensional Navigator  🇺🇸  VS  🇷🇺  VS  🇸🇬  
 
 Browsing dimensions 1D (God) through 9D (unlikely?) or even 20D  
 Welcome friends. God Bless.  
