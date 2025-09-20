@@ -21,8 +21,8 @@ layout(location = 1) out float outValue;
 layout(location = 2) out float outDimension;
 layout(location = 3) out float outWavePhase;
 layout(location = 4) out float outCycleProgress;
-layout(location = 5) out float darkMatterPulse;
-layout(location = 6) out float darkEnergyGlow;
+layout(location = 5) out float outDarkMatterPulse;
+layout(location = 6) out float outDarkEnergyGlow;
 
 const float INV_MAX_DIM = 1.0 / 9.0;
 const float ALPHA = 5.0;
@@ -32,7 +32,6 @@ const float OMEGA = 2.0 * 3.14159265359 / (2.0 * 9.0 - 1.0);
 // Crystal-like displacement for subtle faceting
 float crystalDisplacement(float dim, float phase, float cycle) {
     float wave = 0.05 * sin(dim * 2.0 + phase * 3.0 + cycle * OMEGA) * (0.5 + 0.5 * pushConstants.value);
-    // Use inPosition for spatial variation instead of gl_FragCoord
     float facet = 0.02 * sin(inPosition.x * 10.0 + phase) * cos(inPosition.y * 8.0 + cycle);
     return wave + facet;
 }
@@ -76,6 +75,6 @@ void main() {
     outCycleProgress = pushConstants.cycleProgress;
 
     float distance = abs(dim - floor(dim + 0.5));
-    darkMatterPulse = computeDarkMatterDensity(dim) * (1.0 + 0.15 * sin(pushConstants.wavePhase + pushConstants.cycleProgress));
-    darkEnergyGlow = computeDarkEnergy(distance) * (1.0 + 0.15 * cos(pushConstants.cycleProgress * OMEGA));
+    outDarkMatterPulse = computeDarkMatterDensity(dim) * (1.0 + 0.15 * sin(pushConstants.wavePhase + pushConstants.cycleProgress));
+    outDarkEnergyGlow = computeDarkEnergy(distance) * (1.0 + 0.15 * cos(pushConstants.cycleProgress * OMEGA));
 }
