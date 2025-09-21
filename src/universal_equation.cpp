@@ -4,6 +4,7 @@
 #include <iostream>
 #include <algorithm>
 #include <stdexcept>
+#include <cstdint> // Added for uint64_t
 
 std::string UniversalEquation::EnergyResult::toString() const {
     return "Observable: " + std::to_string(observable) +
@@ -297,7 +298,7 @@ void UniversalEquation::updateInteractions() const {
         }
         distance = std::sqrt(distance);
         double strength = computeInteraction(static_cast<int>(i), distance);
-        interactions_.push_back({static_cast<int>(i), distance, strength});
+        interactions_.push_back(DimensionInteraction(static_cast<int>(i), distance, strength));
     }
     if (currentDimension_ == 3) {
         for (int adj : {2, 4}) {
@@ -312,7 +313,7 @@ void UniversalEquation::updateInteractions() const {
                 }
                 distance = std::sqrt(distance);
                 double strength = computeInteraction(static_cast<int>(vertexIndex), distance);
-                interactions_.push_back({static_cast<int>(vertexIndex), distance, strength});
+                interactions_.push_back(DimensionInteraction(static_cast<int>(vertexIndex), distance, strength));
             }
         }
     }
