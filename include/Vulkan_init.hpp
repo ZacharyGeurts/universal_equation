@@ -48,7 +48,7 @@ public:
     }
 
     static void cleanupVulkan(
-        VkInstance instance, VkDevice& device, VkSurfaceKHR surface, VkSwapchainKHR& swapchain,
+        [[maybe_unused]] VkInstance instance, VkDevice& device, [[maybe_unused]] VkSurfaceKHR surface, VkSwapchainKHR& swapchain,
         std::vector<VkImageView>& swapchainImageViews, std::vector<VkFramebuffer>& swapchainFramebuffers,
         VkPipeline& pipeline, VkPipelineLayout& pipelineLayout, VkRenderPass& renderPass, VkCommandPool& commandPool,
         std::vector<VkCommandBuffer>& commandBuffers, VkSemaphore& imageAvailableSemaphore,
