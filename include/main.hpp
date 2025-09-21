@@ -1,14 +1,14 @@
 #ifndef MAIN_HPP
 #define MAIN_HPP
 
-#include "glm/glm.hpp"
-#include "glm/gtc/matrix_transform.hpp"
+#include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
 #include <vector>
 #include <iostream>
 #include <map>
-#include "SDL3/SDL.h"
-#include "SDL3/SDL_vulkan.h"
-#include "vulkan/vulkan.h"
+#include <SDL3/SDL.h>
+#include <SDL3/SDL_vulkan.h>
+#include <vulkan/vulkan.h>
 #include "SDL3_init.hpp"
 #include "Vulkan_init.hpp"
 #include "universal_equation.hpp"
