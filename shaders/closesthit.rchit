@@ -13,19 +13,23 @@ layout(location = 4) in float inCycleProgress;
 layout(location = 5) in float inDarkMatterPulse;
 layout(location = 6) in float inDarkEnergyGlow;
 
-const float PI = 3.1415926535;
-const float INV_MAX_DIM = 1.0 / 9.0;
-const float ALPHA = 5.0;
-const float BETA = 0.2;
-const float OMEGA = 2.0 * PI / (2.0 * 9.0 - 1.0);
-
-// Ray tracing bindings (adjust as per your setup)
 layout(binding = 0, set = 0) uniform accelerationStructureEXT topLevelAS;
 layout(binding = 1, set = 0, std140) uniform Scene {
     vec3 lightDir;
     vec3 lightColor;
     vec3 ambientLight;
 } scene;
+
+const float PI = 3.1415926535;
+const float INV_MAX_DIM = 1.0 / 9.0;
+const float ALPHA = 5.0;
+const float BETA = 0.2;
+const float OMEGA = 2.0 * PI / (2.0 * 9.0 - 1.0);
+
+// PBR parameters for gold
+const float METALLIC = 0.9;
+const float ROUGHNESS = 0.1; // Lower for shinier surfaces
+const vec3 F0 = vec3(0.9, 0.7, 0.3); // Gold reflectivity
 
 // Simple noise for subtle texture
 float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
@@ -40,52 +44,77 @@ float noise(vec2 uv) {
     );
 }
 
-// Fresnel effect for reflection/refraction blending
-float fresnel(vec3 I, vec3 N, float ior) {
-    float cosi = clamp(dot(I, N), -1.0, 1.0);
-    float etai = 1.0, etat = ior;
-    if (cosi > 0.0) { float tmp = etai; etai = etat; etat = tmp; }
-    float sint = etai / etat * sqrt(max(0.0, 1.0 - cosi * cosi));
-    if (sint >= 1.0) return 1.0;
-    float cost = sqrt(max(0.0, 1.0 - sint * sint));
-    cosi = abs(cosi);
-    float Rs = ((etat * cosi) - (etai * cost)) / ((etat * cosi) + (etai * cost));
-    float Rp = ((etai * cosi) - (etat * cost)) / ((etai * cosi) + (etat * cost));
-    return (Rs * Rs + Rp * Rp) * 0.5;
-}
-
 // Wave visualizer for dynamic motion
 float waveVisualizer(vec3 pos, float phase) {
-    float wave = sin(pos.x * 8.0 + phase * 1.5) * cos(pos.y * 6.0 + phase);
-    float bars = abs(sin(pos.z * 15.0 + phase)) * (0.6 + 0.4 * inDarkMatterPulse);
-    return mix(wave, bars, 0.5 + 0.3 * sin(phase));
+    float wave = sin(pos.x * 10.0 + phase * 2.0) * cos(pos.y * 8.0 + phase);
+    float bars = abs(sin(pos.z * 20.0 + phase)) * (0.7 + 0.3 * inDarkMatterPulse);
+    return mix(wave, bars, 0.5 + 0.4 * sin(phase));
 }
 
-// Chromatic dispersion for rainbow-like edges
+// Procedural environment map (cosmic sky)
+vec3 sampleEnvironment(vec3 dir) {
+    float t = inCycleProgress * OMEGA;
+    vec3 sky = vec3(0.03, 0.03, 0.08); // Dark cosmic background
+    sky += 0.15 * vec3(0.8, 0.9, 1.0) * pow(abs(sin(dir.y * 10.0 + t)), 2.0); // Softer star highlights
+    sky += 0.08 * inDarkEnergyGlow * vec3(0.9, 0.7, 0.3) * noise(dir.xy * 5.0); // Gold-tinted nebula glow
+    return sky;
+}
+
+// Fresnel-Schlick for reflection/refraction
+float fresnelSchlick(float cosTheta, float ior) {
+    float r0 = pow((1.0 - ior) / (1.0 + ior), 2.0);
+    return r0 + (1.0 - r0) * pow(1.0 - cosTheta, 5.0);
+}
+
+// Chromatic dispersion for refraction
 vec3 chromaticDispersion(vec3 dir, vec3 normal, float iorBase, float dispersion) {
     vec3 color = vec3(0.0);
     float iorR = iorBase - dispersion;
     float iorG = iorBase;
     float iorB = iorBase + dispersion;
     
-    // Refract for each color channel
     vec3 refractR = refract(dir, normal, iorR);
     vec3 refractG = refract(dir, normal, iorG);
     vec3 refractB = refract(dir, normal, iorB);
     
-    // Trace refracted rays (simplified background color for this example)
-    color.r = refractR != vec3(0.0) ? scene.ambientLight.r : 0.0;
-    color.g = refractG != vec3(0.0) ? scene.ambientLight.g : 0.0;
-    color.b = refractB != vec3(0.0) ? scene.ambientLight.b : 0.0;
+    color.r = refractR != vec3(0.0) ? sampleEnvironment(refractR).r : scene.ambientLight.r;
+    color.g = refractG != vec3(0.0) ? sampleEnvironment(refractG).g : scene.ambientLight.g;
+    color.b = refractB != vec3(0.0) ? sampleEnvironment(refractB).b : scene.ambientLight.b;
     
     return color;
 }
 
-// Reused functions
+// PBR functions
+float distributionGGX(vec3 N, vec3 H, float roughness) {
+    float a = roughness * roughness;
+    float a2 = a * a;
+    float NdotH = max(dot(N, H), 0.0);
+    float NdotH2 = NdotH * NdotH;
+    float denom = NdotH2 * (a2 - 1.0) + 1.0;
+    return a2 / (PI * denom * denom);
+}
+
+float geometrySchlickGGX(float NdotV, float roughness) {
+    float r = roughness + 1.0;
+    float k = (r * r) / 8.0;
+    return NdotV / (NdotV * (1.0 - k) + k);
+}
+
+float geometrySmith(vec3 N, vec3 V, vec3 L, float roughness) {
+    float NdotV = max(dot(N, V), 0.0);
+    float NdotL = max(dot(N, L), 0.0);
+    return geometrySchlickGGX(NdotV, roughness) * geometrySchlickGGX(NdotL, roughness);
+}
+
+vec3 fresnelSchlickPBR(float cosTheta, vec3 F0) {
+    return F0 + (1.0 - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
+}
+
+// Reused dimensional functions
 float computeDarkMatterDensity(float dim) {
     float density = inDarkMatterPulse * (1.0 + dim * INV_MAX_DIM);
     if (dim > 3.0) {
-        density *= (1.0 + 0.15 * (dim - 3.0));
+        density *= (1.0 + 0.2 * (dim - 3.0));
     }
     return max(1e-15, density);
 }
@@ -106,57 +135,66 @@ void main() {
     float phase = inWavePhase + inCycleProgress * PI * 2.0;
     float dimFrac = (dim - 1.0) / 8.0;
     vec3 worldPos = gl_WorldRayOriginEXT + gl_WorldRayDirectionEXT * gl_HitTEXT;
-    vec3 normal = normalize(attribs); // Assuming attribs contains the normal
+    vec3 normal = normalize(attribs); // Normal from hit attributes
     vec3 viewDir = normalize(-gl_WorldRayDirectionEXT);
+    vec3 lightDir = normalize(scene.lightDir);
 
-    // Base glass color with tint from baseColor
-    vec3 baseColor = inBaseColor * (0.8 + 0.2 * dimFrac);
-    vec3 color = baseColor;
+    // Material properties
+    vec3 albedo = inBaseColor; // Gold from vertex shader (0.9, 0.7, 0.3)
+    float metallic = METALLIC;
+    float roughness = ROUGHNESS * (1.0 - 0.2 * inDarkMatterPulse); // Dynamic roughness
+    float ior = 1.5 + 0.1 * inDarkMatterPulse; // Glass-like IOR
 
-    // Add noise for subtle texture
-    float n = 0.05 * noise(worldPos.xy * (1.0 + 0.5 * inDarkMatterPulse + 0.3 * sin(phase)));
-    color += n;
+    // PBR lighting
+    vec3 V = viewDir;
+    vec3 L = lightDir;
+    vec3 H = normalize(V + L);
+    float NdotL = max(dot(normal, L), 0.0);
+    float NdotV = max(dot(normal, V), 0.0);
 
-    // Wave visualizer for dynamic distortion
-    float visualizer = waveVisualizer(worldPos, phase) * (1.0 + 0.15 * inDarkEnergyGlow);
+    vec3 F = fresnelSchlickPBR(max(dot(H, V), 0.0), F0);
+    float D = distributionGGX(normal, H, roughness);
+    float G = geometrySmith(normal, V, L, roughness);
+
+    vec3 specular = (D * G * F) / max(4.0 * NdotV * NdotL, 0.001);
+    vec3 diffuse = (1.0 - F) * (1.0 - metallic) * albedo / PI;
+    vec3 directLight = (diffuse + specular) * scene.lightColor * 6.0 * NdotL; // Increased intensity
+
+    // Wave visualizer
+    float visualizer = waveVisualizer(worldPos, phase) * (1.0 + 0.2 * inDarkEnergyGlow);
 
     // Dimensional effects
     float collapse = computeCollapse(dim);
     float distance = abs(dim - floor(dim + 0.5));
-    float darkMatter = computeDarkMatterDensity(dim) * (1.0 + 0.1 * sin(phase));
-    float darkEnergy = computeDarkEnergy(distance) * (1.0 + 0.1 * cos(phase * OMEGA));
-
-    // Fresnel effect for reflection/refraction balance
-    float ior = 1.5 + 0.1 * inDarkMatterPulse; // Glass-like IOR, modulated by dark matter
-    float fresnelFactor = fresnel(viewDir, normal, ior);
+    float darkMatter = computeDarkMatterDensity(dim) * (1.0 + 0.2 * sin(phase));
+    float darkEnergy = computeDarkEnergy(distance) * (1.0 + 0.2 * cos(phase * OMEGA));
 
     // Reflection
-    vec3 reflectDir = reflect(gl_WorldRayDirectionEXT, normal);
-    vec4 reflectColor = vec4(scene.ambientLight, 1.0); // Simplified; trace ray for real reflections
-    // For real reflections, you'd use:
-    // traceRayEXT(topLevelAS, gl_RayFlagsOpaqueEXT, 0xFF, 0, 0, 0, worldPos, 0.001, reflectDir, 1000.0, 0);
+    vec3 reflectDir = reflect(-viewDir, normal);
+    vec4 reflectColor = vec4(sampleEnvironment(reflectDir), 1.0);
+    uint rayFlags = gl_RayFlagsOpaqueEXT;
+    float tMin = 0.001, tMax = 1000.0;
+    traceRayEXT(topLevelAS, rayFlags, 0xFF, 0, 0, 0, worldPos, tMin, reflectDir, tMax, 0);
+    reflectColor = mix(reflectColor, payload, 0.8 * metallic * (1.0 - roughness)); // Increased reflection
 
     // Refraction with chromatic dispersion
-    vec3 refractColor = chromaticDispersion(gl_WorldRayDirectionEXT, normal, ior, 0.02 * (1.0 + inDarkEnergyGlow));
+    float fresnelFactor = fresnelSchlick(max(dot(normal, viewDir), 0.0), ior);
+    vec3 refractColor = chromaticDispersion(-viewDir, normal, ior, 0.03 * (1.0 + inDarkEnergyGlow));
 
-    // Combine reflection and refraction
-    color = mix(refractColor, reflectColor.rgb, fresnelFactor);
-    color *= (0.7 + 0.3 * visualizer); // Modulate with visualizer
-    color += baseColor * (0.2 + 0.1 * darkEnergy); // Add tinted glow
-    color += vec3(0.05, 0.05, 0.1) * darkMatter; // Subtle blue from dark matter
-
-    // Specular highlight
-    float shininess = 20.0 + 15.0 * darkMatter;
-    vec3 halfDir = normalize(scene.lightDir + viewDir);
-    float spec = pow(max(dot(normal, halfDir), 0.0), shininess);
-    color += scene.lightColor * spec * (0.8 + 0.2 * inDarkEnergyGlow);
+    // Combine effects
+    vec3 color = mix(refractColor, reflectColor.rgb, fresnelFactor);
+    color += directLight; // Add PBR lighting
+    color *= (0.8 + 0.2 * visualizer); // Modulate with wave
+    color += 0.08 * noise(worldPos.xy * (1.0 + 0.5 * darkMatter)); // Subtle noise
+    color += vec3(0.08, 0.06, 0.02) * darkEnergy * (1.0 + 0.2 * dimFrac); // Gold-tinted glow
+    color += vec3(0.04, 0.04, 0.08) * darkMatter; // Subtle blue tint
+    color += vec3(0.7, 0.6, 0.8) * 0.15 * inDarkEnergyGlow * dimFrac; // Subtle purple glow
 
     // Clamp color
     color = clamp(color, 0.0, 1.0);
 
-    // Compute alpha for slight transparency
+    // Compute alpha
     float alpha = clamp(0.8 + 0.2 * (darkEnergy + collapse), 0.7, 1.0);
 
-    // Output to payload
     payload = vec4(color, alpha);
 }
