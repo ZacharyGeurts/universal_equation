@@ -109,6 +109,7 @@ note: I feel dark matter is conceptually flawed. no word on dark energy from me.
     - `1` to `9`: Switch to rendering modes 1D through 9D.
     - `F` toggle Fullscreen
     - `P` toggle Pause
+    - `M` toggle Mute  
     - `A`/`Z`: Zoom in/out (adjusts `zoomLevel_` between 0.01 and 20.0).  
 - **Data Logging**: Outputs dimensional data (dimension, observable, potential, dark matter, dark energy) to the console for debugging.
 
