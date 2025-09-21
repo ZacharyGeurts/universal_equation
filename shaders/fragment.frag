@@ -1,5 +1,5 @@
-#version 450
-#extension GL_KHR_vulkan_glsl : enable
+#version 460
+#extension GL_EXT_ray_tracing : require
 
 layout(location = 0) in vec3 fragPos;
 layout(location = 1) in vec3 fragNormal;
