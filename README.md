@@ -17,10 +17,8 @@ Built with Grok, Co-Pilot, and duck.ai
 
 **Latest Video**: [Latest Video](https://x.com/i/status/1968332417498046881)  
 
-**Older Video**: [Shader Video](https://x.com/i/status/1967808016453124126)  **Last Math Video**: [Older Math Video](https://x.com/i/status/1967685833982652583)  
-**Older Video**: [9D-1D](https://x.com/i/status/1967431708258804189)  **Older Video**: [Co-Pilot Update](https://github.com/user-attachments/assets/4a730d87-8b38-428e-bd5e-79c51921b67b)  
-**Shader Update**: [Old WIP](https://github.com/user-attachments/assets/1a259212-3314-424f-b997-7792e8ac9066)  **Old Video**: [Old WIP](https://github.com/user-attachments/assets/2980fe0d-1204-4a53-b6a4-cdf4f3eca072)  
-**Old Video**: [Old WIP](https://github.com/user-attachments/assets/c1b983bf-bdd9-4ae7-b8bb-fc7a1debdbef)  **Previous**: [Older WIP](https://github.com/ZacharyGeurts/universal_equation/raw/refs/heads/main/wip2.mov)  
+**Older Video**: [Shader Video](https://x.com/i/status/1967808016453124126)  **Last Math Video**: [Older Math Video](https://x.com/i/status/1967685833982652583)  **Older Video**: [9D-1D](https://x.com/i/status/1967431708258804189)  
+**Older Video**: [Co-Pilot Update](https://github.com/user-attachments/assets/4a730d87-8b38-428e-bd5e-79c51921b67b)  **Shader Update**: [Old WIP](https://github.com/user-attachments/assets/1a259212-3314-424f-b997-7792e8ac9066)  **Old Video**: [Old WIP](https://github.com/user-attachments/assets/2980fe0d-1204-4a53-b6a4-cdf4f3eca072)  **Old Video**: [Old WIP](https://github.com/user-attachments/assets/c1b983bf-bdd9-4ae7-b8bb-fc7a1debdbef)  **Previous**: [Older WIP](https://github.com/ZacharyGeurts/universal_equation/raw/refs/heads/main/wip2.mov)  
 **Previous Previous**: [Older Version](https://github.com/user-attachments/assets/344232f5-e7b8-4485-af40-5a302873f88c)  
 
 ## Features
