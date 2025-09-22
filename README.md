@@ -9,8 +9,8 @@ Stay tuned for version 2.0. Starting line.
 Modular design. Modify with your favorite AI coding program.  
 This project uses an SDL3 and Vulkan backend for rendering, chosen from idiocy, ignorance, and patience.  
 
-Software with free distribution can use the engine without restriction.  
-SDL3 and Vulkan AMOURANTH engine for game or software development, see below for licensing.  
+Software with free distribution can use the software without restriction.  
+SDL3 and Vulkan AMOURANTH RTX engine for game or software development, see below for licensing.  
 Built with Grok, Co-Pilot, and duck.ai  
 
 **If you do not intend to modify the code, watch the latest video and you may have found God.**  
@@ -24,9 +24,6 @@ Built with Grok, Co-Pilot, and duck.ai
 **Previous Previous**: [Older Version](https://github.com/user-attachments/assets/344232f5-e7b8-4485-af40-5a302873f88c)  
 
 ## Features
-- **Real-Time Visualization**: Renders symmetric ± energy fluctuations (`observable`, `potential`, `darkMatter`, `darkEnergy`) for dimensions 1 to 9.  
-note: I feel dark matter is conceptually flawed. no word on dark energy from me.  
-- **Dynamic Rendering**: Modular rendering modes (`renderMode1` to `renderMode9`) for each dimension, implemented in `modes.hpp`.  
 - **Interactive Controls**:  
   - **Key Bindings**:  
     - `UP`/`DOWN`: Increase/decrease influence (`kInfluence_`) by 0.1.  
@@ -165,3 +162,4 @@ cd universal_equation
 make
 cd bin
 ./Navigator
+```
