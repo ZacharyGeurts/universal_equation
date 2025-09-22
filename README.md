@@ -125,15 +125,16 @@ The `UniversalEquation` class defines dimensional interactions:
   - **GLM**: `libglm-dev`.  
 - **Shader Compiler**: `glslc` (from Vulkan SDK).  
 
+
+Requires Vulkan SDK  
+Get the tarball from [LunarG](https://vulkan.lunarg.com/)  
+Run `sudo ./vulkansdk`  
+**Make sure file permission is set to executable**  
+
 ## Build Instructions
 ```bash
-# Add LunarG Vulkan repository for glslc
-wget -qO - https://packages.lunarg.com/lunarg-signing-key-pub.asc | sudo apt-key add -
-sudo wget -qO /etc/apt/sources.list.d/lunarg-vulkan-jammy.list https://packages.lunarg.com/vulkan/lunarg-vulkan-jammy.list
-sudo apt update
-
 # Update package lists and install base dependencies
-sudo apt install -y git g++ libvulkan-dev vulkan-tools vulkan-sdk libglm-dev libfreetype-dev libasound2-dev libpulse-dev libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxss-dev
+sudo apt install -y git g++ libglm-dev libfreetype-dev libasound2-dev libpulse-dev libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxss-dev
 
 # Build and install SDL3 from source
 git clone https://github.com/libsdl-org/SDL.git
