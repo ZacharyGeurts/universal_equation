@@ -4,7 +4,8 @@ Welcome friends. God Bless.
 Stay tuned for version 2.0. Starting line.  
 
 Modular design. Modify with your favorite AI coding program.  
-Built with Grok3, Co-Pilot, and ChatGPT  
+This project uses an SDL3 and Vulkan backend for rendering, chosen from idiocy, ignorance, and patience.  
+Built with Grok, Co-Pilot, and ChatGPT  
 
 **Latest Video**: [Latest Video](https://x.com/i/status/1968332417498046881)  
 
@@ -22,9 +23,6 @@ If you do not intend to modify the code, just watch the latest video above and y
 
 **Platform**: Currently Linux-only  
 
-This project uses an SDL3 and Vulkan backend for rendering, chosen from idiocy, ignorance, and patience.  
-Grok3 wanted GLM and it seems to cook.  
-
 ## Licensing
 This is **not free (as in freedom) software**. It is provided for **educational purposes only**.  
 - **Restrictions**: You may not sell this software or require any compensation from users.  
@@ -34,7 +32,7 @@ This is **not free (as in freedom) software**. It is provided for **educational 
 - **Source**: Obtain the software exclusively from [https://github.com/ZacharyGeurts/universal_equation](https://github.com/ZacharyGeurts/universal_equation).  
 
 ## Overview
-The **Dimensional Navigator** is a computational visualization tool built in **C++** using **SDL3**, **Vulkan**, and **GLM**. It graphs the outputs of the **UniversalEquation** class, which models dimensional interactions across dimensions **1 to 9**. The visualization displays symmetric positive and negative energy fluctuations influenced by **dark matter** and **dark energy**, featuring real-time interactivity.  
+The **Dimensional Navigator** is a computational visualization tool built in **C++** using **SDL3**, **Vulkan**, and **GLM**. It visual displays the outputs of the **UniversalEquation** class, which models dimensional interactions across dimensions **1 to 9**. The visualization displays symmetric positive and negative energy fluctuations influenced by **dark matter** and **dark energy**, featuring real-time interactivity.  
 
 The **UniversalEquation** class models a universe with multiple dimensions, each affecting the system’s total energy. Parameters such as **influence**, **weak force**, **collapse**, and the strengths of **dark matter** and **dark energy** can be configured. The class tracks the current dimension and allows cycling through dimensions. For each dimension, it calculates energetic contributions from observable effects, potential, dark matter, and dark energy, considering interactions between nearby dimensions, influenced by distance, permeation, and densities of dark matter and dark energy.  
 
