@@ -126,7 +126,7 @@ The `UniversalEquation` class defines dimensional interactions:
 - **Shader Compiler**: `glslc` (from Vulkan SDK).  
 
 
-Requires Vulkan SDK  
+## Vulkan SDK  
 Get the tarball from [LunarG](https://vulkan.lunarg.com/)  
 Run `sudo ./vulkansdk`  
 **Make sure file permission is set to executable**  
