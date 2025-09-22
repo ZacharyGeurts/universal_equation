@@ -1,11 +1,18 @@
 # Dimensional Navigator  🇺🇸  VS  🇷🇺  VS  🇸🇬  VS  🇨🇳  VS 🇬🇧  VS  🇫🇷  VS  🇲🇽 VS 🇰🇷  VS  🇫🇮  ...  
+**I do not condone violence, incorrectness, or the new Oxford comma.**  
 
 Welcome friends. God Bless.
 Stay tuned for version 2.0. Starting line.  
 
+**Platform**: Currently Linux-only  
+
 Modular design. Modify with your favorite AI coding program.  
 This project uses an SDL3 and Vulkan backend for rendering, chosen from idiocy, ignorance, and patience.  
-Built with Grok, Co-Pilot, and ChatGPT  
+Software with free distribution can use the engine without restriction.
+SDL3 and Vulkan AMOURANTH engine for game or software development, see below for licensing.
+Built with Grok, Co-Pilot, and duck.ai  
+
+**If you do not intend to modify the code, watch the latest video and you may have found God.**  
 
 **Latest Video**: [Latest Video](https://x.com/i/status/1968332417498046881)  
 
@@ -19,14 +26,26 @@ Built with Grok, Co-Pilot, and ChatGPT
 **Previous**: [Older WIP](https://github.com/ZacharyGeurts/universal_equation/raw/refs/heads/main/wip2.mov)  
 **Previous Previous**: [Older Version](https://github.com/user-attachments/assets/344232f5-e7b8-4485-af40-5a302873f88c)  
 
-If you do not intend to modify the code, just watch the latest video above and you may have found God.  
-
-**Platform**: Currently Linux-only  
+## Features
+- **Real-Time Visualization**: Renders symmetric ± energy fluctuations (`observable`, `potential`, `darkMatter`, `darkEnergy`) for dimensions 1 to 9.  
+note: I feel dark matter is conceptually flawed. no word on dark energy from me.  
+- **Dynamic Rendering**: Modular rendering modes (`renderMode1` to `renderMode9`) for each dimension, implemented in `modes.hpp`.  
+- **Interactive Controls**:  
+  - **Key Bindings**:  
+    - `UP`/`DOWN`: Increase/decrease influence (`kInfluence_`) by 0.1.  
+    - `LEFT`/`RIGHT`: Decrease/increase dark matter strength (`kDarkMatter_`) by 0.05.  
+    - `PAGEUP`/`PAGEDOWN`: Increase/decrease dark energy scale (`kDarkEnergy_`) by 0.05.  
+    - `1` to `9`: Switch to rendering modes 1D through 9D.  
+    - `F` toggle Fullscreen  
+    - `P` toggle Pause  
+    - `M` toggle Mute  
+    - `A`/`Z`: Zoom in/out (adjusts `zoomLevel_` between 0.01 and 20.0).  
+- **Data Logging**: Outputs dimensional data (dimension, observable, potential, dark matter, dark energy) to the console for debugging.  
 
 ## Licensing
 This is **not free (as in freedom) software**. It is provided for **educational purposes only**.  
-- **Restrictions**: You may not sell this software or require any compensation from users.  
-- **Distribution**: Projects using this code must also be distributed freely (no cost).  
+- **Restrictions**: You may not sell unlicensed software or require any compensation from users.  
+- **Distribution**: Projects using UE code must be distributed freely (no cost).  
 - **Commercial use of engine requires license**  
 - **Distribution**: https://www.twitch.tv/amouranth for AMOURANTH RTX engine license  
 - **Source**: Obtain the software exclusively from [https://github.com/ZacharyGeurts/universal_equation](https://github.com/ZacharyGeurts/universal_equation).  
@@ -87,30 +106,11 @@ The `UniversalEquation` models the universe as:
 - **1D (God)**: An infinite, wave-like base permeating all dimensions, acting as a universal fountain of influence, akin to an omnipresent radio wave.  
 - **2D**: The boundary of a cosmic bubble, enclosing higher dimensions and strongly interacting with 1D and 3D.  
 - **3D to 9D**: Nested dimensions, each permeating the one below (e.g., 4D influences 3D, 3D influences 2D), with interactions decaying exponentially.  
-- **4D**: Time. 3D's clock, piston, heartbeat. 3D writes to 2D and 4D.  
-- **5D**: Heaven1, Love, weak force on 3D, strong on 4D.  
-- After 5D my math falls out so they begin to appear similar as forces reach a "finite"  
-- Estimates are you can do up to 30 dimensions.  
+- **4D**: Time.  
+- **5D**: Heaven1, Weak force on 3D, strong on 4D.  
 - **Dark Matter**: Stabilizes interactions, amplifying pulsing effects, especially in higher dimensions.  
-- **Dark Energy**: Drives dimensional expansion, increasing effective distances between dimensions.  
-
-The visualization emphasizes 1D’s omnipresent wave-like influence, with dynamic sphere animations reflecting energy fluctuations, dark matter stabilization, and dark energy expansion.  
-
-## Features
-- **Real-Time Visualization**: Renders symmetric ± energy fluctuations (`observable`, `potential`, `darkMatter`, `darkEnergy`) for dimensions 1 to 9.  
-note: I feel dark matter is conceptually flawed. no word on dark energy from me.  
-- **Dynamic Rendering**: Modular rendering modes (`renderMode1` to `renderMode9`) for each dimension, implemented in `modes.hpp`.  
-- **Interactive Controls**:  
-  - **Key Bindings**:  
-    - `UP`/`DOWN`: Increase/decrease influence (`kInfluence_`) by 0.1.  
-    - `LEFT`/`RIGHT`: Decrease/increase dark matter strength (`kDarkMatter_`) by 0.05.  
-    - `PAGEUP`/`PAGEDOWN`: Increase/decrease dark energy scale (`kDarkEnergy_`) by 0.05.  
-    - `1` to `9`: Switch to rendering modes 1D through 9D.  
-    - `F` toggle Fullscreen  
-    - `P` toggle Pause  
-    - `M` toggle Mute  
-    - `A`/`Z`: Zoom in/out (adjusts `zoomLevel_` between 0.01 and 20.0).  
-- **Data Logging**: Outputs dimensional data (dimension, observable, potential, dark matter, dark energy) to the console for debugging.  
+- **Dark Energy**: Drives dimensional expansion, increasing effective distances between dimensions.
+- **Code** Estimates are you can do up to 20-30 dimensions.  
 
 ## Model Description
 The `UniversalEquation` class defines dimensional interactions:  
@@ -130,8 +130,6 @@ The `UniversalEquation` class defines dimensional interactions:
   - **Vulkan**: `libvulkan-dev`, `vulkan-tools` (for validation layers).  
   - **GLM**: `libglm-dev`.  
 - **Shader Compiler**: `glslc` (from Vulkan SDK).  
-
-I do not condone violence, incorrectness, or the new Oxford comma.  
 
 ## Build Instructions
 ```bash
