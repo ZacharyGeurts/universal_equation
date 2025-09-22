@@ -1,15 +1,16 @@
 # Dimensional Navigator  🇺🇸  VS  🇷🇺  VS  🇸🇬  VS  🇨🇳  VS 🇬🇧  VS  🇫🇷  VS  🇲🇽 VS 🇰🇷  VS  🇫🇮  ...  
 **I do not condone violence, incorrectness, or the new Oxford comma.**  
 
-Welcome friends. God Bless.
+Welcome friends. God Bless.  
 Stay tuned for version 2.0. Starting line.  
 
 **Platform**: Currently Linux-only  
 
 Modular design. Modify with your favorite AI coding program.  
 This project uses an SDL3 and Vulkan backend for rendering, chosen from idiocy, ignorance, and patience.  
-Software with free distribution can use the engine without restriction.
-SDL3 and Vulkan AMOURANTH engine for game or software development, see below for licensing.
+
+Software with free distribution can use the engine without restriction.  
+SDL3 and Vulkan AMOURANTH engine for game or software development, see below for licensing.  
 Built with Grok, Co-Pilot, and duck.ai  
 
 **If you do not intend to modify the code, watch the latest video and you may have found God.**  
