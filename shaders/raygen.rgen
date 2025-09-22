@@ -1,142 +1,37 @@
 #version 460
-#extension GL_NV_ray_tracing : require
-#extension GL_EXT_scalar_block_layout : require
-#extension GL_EXT_buffer_reference : enable
-#extension GL_EXT_shader_explicit_arithmetic_types_int64 : enable
+#extension GL_EXT_ray_tracing : require
+#extension GL_EXT_nonuniform_qualifier : enable
 
-// Output image
-layout(binding = 0, rgba32f) uniform image2D outputImage;
+layout(binding = 0, set = 0) uniform accelerationStructureEXT topLevelAS;
 
-// Acceleration structure
-layout(binding = 1) uniform accelerationStructureNV topLevelAS;
+layout(location = 0) rayPayloadEXT vec4 payload;
 
-// Scene description buffer
-layout(binding = 2, std430) uniform SceneDesc {
-    uint64_t vertexAddr;
-    uint64_t indexAddr;
-    uint64_t normalAddr;
-} scene;
-
-// Material buffer
-layout(binding = 3, std430) readonly buffer MaterialBuffer {
-    vec4 colors[];
-};
-
-// Push constants (renamed sampleCount to numSamples)
-layout(push_constant, std430) uniform PushConstants {
-    mat4 model;
-    mat4 viewInverse;
-    mat4 projInverse;
-    vec3 baseColor;
-    float value;
-    float dimension;
+layout(push_constant) uniform PushConstants {
+    mat4 viewProj;
+    vec3 camPos;
     float wavePhase;
     float cycleProgress;
+    float zoomFactor;
+    float interactionStrength;
     float darkMatter;
     float darkEnergy;
-    vec3 lightColor;
-    uint numSamples;  // Changed from sampleCount to avoid potential keyword issues
-    uint frameSeed;
 } push;
 
-// Ray payload
-layout(location = 0) rayPayloadNV struct RayPayload {
-    vec3 color;
-    float alpha;
-    int depth;
-} rayPayload;
-
-// Shadow payload
-layout(location = 1) rayPayloadNV bool isShadowed;
-
-// Buffer references
-layout(buffer_reference, std430, buffer_reference_align = 8) readonly buffer Vertices {
-    vec3 positions[];
-};
-
-layout(buffer_reference, std430, buffer_reference_align = 8) readonly buffer Indices {
-    uvec3 triangles[];
-};
-
-layout(buffer_reference, std430, buffer_reference_align = 8) readonly buffer Normals {
-    vec3 normals[];
-};
-
-// PRNG for jitter
-uint wangHash(uint seed) {
-    seed = (seed ^ 61) ^ (seed >> 16);
-    seed *= 9;
-    seed = seed ^ (seed >> 4);
-    seed *= 0x27d4eb2d;
-    seed = seed ^ (seed >> 15);
-    return seed;
-}
-
-float rand(inout uint state) {
-    state = wangHash(state);
-    return float(state) / float(0xFFFFFFFFu);
-}
-
-// Main ray generation shader
 void main() {
-    uvec2 launchID = gl_LaunchIDNV.xy;
-    uvec2 launchSize = gl_LaunchSizeNV.xy;
+    vec2 pixelCenter = vec2(gl_LaunchIDEXT.xy) + vec2(0.5);
+    vec2 inUV = pixelCenter / vec2(gl_LaunchSizeEXT.xy);
+    vec2 d = inUV * 2.0 - 1.0;
 
-    vec3 accumulatedColor = vec3(0.0);
-    float accumulatedAlpha = 0.0;
+    vec4 origin = vec4(push.camPos, 1.0);
+    vec4 target = inverse(push.viewProj) * vec4(d.x, d.y, 1.0, 1.0);
+    vec4 direction = normalize(target - origin);
 
-    // Seed for randomness
-    uint rngState = wangHash(launchID.x + launchID.y * launchSize.x + push.frameSeed * launchSize.x * launchSize.y);
+    float tMin = 0.1;
+    float tMax = 100.0;
 
-    // Multi-sample loop for anti-aliasing
-    for (uint sampleIdx = 0; sampleIdx < push.numSamples; ++sampleIdx) {  // Renamed sample to sampleIdx, used numSamples
-        vec2 jitter = vec2(rand(rngState), rand(rngState)) - 0.5;
-        vec2 pixelCenter = vec2(launchID) + 0.5 + jitter;
-        vec2 uv = pixelCenter / vec2(launchSize);
-        vec2 ndc = uv * 2.0 - 1.0;
+    payload = vec4(0.0, 0.0, 0.0, 1.0); // Initialize payload
+    traceRayEXT(topLevelAS, gl_RayFlagsOpaqueEXT, 0xFF, 0, 0, 0, origin.xyz, tMin, direction.xyz, tMax, 0);
 
-        // Compute ray origin and direction
-        vec4 origin = push.viewInverse * vec4(0.0, 0.0, 0.0, 1.0);
-        vec4 clipTarget = push.projInverse * vec4(ndc.x, ndc.y, 1.0, 1.0);
-        vec3 viewDir = normalize(clipTarget.xyz / clipTarget.w);
-        vec4 direction = push.viewInverse * vec4(viewDir, 0.0);
-
-        // Initialize payload
-        rayPayload.color = vec3(0.0);
-        rayPayload.alpha = 0.0;
-        rayPayload.depth = 0;
-
-        // Trace primary ray
-        traceNV(topLevelAS,
-                gl_RayFlagsOpaqueNV,
-                0xFF,
-                0,
-                0,
-                0,
-                origin.xyz,
-                0.001,
-                direction.xyz,
-                10000.0,
-                0);
-
-        accumulatedColor += rayPayload.color;
-        accumulatedAlpha += rayPayload.alpha;
-    }
-
-    // Average samples
-    accumulatedColor /= float(push.numSamples);
-    accumulatedAlpha /= float(push.numSamples);
-
-    // Apply modulations
-    vec3 color = accumulatedColor * push.baseColor;
-    color *= (1.0 - push.darkMatter * 0.5) * (1.0 + push.darkEnergy * 0.3);
-    color *= clamp(push.dimension * 0.5, 0.1, 1.0);
-
-    float modulation = sin(push.wavePhase + push.cycleProgress * 6.28318530718) * push.value * 0.1 + 1.0;
-    color *= modulation;
-
-    color *= push.lightColor;
-
-    // Store result
-    imageStore(outputImage, ivec2(launchID), vec4(color, accumulatedAlpha));
+    // Call callable shader for additional effect (e.g., color modulation)
+    //executeCallableEXT(0, 1);
 }

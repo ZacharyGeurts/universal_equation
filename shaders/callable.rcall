@@ -1,6 +1,7 @@
 #version 460
 #extension GL_EXT_ray_tracing : require
 
+layout(location = 1) callableDataInEXT float dummy;
 layout(location = 0) rayPayloadInEXT vec4 payload;
 
 layout(push_constant) uniform PushConstants {
@@ -15,8 +16,7 @@ layout(push_constant) uniform PushConstants {
 } push;
 
 void main() {
-    // Simulate partial transparency: discard rays if darkEnergy is low
-    if (push.darkEnergy < 0.3) {
-        ignoreIntersectionEXT;
-    }
+    // Modulate payload color with a wave effect
+    float modulation = 0.9 + 0.1 * cos(push.wavePhase + push.darkEnergy);
+    payload.rgb *= modulation;
 }
