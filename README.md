@@ -134,7 +134,7 @@ Run `sudo ./vulkansdk`
 ## Build Instructions
 ```bash
 # Update package lists and install base dependencies
-sudo apt install -y git g++ libglm-dev libfreetype-dev libasound2-dev libpulse-dev libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxss-dev
+sudo apt install -y git g++ libglm-dev libfreetype-dev libasound2-dev libpulse-dev libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxss-dev libomp-dev
 
 # Build and install SDL3 from source
 git clone https://github.com/libsdl-org/SDL.git
