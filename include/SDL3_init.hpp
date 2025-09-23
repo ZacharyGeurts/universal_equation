@@ -17,6 +17,12 @@
 #include <algorithm>
 #include <cstring>
 #include <iostream>
+#include <future>
+#include <thread>
+#include <mutex>
+#include <condition_variable>
+#include <queue>
+#include <atomic>
 
 struct AudioConfig {
     int frequency = 44100;
@@ -63,10 +69,32 @@ public:
 
     SDL3Initializer() {
         std::cout << "Constructing SDL3Initializer" << std::endl;
+        // Start worker threads for gamepad processing
+        startWorkerThreads(std::min(2, static_cast<int>(std::thread::hardware_concurrency())));
     }
 
     ~SDL3Initializer() {
         std::cout << "Destructing SDL3Initializer" << std::endl;
+        // Stop worker threads
+        {
+            std::unique_lock<std::mutex> lock(taskMutex);
+            stopWorkers = true;
+            taskCond.notify_all();
+        }
+        for (auto& thread : workerThreads) {
+            if (thread.joinable()) {
+                thread.join();
+            }
+        }
+        // Stop render thread
+        if (renderThread.joinable()) {
+            {
+                std::unique_lock<std::mutex> lock(renderMutex);
+                renderReady = false;
+                renderCond.notify_one();
+            }
+            renderThread.join();
+        }
         cleanup();
     }
 
@@ -95,6 +123,25 @@ public:
             std::cout << "Enabling text input" << std::endl;
             SDL_StartTextInput(m_window.get());
         }
+
+        // Start render thread if render callback is provided
+        if (render) {
+            renderThread = std::thread([this, render]() {
+                while (true) {
+                    std::unique_lock<std::mutex> lock(renderMutex);
+                    renderCond.wait(lock, [this] { return renderReady || stopRender; });
+                    if (stopRender && !renderReady) break;
+                    if (renderReady) {
+                        std::cout << "Render thread executing render callback" << std::endl;
+                        render();
+                        renderReady = false;
+                        lock.unlock();
+                        renderCond.notify_one();
+                    }
+                }
+            });
+        }
+
         for (bool running = true; running;) {
             SDL_Event e;
             while (SDL_PollEvent(&e)) {
@@ -111,7 +158,6 @@ public:
                     case SDL_EVENT_WINDOW_RESIZED:
                         std::cout << "Window resized to " << e.window.data1 << "x" << e.window.data2 << std::endl;
                         if (onResize) onResize(e.window.data1, e.window.data2);
-                        else std::cout << "Resized: " << e.window.data1 << "x" << e.window.data2 << '\n';
                         break;
                     case SDL_EVENT_KEY_DOWN:
                         std::cout << "Key down event: " << SDL_GetKeyName(e.key.key) << std::endl;
@@ -147,36 +193,62 @@ public:
                     case SDL_EVENT_GAMEPAD_BUTTON_UP:
                         std::cout << "Gamepad button event: " << (e.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN ? "Down" : "Up") << std::endl;
                         handleGamepadButton(e.gbutton);
-                        if (gb) gb(e.gbutton);
+                        if (gb) {
+                            SDL_GamepadButtonEvent eventCopy = e.gbutton; // Copy event to avoid lifetime issues
+                            std::unique_lock<std::mutex> lock(taskMutex);
+                            taskQueue.push([gb, eventCopy] { gb(eventCopy); });
+                            taskCond.notify_one();
+                        }
                         break;
                     case SDL_EVENT_GAMEPAD_AXIS_MOTION:
                         std::cout << "Gamepad axis motion event" << std::endl;
-                        if (ga) ga(e.gaxis);
+                        if (ga) {
+                            SDL_GamepadAxisEvent eventCopy = e.gaxis; // Copy event to avoid lifetime issues
+                            std::unique_lock<std::mutex> lock(taskMutex);
+                            taskQueue.push([ga, eventCopy] { ga(eventCopy); });
+                            taskCond.notify_one();
+                        }
                         break;
                     case SDL_EVENT_GAMEPAD_ADDED:
                         std::cout << "Gamepad added: ID " << e.gdevice.which << std::endl;
-                        if (SDL_Gamepad* gp = SDL_OpenGamepad(e.gdevice.which)) {
-                            std::cout << "Opened gamepad: ID " << e.gdevice.which << std::endl;
-                            m_gamepads[e.gdevice.which] = gp;
-                            if (gc) gc(true, e.gdevice.which, gp);
+                        {
+                            std::unique_lock<std::mutex> lock(gamepadMutex);
+                            if (SDL_Gamepad* gp = SDL_OpenGamepad(e.gdevice.which)) {
+                                std::cout << "Opened gamepad: ID " << e.gdevice.which << std::endl;
+                                m_gamepads[e.gdevice.which] = gp;
+                                if (gc) gc(true, e.gdevice.which, gp);
+                            }
                         }
                         break;
                     case SDL_EVENT_GAMEPAD_REMOVED:
                         std::cout << "Gamepad removed: ID " << e.gdevice.which << std::endl;
-                        if (auto it = m_gamepads.find(e.gdevice.which); it != m_gamepads.end()) {
-                            std::cout << "Closing gamepad: ID " << e.gdevice.which << std::endl;
-                            SDL_CloseGamepad(it->second);
-                            if (gc) gc(false, e.gdevice.which, nullptr);
-                            m_gamepads.erase(it);
+                        {
+                            std::unique_lock<std::mutex> lock(gamepadMutex);
+                            if (auto it = m_gamepads.find(e.gdevice.which); it != m_gamepads.end()) {
+                                std::cout << "Closing gamepad: ID " << e.gdevice.which << std::endl;
+                                SDL_CloseGamepad(it->second);
+                                if (gc) gc(false, e.gdevice.which, nullptr);
+                                m_gamepads.erase(it);
+                            }
                         }
                         break;
                 }
             }
             if (render && running) {
-                std::cout << "Calling render function" << std::endl;
-                render();
+                std::unique_lock<std::mutex> lock(renderMutex);
+                renderReady = true;
+                renderCond.notify_one();
+                renderCond.wait(lock, [this] { return !renderReady || stopRender; });
             }
         }
+
+        // Signal render thread to stop
+        {
+            std::unique_lock<std::mutex> lock(renderMutex);
+            stopRender = true;
+            renderCond.notify_one();
+        }
+
         if (ti) {
             std::cout << "Disabling text input" << std::endl;
             SDL_StopTextInput(m_window.get());
@@ -186,24 +258,29 @@ public:
 
     void cleanup() {
         std::cout << "Starting cleanup" << std::endl;
-        for (auto& [id, gp] : m_gamepads) {
-            std::cout << "Closing gamepad: ID " << id << std::endl;
-            SDL_CloseGamepad(gp);
+        {
+            std::unique_lock<std::mutex> lock(gamepadMutex);
+            for (auto& [id, gp] : m_gamepads) {
+                std::cout << "Closing gamepad: ID " << id << std::endl;
+                SDL_CloseGamepad(gp);
+            }
+            m_gamepads.clear();
         }
-        m_gamepads.clear();
         std::cout << "Cleared gamepads" << std::endl;
         if (m_audioStream) {
             std::cout << "Destroying audio stream" << std::endl;
             SDL_DestroyAudioStream(m_audioStream);
+            m_audioStream = nullptr;
         }
         if (m_audioDevice) {
             std::cout << "Closing audio device: ID " << m_audioDevice << std::endl;
             SDL_CloseAudioDevice(m_audioDevice);
+            m_audioDevice = 0;
         }
         if (m_font) {
             std::cout << "Closing TTF font" << std::endl;
             TTF_CloseFont(m_font);
-            m_font = nullptr; // Set to nullptr after closing
+            m_font = nullptr;
         }
         std::cout << "Quitting TTF" << std::endl;
         TTF_Quit();
@@ -255,16 +332,54 @@ private:
     SDL_AudioDeviceID m_audioDevice = 0;
     SDL_AudioStream* m_audioStream = nullptr;
     std::map<SDL_JoystickID, SDL_Gamepad*> m_gamepads;
+    std::mutex gamepadMutex; // Protects m_gamepads
     TTF_Font* m_font = nullptr;
+
+    // Render thread synchronization
+    std::mutex renderMutex;
+    std::condition_variable renderCond;
+    std::atomic<bool> renderReady{false};
+    std::atomic<bool> stopRender{false};
+    std::thread renderThread;
+
+    // Worker thread pool for gamepad processing
+    std::queue<std::function<void()>> taskQueue;
+    std::mutex taskMutex;
+    std::condition_variable taskCond;
+    std::vector<std::thread> workerThreads;
+    std::atomic<bool> stopWorkers{false};
+
+    void startWorkerThreads(int numThreads) {
+        for (int i = 0; i < numThreads; ++i) {
+            workerThreads.emplace_back([this] {
+                while (true) {
+                    std::function<void()> task;
+                    {
+                        std::unique_lock<std::mutex> lock(taskMutex);
+                        taskCond.wait(lock, [this] { return !taskQueue.empty() || stopWorkers; });
+                        if (stopWorkers && taskQueue.empty()) break;
+                        if (!taskQueue.empty()) {
+                            task = std::move(taskQueue.front());
+                            taskQueue.pop();
+                        }
+                    }
+                    if (task) {
+                        std::cout << "Worker thread processing task" << std::endl;
+                        task();
+                    }
+                }
+            });
+        }
+    }
 
     void initSDL(const char* title, int w, int h, Uint32 flags, bool rt) {
         std::cout << "Initializing SDL subsystems" << std::endl;
-        if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_GAMEPAD | SDL_INIT_EVENTS) == 0) {
+        if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_GAMEPAD | SDL_INIT_EVENTS) < 0) {
             std::cout << "SDL_Init failed: " << SDL_GetError() << std::endl;
             throw std::runtime_error("SDL_Init failed: " + std::string(SDL_GetError()));
         }
         std::cout << "Initializing TTF" << std::endl;
-        if (TTF_Init() == 0) {
+        if (TTF_Init() < 0) {
             std::cout << "TTF_Init failed: " << SDL_GetError() << std::endl;
             throw std::runtime_error("TTF_Init failed: " + std::string(SDL_GetError()));
         }
@@ -274,12 +389,18 @@ private:
             std::cout << "SDL_CreateWindow failed: " << SDL_GetError() << std::endl;
             throw std::runtime_error("SDL_CreateWindow failed: " + std::string(SDL_GetError()));
         }
-        std::cout << "Opening TTF font" << std::endl;
-        m_font = TTF_OpenFont("assets/fonts/sf-plasmatica-open.ttf", 24);
-        if (!m_font) {
-            std::cout << "TTF_OpenFont failed: " << SDL_GetError() << std::endl;
-            throw std::runtime_error("TTF_OpenFont failed: " + std::string(SDL_GetError()));
-        }
+
+        // Load font asynchronously
+        std::future<TTF_Font*> fontFuture = std::async(std::launch::async, [] {
+            std::cout << "Loading TTF font in background thread" << std::endl;
+            TTF_Font* font = TTF_OpenFont("assets/fonts/sf-plasmatica-open.ttf", 24);
+            if (!font) {
+                std::cout << "TTF_OpenFont failed: " << SDL_GetError() << std::endl;
+                throw std::runtime_error("TTF_OpenFont failed: " + std::string(SDL_GetError()));
+            }
+            return font;
+        });
+
         std::cout << "Getting Vulkan instance extensions" << std::endl;
         Uint32 extCount;
         auto exts = SDL_Vulkan_GetInstanceExtensions(&extCount);
@@ -335,6 +456,10 @@ private:
         }
         m_surface = std::unique_ptr<std::remove_pointer_t<VkSurfaceKHR>, VulkanSurfaceDeleter>(surface, VulkanSurfaceDeleter{m_instance.get()});
         std::cout << "Vulkan surface created" << std::endl;
+
+        // Wait for font loading to complete
+        m_font = fontFuture.get();
+        std::cout << "Font loaded successfully" << std::endl;
     }
 
     void initAudio(const AudioConfig& c) {
@@ -370,11 +495,30 @@ private:
             throw std::runtime_error("SDL_BindAudioStream failed: " + std::string(SDL_GetError()));
         }
         if (c.callback) {
-            std::cout << "Setting audio stream callback" << std::endl;
+            std::cout << "Setting audio stream callback with parallel processing" << std::endl;
             SDL_SetAudioStreamPutCallback(m_audioStream, [](void* u, SDL_AudioStream* s, int n, int) {
-                std::cout << "Audio callback triggered, processing " << n << " bytes" << std::endl;
+                std::cout << "Audio callback triggered, processing " << n << " bytes in parallel" << std::endl;
+                auto* callback = static_cast<AudioCallback*>(u);
                 std::vector<Uint8> buf(n);
-                (*static_cast<AudioCallback*>(u))(buf.data(), n);
+
+                // Split the buffer into chunks for parallel processing
+                const int numThreads = std::min(4, static_cast<int>(std::thread::hardware_concurrency()));
+                const int chunkSize = n / numThreads;
+                std::vector<std::future<void>> futures;
+
+                for (int i = 0; i < numThreads; ++i) {
+                    int start = i * chunkSize;
+                    int size = (i == numThreads - 1) ? (n - start) : chunkSize;
+                    futures.push_back(std::async(std::launch::async, [callback, &buf, start, size]() {
+                        callback->operator()(buf.data() + start, size);
+                    }));
+                }
+
+                // Wait for all threads to complete
+                for (auto& f : futures) {
+                    f.wait();
+                }
+
                 SDL_PutAudioStreamData(s, buf.data(), n);
             }, &const_cast<AudioCallback&>(c.callback));
         }
@@ -388,6 +532,7 @@ private:
         std::cout << "Getting connected joysticks" << std::endl;
         auto* joysticks = SDL_GetJoysticks(nullptr);
         if (joysticks) {
+            std::unique_lock<std::mutex> lock(gamepadMutex);
             for (int i = 0; joysticks[i]; ++i) {
                 if (SDL_IsGamepad(joysticks[i])) {
                     std::cout << "Found gamepad: ID " << joysticks[i] << std::endl;
@@ -397,7 +542,6 @@ private:
                     }
                 }
             }
-            std::cout << "Freeing joystick list" << std::endl;
             SDL_free(joysticks);
         }
     }
