@@ -374,12 +374,12 @@ private:
 
     void initSDL(const char* title, int w, int h, Uint32 flags, bool rt) {
         std::cout << "Initializing SDL subsystems" << std::endl;
-        if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_GAMEPAD | SDL_INIT_EVENTS) < 0) {
+        if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_GAMEPAD | SDL_INIT_EVENTS) == 0) {
             std::cout << "SDL_Init failed: " << SDL_GetError() << std::endl;
             throw std::runtime_error("SDL_Init failed: " + std::string(SDL_GetError()));
         }
         std::cout << "Initializing TTF" << std::endl;
-        if (TTF_Init() < 0) {
+        if (TTF_Init() == 0) {
             std::cout << "TTF_Init failed: " << SDL_GetError() << std::endl;
             throw std::runtime_error("TTF_Init failed: " + std::string(SDL_GetError()));
         }
