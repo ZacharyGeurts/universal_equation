@@ -1,7 +1,7 @@
 # Compiler and flags
 CXX = g++
-CXXFLAGS = -O3 -std=c++17 -Wall -Wextra -g -Iinclude
-LDFLAGS = -lSDL3 -lvulkan -lSDL3_ttf
+CXXFLAGS = -O3 -std=c++17 -Wall -Wextra -g -fopenmp -Iinclude
+LDFLAGS = -lSDL3 -lvulkan -lSDL3_ttf -fopenmp
 
 # Shader compiler
 GLSLC = glslc
