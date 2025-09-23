@@ -496,7 +496,7 @@ void UniversalEquation::initializeWithRetry() {
 
 double UniversalEquation::safeExp(double x) const {
     double result = std::exp(std::clamp(x, -709.0, 709.0));
-    if (debug_.load() && std::isnan(result) || std::isinf(result)) {
+    if (debug_.load() && (std::isnan(result) || std::isinf(result))) {
         std::lock_guard<std::mutex> lock(debugMutex_);
         std::cerr << "[ERROR] safeExp produced invalid result for x=" << x << "\n";
     }
