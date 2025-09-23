@@ -1,6 +1,6 @@
 #ifndef SDL3_INIT_HPP
 #define SDL3_INIT_HPP
-
+// SDL3 AMOURANTH RTX engine
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_vulkan.h>
 #include <SDL3/SDL_audio.h>

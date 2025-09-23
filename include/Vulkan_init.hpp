@@ -1,6 +1,6 @@
 #ifndef VULKAN_INIT_HPP
 #define VULKAN_INIT_HPP
-
+// Vulkan AMOURANTH RTX
 #include <vulkan/vulkan.h>
 #include <SDL3/SDL_vulkan.h>
 #include <vector>
@@ -248,7 +248,7 @@ private:
 
     static void createGraphicsPipeline(VkDevice device, VkRenderPass renderPass, VkPipeline& pipeline, VkPipelineLayout& pipelineLayout, int width, int height) {
         VkShaderModule vert = createShaderModule(device, "assets/shaders/vertex.spv");
-        VkShaderModule frag = createShaderModule(device, "assets/shaders/fragment.spv");
+        VkShaderModule frag = createShaderModule(device, "assets/shaders/fragment.spv");		
         VkPipelineShaderStageCreateInfo stages[] = {
             { VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, nullptr, 0, VK_SHADER_STAGE_VERTEX_BIT, vert, "main", nullptr },
             { VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, nullptr, 0, VK_SHADER_STAGE_FRAGMENT_BIT, frag, "main", nullptr }
@@ -412,145 +412,6 @@ private:
         copyBuffer(device, commandPool, graphicsQueue, staging, indexBuffer, size);
         vkDestroyBuffer(device, staging, nullptr);
         vkFreeMemory(device, stagingMem, nullptr);
-    }
-
-    static void createRayTracingPipeline(VkDevice device, VkPipeline& pipeline, VkPipelineLayout& rtPipelineLayout) {
-        VkShaderModule raygenShader = createShaderModule(device, "assets/shaders/raygen.rgen.spv");
-        VkShaderModule missShader = createShaderModule(device, "assets/shaders/miss.rmiss.spv");
-        VkShaderModule closestHitShader = createShaderModule(device, "assets/shaders/closest_hit.rchit.spv");
-        VkPipelineShaderStageCreateInfo stages[] = {
-            { VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, nullptr, 0, VK_SHADER_STAGE_RAYGEN_BIT_KHR, raygenShader, "main", nullptr },
-            { VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, nullptr, 0, VK_SHADER_STAGE_MISS_BIT_KHR, missShader, "main", nullptr },
-            { VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, nullptr, 0, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, closestHitShader, "main", nullptr }
-        };
-        VkRayTracingShaderGroupCreateInfoKHR groups[] = {
-            { VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR, nullptr, VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_KHR, 0, VK_SHADER_UNUSED_KHR, VK_SHADER_UNUSED_KHR, VK_SHADER_UNUSED_KHR, nullptr },
-            { VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR, nullptr, VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_KHR, 1, VK_SHADER_UNUSED_KHR, VK_SHADER_UNUSED_KHR, VK_SHADER_UNUSED_KHR, nullptr },
-            { VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR, nullptr, VK_RAY_TRACING_SHADER_GROUP_TYPE_TRIANGLES_HIT_GROUP_KHR, VK_SHADER_UNUSED_KHR, 2, VK_SHADER_UNUSED_KHR, VK_SHADER_UNUSED_KHR, nullptr }
-        };
-        VkPipelineLayoutCreateInfo layoutInfo = {
-            VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO, nullptr, 0, 0, nullptr, 0, nullptr
-        };
-        if (vkCreatePipelineLayout(device, &layoutInfo, nullptr, &rtPipelineLayout) != VK_SUCCESS) throw std::runtime_error("Failed to create ray tracing pipeline layout");
-        VkRayTracingPipelineInterfaceCreateInfoKHR pipelineInterfaceInfo = {
-            VK_STRUCTURE_TYPE_RAY_TRACING_PIPELINE_INTERFACE_CREATE_INFO_KHR, nullptr, 256, 32
-        };
-        VkRayTracingPipelineCreateInfoKHR createInfo = {
-            VK_STRUCTURE_TYPE_RAY_TRACING_PIPELINE_CREATE_INFO_KHR, nullptr, 0, 3, stages, 3, groups, 2, nullptr, &pipelineInterfaceInfo, nullptr, rtPipelineLayout, VK_NULL_HANDLE, -1
-        };
-        if (vkCreateRayTracingPipelinesKHR(device, VK_NULL_HANDLE, VK_NULL_HANDLE, 1, &createInfo, nullptr, &pipeline) != VK_SUCCESS) throw std::runtime_error("Failed to create ray tracing pipeline");
-        vkDestroyShaderModule(device, raygenShader, nullptr);
-        vkDestroyShaderModule(device, missShader, nullptr);
-        vkDestroyShaderModule(device, closestHitShader, nullptr);
-    }
-
-    static void createTopLevelAS(VkDevice device, VkPhysicalDevice physicalDevice, VkCommandPool commandPool, VkQueue queue,
-                                 const std::vector<VkAccelerationStructureInstanceKHR>& instances,
-                                 VkAccelerationStructureKHR& as, VkBuffer& asBuffer, VkDeviceMemory& asMemory) {
-        if (instances.empty()) throw std::runtime_error("Instances array is empty");
-        VkDeviceSize instanceBufferSize = instances.size() * sizeof(VkAccelerationStructureInstanceKHR);
-        VkBuffer instanceBuffer;
-        VkDeviceMemory instanceMemory;
-        createBuffer(device, physicalDevice, instanceBufferSize, VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, instanceBuffer, instanceMemory);
-        void* mappedData;
-        vkMapMemory(device, instanceMemory, 0, instanceBufferSize, 0, &mappedData);
-        memcpy(mappedData, instances.data(), instanceBufferSize);
-        vkUnmapMemory(device, instanceMemory);
-        VkBufferDeviceAddressInfo instanceBufferAddressInfo = { VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO, nullptr, instanceBuffer };
-        VkDeviceAddress instanceBufferAddress = vkGetBufferDeviceAddress(device, &instanceBufferAddressInfo);
-        VkAccelerationStructureGeometryKHR geometry = {
-            VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR, nullptr, VK_GEOMETRY_TYPE_INSTANCES_KHR, {}, VK_GEOMETRY_OPAQUE_BIT_KHR
-        };
-        geometry.geometry.instances = { VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_INSTANCES_DATA_KHR, nullptr, VK_FALSE, instanceBufferAddress };
-        VkAccelerationStructureBuildGeometryInfoKHR buildInfo = {
-            VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR, nullptr, VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR,
-            VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_UPDATE_BIT_KHR, VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR, VK_NULL_HANDLE, VK_NULL_HANDLE, 1, &geometry, nullptr, {}
-        };
-        uint32_t instanceCount = static_cast<uint32_t>(instances.size());
-        VkAccelerationStructureBuildSizesInfoKHR sizeInfo = {
-            VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR, nullptr, 0, 0, 0
-        };
-        vkGetAccelerationStructureBuildSizesKHR(device, VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR, &buildInfo, &instanceCount, &sizeInfo);
-        createBuffer(device, physicalDevice, sizeInfo.accelerationStructureSize, VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, asBuffer, asMemory);
-        VkAccelerationStructureCreateInfoKHR createInfo = {
-            VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR, nullptr, 0, asBuffer, 0, sizeInfo.accelerationStructureSize, VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR, 0
-        };
-        if (vkCreateAccelerationStructureKHR(device, &createInfo, nullptr, &as) != VK_SUCCESS) throw std::runtime_error("Failed to create top-level acceleration structure");
-        VkBuffer scratchBuffer;
-        VkDeviceMemory scratchMemory;
-        createBuffer(device, physicalDevice, sizeInfo.buildScratchSize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, scratchBuffer, scratchMemory);
-        VkBufferDeviceAddressInfo scratchAddressInfo = { VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO, nullptr, scratchBuffer };
-        buildInfo.dstAccelerationStructure = as;
-        buildInfo.scratchData.deviceAddress = vkGetBufferDeviceAddress(device, &scratchAddressInfo);
-        VkCommandBufferAllocateInfo cmdAllocInfo = {
-            VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO, nullptr, commandPool, VK_COMMAND_BUFFER_LEVEL_PRIMARY, 1
-        };
-        VkCommandBuffer cmdBuffer;
-        if (vkAllocateCommandBuffers(device, &cmdAllocInfo, &cmdBuffer) != VK_SUCCESS) throw std::runtime_error("Failed to allocate command buffer for TLAS build");
-        VkCommandBufferBeginInfo cmdBeginInfo = {
-            VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO, nullptr, VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT, nullptr
-        };
-        if (vkBeginCommandBuffer(cmdBuffer, &cmdBeginInfo) != VK_SUCCESS) throw std::runtime_error("Failed to begin command buffer for TLAS build");
-        VkAccelerationStructureBuildRangeInfoKHR buildRange = { instanceCount, 0, 0, 0 };
-        VkAccelerationStructureBuildRangeInfoKHR* buildRangePtr = &buildRange;
-        vkCmdBuildAccelerationStructuresKHR(cmdBuffer, 1, &buildInfo, &buildRangePtr);
-        if (vkEndCommandBuffer(cmdBuffer) != VK_SUCCESS) throw std::runtime_error("Failed to end command buffer for TLAS build");
-        VkSubmitInfo submitInfo = { VK_STRUCTURE_TYPE_SUBMIT_INFO, nullptr, 0, nullptr, nullptr, 1, &cmdBuffer, 0, nullptr };
-        if (vkQueueSubmit(queue, 1, &submitInfo, VK_NULL_HANDLE) != VK_SUCCESS) throw std::runtime_error("Failed to submit command buffer for TLAS build");
-        vkQueueWaitIdle(queue);
-        vkFreeCommandBuffers(device, commandPool, 1, &cmdBuffer);
-        vkDestroyBuffer(device, instanceBuffer, nullptr);
-        vkFreeMemory(device, instanceMemory, nullptr);
-        vkDestroyBuffer(device, scratchBuffer, nullptr);
-        vkFreeMemory(device, scratchMemory, nullptr);
-    }
-
-    static void createBottomLevelAS(VkDevice device, VkPhysicalDevice physicalDevice, VkCommandPool commandPool, VkQueue queue,
-                                    const std::vector<VkAccelerationStructureGeometryKHR>& geometries,
-                                    const std::vector<VkAccelerationStructureBuildRangeInfoKHR>& buildRanges,
-                                    VkAccelerationStructureKHR& as, VkBuffer& asBuffer, VkDeviceMemory& asMemory) {
-        if (geometries.empty() || buildRanges.empty()) throw std::runtime_error("Geometries or build ranges are empty");
-        VkAccelerationStructureBuildGeometryInfoKHR buildInfo = {
-            VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR, nullptr, VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR,
-            VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_UPDATE_BIT_KHR, VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR, VK_NULL_HANDLE, VK_NULL_HANDLE,
-            (uint32_t)geometries.size(), geometries.data(), nullptr, {}
-        };
-        std::vector<uint32_t> maxPrimitiveCounts(buildRanges.size());
-        for (size_t i = 0; i < buildRanges.size(); ++i) maxPrimitiveCounts[i] = buildRanges[i].primitiveCount;
-        VkAccelerationStructureBuildSizesInfoKHR sizeInfo = {
-            VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR, nullptr, 0, 0, 0
-        };
-        vkGetAccelerationStructureBuildSizesKHR(device, VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR, &buildInfo, maxPrimitiveCounts.data(), &sizeInfo);
-        createBuffer(device, physicalDevice, sizeInfo.accelerationStructureSize, VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, asBuffer, asMemory);
-        VkAccelerationStructureCreateInfoKHR createInfo = {
-            VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR, nullptr, 0, asBuffer, 0, sizeInfo.accelerationStructureSize, VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR, 0
-        };
-        if (vkCreateAccelerationStructureKHR(device, &createInfo, nullptr, &as) != VK_SUCCESS) throw std::runtime_error("Failed to create bottom-level acceleration structure");
-        VkBuffer scratchBuffer;
-        VkDeviceMemory scratchMemory;
-        createBuffer(device, physicalDevice, sizeInfo.buildScratchSize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, scratchBuffer, scratchMemory);
-        VkBufferDeviceAddressInfo scratchAddressInfo = { VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO, nullptr, scratchBuffer };
-        buildInfo.dstAccelerationStructure = as;
-        buildInfo.scratchData.deviceAddress = vkGetBufferDeviceAddress(device, &scratchAddressInfo);
-        VkCommandBufferAllocateInfo cmdAllocInfo = {
-            VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO, nullptr, commandPool, VK_COMMAND_BUFFER_LEVEL_PRIMARY, 1
-        };
-        VkCommandBuffer cmdBuffer;
-        if (vkAllocateCommandBuffers(device, &cmdAllocInfo, &cmdBuffer) != VK_SUCCESS) throw std::runtime_error("Failed to allocate command buffer for AS build");
-        VkCommandBufferBeginInfo cmdBeginInfo = {
-            VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO, nullptr, VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT, nullptr
-        };
-        if (vkBeginCommandBuffer(cmdBuffer, &cmdBeginInfo) != VK_SUCCESS) throw std::runtime_error("Failed to begin command buffer for AS build");
-        std::vector<VkAccelerationStructureBuildRangeInfoKHR*> rangeInfoPtrs;
-        for (const auto& range : buildRanges) rangeInfoPtrs.push_back(const_cast<VkAccelerationStructureBuildRangeInfoKHR*>(&range));
-        vkCmdBuildAccelerationStructuresKHR(cmdBuffer, 1, &buildInfo, rangeInfoPtrs.data());
-        if (vkEndCommandBuffer(cmdBuffer) != VK_SUCCESS) throw std::runtime_error("Failed to end command buffer for AS build");
-        VkSubmitInfo submitInfo = { VK_STRUCTURE_TYPE_SUBMIT_INFO, nullptr, 0, nullptr, nullptr, 1, &cmdBuffer, 0, nullptr };
-        if (vkQueueSubmit(queue, 1, &submitInfo, VK_NULL_HANDLE) != VK_SUCCESS) throw std::runtime_error("Failed to submit command buffer for AS build");
-        vkQueueWaitIdle(queue);
-        vkFreeCommandBuffers(device, commandPool, 1, &cmdBuffer);
-        vkDestroyBuffer(device, scratchBuffer, nullptr);
-        vkFreeMemory(device, scratchMemory, nullptr);
     }
 };
 

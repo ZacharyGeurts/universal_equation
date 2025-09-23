@@ -1,9 +1,8 @@
-// src/main.cpp
 #include "main.hpp"
 #include <iostream>
 #include <ctime>
 #include <stdexcept>
-
+// AMOURANTH RTX engine
 // Change resolution here.
 int main() {
     try {
@@ -14,9 +13,9 @@ int main() {
             throw std::runtime_error("Resolution must be at least 320x200");
         }
 
-        // Updated constructor call to match main.hpp (removed fontPath and fontSize)
-        DimensionalNavigator navigator("Dimensional Navigator", width, height);
-        navigator.run();
+        // Create Application instance and run it
+        Application app("Dimensional Navigator", width, height);
+        app.run();
     } catch (const std::exception& e) {
         std::time_t now = std::time(nullptr);
         char timeStr[64];

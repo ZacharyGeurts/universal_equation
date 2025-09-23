@@ -3,7 +3,15 @@
 
 #include <vector>
 #include <string>
-#include <cstdint> // Added for uint64_t
+#include <cstdint>
+#include <cmath>
+#include <limits>
+#include <algorithm>
+#include <stdexcept>
+#include <iostream>
+
+// Forward declaration to avoid circular dependency
+class DimensionalNavigator;
 
 class UniversalEquation {
 public:
@@ -13,7 +21,12 @@ public:
         double potential;     // Potential energy component
         double darkMatter;    // Dark matter contribution
         double darkEnergy;    // Dark energy contribution
-        std::string toString() const;
+        std::string toString() const {
+            return "Observable: " + std::to_string(observable) +
+                   ", Potential: " + std::to_string(potential) +
+                   ", Dark Matter: " + std::to_string(darkMatter) +
+                   ", Dark Energy: " + std::to_string(darkEnergy);
+        }
     };
 
     // Structure to represent interactions between vertices
@@ -21,18 +34,18 @@ public:
         int vertexIndex;      // Index of the vertex
         double distance;      // Distance to reference vertex
         double strength;      // Interaction strength
-        DimensionInteraction(int idx, double dist, double str) 
+        DimensionInteraction(int idx, double dist, double str)
             : vertexIndex(idx), distance(dist), strength(str) {}
     };
 
-    // Constructor
+    // Constructor with default parameters
     UniversalEquation(int maxDimensions = 9, int mode = 1, double influence = 0.05,
                      double weak = 0.01, double collapse = 0.1, double twoD = 0.0,
                      double threeDInfluence = 0.1, double oneDPermeation = 0.1,
                      double darkMatterStrength = 0.27, double darkEnergyStrength = 0.68,
                      double alpha = 2.0, double beta = 0.2, bool debug = false);
 
-    // Setters
+    // Setters and Getters
     void setInfluence(double value);
     double getInfluence() const;
     void setWeak(double value);
@@ -70,6 +83,21 @@ public:
     // Compute energy components
     EnergyResult compute() const;
 
+    // Initialize calculator with navigator
+    void initializeCalculator(DimensionalNavigator* navigator);
+
+    // Update cache and return DimensionData
+    struct DimensionData {
+        int dimension;
+        double observable, potential, darkMatter, darkEnergy;
+    };
+    DimensionData updateCache();
+
+    // Public methods for AMOURANTH access
+    double computeInteraction(int vertexIndex, double distance) const;
+    double computePermeation(int vertexIndex) const;
+    double computeDarkEnergy(double distance) const;
+
 private:
     int maxDimensions_;          // Maximum number of dimensions (1 to 20)
     int currentDimension_;       // Current dimension for computation
@@ -92,11 +120,9 @@ private:
     std::vector<std::vector<double>> nCubeVertices_;        // Vertex coordinates for n-cube
     mutable bool needsUpdate_;                              // Dirty flag for interactions
     std::vector<double> cachedCos_;                         // Cached cosine values
+    DimensionalNavigator* navigator_;                        // Pointer to DimensionalNavigator
 
     // Private methods
-    double computeInteraction(int vertexIndex, double distance) const;
-    double computePermeation(int vertexIndex) const;
-    double computeDarkEnergy(double distance) const;
     double computeCollapse() const;
     void initializeNCube();
     void updateInteractions() const;

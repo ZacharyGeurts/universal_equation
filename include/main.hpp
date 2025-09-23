@@ -1,43 +1,54 @@
 #ifndef MAIN_HPP
 #define MAIN_HPP
-
+// AMOURANTH RTX engine
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
-#include <vector>
-#include <iostream>
-#include <map>
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_vulkan.h>
 #include <vulkan/vulkan.h>
+#include <stdexcept>
+#include <iostream>
 #include "SDL3_init.hpp"
 #include "Vulkan_init.hpp"
-#include "universal_equation.hpp"
-#include "types.hpp"
-#include "modes.hpp"
+#include "types_ue.hpp"
 
-class DimensionalNavigator {
+// Application class managing the Vulkan rendering pipeline and SDL3 window for the Dimensional Navigator.
+class Application {
 public:
-    DimensionalNavigator(const char* title = "Dimensional Navigator",
-                        int width = 1280, int height = 720)
-        : vulkanDevice_(VK_NULL_HANDLE),
+    // Constructor: Initializes SDL3, Vulkan, and AMOURANTH with a default window size and title.
+    // Parameters:
+    // - title: Window title (default: "Dimensional Navigator")
+    // - width: Initial window width (default: 1280)
+    // - height: Initial window height (default: 720)
+    Application(const char* title = "Dimensional Navigator", int width = 1280, int height = 720)
+        : simulator_(nullptr),
+          sdlInitializer_(),
+          window_(nullptr),
+          vulkanInstance_(VK_NULL_HANDLE),
+          vulkanDevice_(VK_NULL_HANDLE),
           physicalDevice_(VK_NULL_HANDLE),
+          surface_(VK_NULL_HANDLE),
           swapchain_(VK_NULL_HANDLE),
-          mode_(1),
-          wavePhase_(0.0f),
-          waveSpeed_(0.1f),
           width_(width),
           height_(height),
-          zoomLevel_(1.0f),
-          isPaused_(false) {
+          amouranth_(nullptr) {
         try {
+            // Initialize SDL3 and create window, Vulkan instance, and surface
             sdlInitializer_.initialize(title, width, height);
             window_ = sdlInitializer_.getWindow();
             vulkanInstance_ = sdlInitializer_.getVkInstance();
             surface_ = sdlInitializer_.getVkSurface();
-            initializeSphereGeometry();
-            initializeQuadGeometry();
+
+            // Create DimensionalNavigator and AMOURANTH
+            simulator_ = new DimensionalNavigator("Dimensional Navigator", width, height);
+            amouranth_ = new AMOURANTH(simulator_);
+
+            // Initialize Vulkan resources (swapchain, pipelines, buffers, etc.)
             initializeVulkan();
-            initializeCalculator();
+
+            // Set initial mode to 9 (for mode9.cpp) and update cache to prevent empty cache warning
+            amouranth_->setMode(9);
+            amouranth_->updateCache();
         } catch (const std::exception& e) {
             std::cerr << "Initialization failed: " << e.what() << "\n";
             cleanup();
@@ -45,61 +56,16 @@ public:
         }
     }
 
-    SDL3Initializer sdlInitializer_;
-    SDL_Window* window_;
-    VkInstance vulkanInstance_;
-    VkDevice vulkanDevice_;
-    VkPhysicalDevice physicalDevice_;
-    glm::vec3 userCamPos_ = glm::vec3(0.0f, 0.0f, 10.0f);
-    bool isUserCamActive_ = false;
-    VkSurfaceKHR surface_;
-    VkBuffer quadVertexBuffer_;
-    VkDeviceMemory quadVertexBufferMemory_;
-    VkBuffer quadIndexBuffer_;
-    VkDeviceMemory quadIndexBufferMemory_;
-    std::vector<VkCommandBuffer> commandBuffers_;
-    VkSwapchainKHR swapchain_;
-    std::vector<VkImage> swapchainImages_;
-    std::vector<VkImageView> swapchainImageViews_;
-    std::vector<VkFramebuffer> swapchainFramebuffers_;
-    VkQueue graphicsQueue_;
-    VkQueue presentQueue_;
-    VkPipeline pipeline_;
-    VkPipelineLayout pipelineLayout_;
-    VkRenderPass renderPass_;
-    VkCommandPool commandPool_;
-    VkSemaphore imageAvailableSemaphore_;
-    VkSemaphore renderFinishedSemaphore_;
-    VkFence inFlightFence_;
-    VkBuffer vertexBuffer_;
-    VkDeviceMemory vertexBufferMemory_;
-    VkBuffer indexBuffer_;
-    VkDeviceMemory indexBufferMemory_;
-    UniversalEquation ue_;
-    std::vector<DimensionData> cache_;
-    std::vector<glm::vec3> sphereVertices_;
-    std::vector<uint32_t> sphereIndices_;
-    std::vector<glm::vec3> quadVertices_;
-    std::vector<uint32_t> quadIndices_;
-    uint32_t graphicsFamily_ = UINT32_MAX;
-    uint32_t presentFamily_ = UINT32_MAX;
-    static constexpr int kMaxRenderedDimensions = 9;
-    int mode_;
-    float wavePhase_;
-    const float waveSpeed_;
-    int width_;
-    int height_;
-    float zoomLevel_;
-    bool isPaused_;
-
-    ~DimensionalNavigator() {
+    // Destructor: Cleans up all Vulkan and SDL3 resources
+    ~Application() {
         cleanup();
     }
 
+    // Main loop: Runs the SDL3 event loop and renders frames
     void run() {
         sdlInitializer_.eventLoop(
-            [this]() { render(); },
-            [this](int w, int h) {
+            [this]() { render(); }, // Render callback
+            [this](int w, int h) {  // Resize callback
                 width_ = std::max(1280, w);
                 height_ = std::max(720, h);
                 try {
@@ -109,69 +75,67 @@ public:
                     throw;
                 }
             },
-            true,
-            [this](const SDL_KeyboardEvent& key) { handleInput(key); }
+            true, // Enable resize handling
+            [this](const SDL_KeyboardEvent& key) { amouranth_->handleInput(key); } // Keyboard input callback
         );
     }
 
-    void adjustInfluence(double delta) {
-        ue_.setInfluence(std::max(0.0, ue_.getInfluence() + delta));
-        updateCache();
-    }
+private:
+    DimensionalNavigator* simulator_; // Manages dimension state and cache
+    SDL3Initializer sdlInitializer_; // Handles SDL3 initialization
+    SDL_Window* window_;             // SDL3 window
+    VkInstance vulkanInstance_;      // Vulkan instance
+    VkDevice vulkanDevice_;          // Vulkan logical device
+    VkPhysicalDevice physicalDevice_; // Vulkan physical device
+    VkSurfaceKHR surface_;           // Vulkan surface for rendering
+    VkBuffer quadVertexBuffer_;      // Vertex buffer for quad geometry (not used in mode9.cpp)
+    VkDeviceMemory quadVertexBufferMemory_; // Memory for quad vertex buffer
+    VkBuffer quadIndexBuffer_;       // Index buffer for quad geometry
+    VkDeviceMemory quadIndexBufferMemory_; // Memory for quad index buffer
+    std::vector<VkCommandBuffer> commandBuffers_; // Command buffers for rendering
+    VkSwapchainKHR swapchain_;       // Vulkan swapchain
+    std::vector<VkImage> swapchainImages_; // Swapchain images
+    std::vector<VkImageView> swapchainImageViews_; // Image views for swapchain
+    std::vector<VkFramebuffer> swapchainFramebuffers_; // Framebuffers for rendering
+    VkQueue graphicsQueue_;          // Graphics queue for rendering
+    VkQueue presentQueue_;           // Present queue for displaying images
+    VkPipeline pipeline_;            // Graphics pipeline for sphere rendering
+    VkPipelineLayout pipelineLayout_; // Pipeline layout for push constants
+    VkRenderPass renderPass_;        // Render pass for framebuffers
+    VkCommandPool commandPool_;      // Command pool for command buffers
+    VkSemaphore imageAvailableSemaphore_; // Semaphore for swapchain image acquisition
+    VkSemaphore renderFinishedSemaphore_; // Semaphore for rendering completion
+    VkFence inFlightFence_;          // Fence for synchronizing frame rendering
+    VkBuffer vertexBuffer_;          // Vertex buffer for sphere geometry
+    VkDeviceMemory vertexBufferMemory_; // Memory for sphere vertex buffer
+    VkBuffer indexBuffer_;           // Index buffer for sphere geometry
+    VkDeviceMemory indexBufferMemory_; // Memory for sphere index buffer
+    uint32_t graphicsFamily_ = UINT32_MAX; // Graphics queue family index
+    uint32_t presentFamily_ = UINT32_MAX; // Present queue family index
+    int width_;                      // Window width
+    int height_;                     // Window height
+    AMOURANTH* amouranth_;          // AMOURANTH instance for rendering logic
 
-    void adjustDarkMatter(double delta) {
-        ue_.setDarkMatterStrength(std::max(0.0, ue_.getDarkMatterStrength() + delta));
-        updateCache();
-    }
-
-    void adjustDarkEnergy(double delta) {
-        ue_.setDarkEnergyStrength(std::max(0.0, ue_.getDarkEnergyStrength() + delta));
-        updateCache();
-    }
-
-    void updateZoom(bool zoomIn) {
-        if (zoomIn) {
-            zoomLevel_ = std::max(0.01f, zoomLevel_ * 0.9f);
-        } else {
-            zoomLevel_ = std::min(20.0f, zoomLevel_ * 1.1f);
-        }
-    }
-
-	void handleInput(const SDL_KeyboardEvent& key) {
-    	if (key.type == SDL_EVENT_KEY_DOWN) {
-        	switch (key.key) {
-            	case SDLK_F:
-                	SDL_SetWindowFullscreen(window_, SDL_GetWindowFlags(window_) & SDL_WINDOW_FULLSCREEN ? 0 : SDL_WINDOW_FULLSCREEN);
-                	break;
-            	case SDLK_UP: adjustInfluence(0.1); break;
-            	case SDLK_DOWN: adjustInfluence(-0.1); break;
-            	case SDLK_LEFT: adjustDarkMatter(-0.05); break;
-            	case SDLK_RIGHT: adjustDarkMatter(0.05); break;
-            	case SDLK_PAGEUP: adjustDarkEnergy(0.05); break;
-            	case SDLK_PAGEDOWN: adjustDarkEnergy(-0.05); break;
-            	case SDLK_1: case SDLK_2: case SDLK_3: case SDLK_4: case SDLK_5: case SDLK_6: case SDLK_7: case SDLK_8: case SDLK_9:
-                	mode_ = key.key - SDLK_0; // Sets mode_ to 1-9 based on key pressed
-                	break;
-            	case SDLK_A: updateZoom(true); break;
-            	case SDLK_Z: updateZoom(false); break;
-            	case SDLK_P: isPaused_ = !isPaused_; break;
-        	}
-    	}
-	}
-
+    // Initializes Vulkan resources, including swapchain, pipelines, and buffers
     void initializeVulkan() {
-        VulkanInitializer::initializeVulkan(vulkanInstance_, physicalDevice_, vulkanDevice_, surface_,
-                                            graphicsQueue_, presentQueue_, graphicsFamily_, presentFamily_,
-                                            swapchain_, swapchainImages_, swapchainImageViews_, renderPass_,
-                                            pipeline_, pipelineLayout_, swapchainFramebuffers_, commandPool_,
-                                            commandBuffers_, imageAvailableSemaphore_, renderFinishedSemaphore_,
-                                            inFlightFence_, vertexBuffer_, vertexBufferMemory_, indexBuffer_,
-                                            indexBufferMemory_, sphereVertices_, sphereIndices_, width_, height_);
-        VulkanInitializer::initializeQuadBuffers(vulkanDevice_, physicalDevice_, commandPool_, graphicsQueue_,
-                                                quadVertexBuffer_, quadVertexBufferMemory_, quadIndexBuffer_,
-                                                quadIndexBufferMemory_, quadVertices_, quadIndices_);
+        VulkanInitializer::initializeVulkan(
+            vulkanInstance_, physicalDevice_, vulkanDevice_, surface_,
+            graphicsQueue_, presentQueue_, graphicsFamily_, presentFamily_,
+            swapchain_, swapchainImages_, swapchainImageViews_, renderPass_,
+            pipeline_, pipelineLayout_, swapchainFramebuffers_, commandPool_,
+            commandBuffers_, imageAvailableSemaphore_, renderFinishedSemaphore_,
+            inFlightFence_, vertexBuffer_, vertexBufferMemory_, indexBuffer_,
+            indexBufferMemory_, amouranth_->getSphereVertices(), amouranth_->getSphereIndices(),
+            width_, height_);
+
+        // Initialize quad buffers (not used in mode9.cpp but prepared for other modes)
+        VulkanInitializer::initializeQuadBuffers(
+            vulkanDevice_, physicalDevice_, commandPool_, graphicsQueue_,
+            quadVertexBuffer_, quadVertexBufferMemory_, quadIndexBuffer_,
+            quadIndexBufferMemory_, amouranth_->getQuadVertices(), amouranth_->getQuadIndices());
     }
 
+    // Recreates the swapchain and related resources when the window is resized
     void recreateSwapchain() {
         if (vulkanDevice_ != VK_NULL_HANDLE) {
             VkResult result = vkDeviceWaitIdle(vulkanDevice_);
@@ -180,12 +144,15 @@ public:
             }
         }
 
-        VulkanInitializer::cleanupVulkan(vulkanInstance_, vulkanDevice_, surface_, swapchain_, swapchainImageViews_,
-                                        swapchainFramebuffers_, pipeline_, pipelineLayout_, renderPass_,
-                                        commandPool_, commandBuffers_, imageAvailableSemaphore_, renderFinishedSemaphore_,
-                                        inFlightFence_, vertexBuffer_, vertexBufferMemory_, indexBuffer_, indexBufferMemory_,
-                                        quadVertexBuffer_, quadVertexBufferMemory_, quadIndexBuffer_, quadIndexBufferMemory_);
+        // Clean up existing Vulkan resources
+        VulkanInitializer::cleanupVulkan(
+            vulkanInstance_, vulkanDevice_, surface_, swapchain_, swapchainImageViews_,
+            swapchainFramebuffers_, pipeline_, pipelineLayout_, renderPass_,
+            commandPool_, commandBuffers_, imageAvailableSemaphore_, renderFinishedSemaphore_,
+            inFlightFence_, vertexBuffer_, vertexBufferMemory_, indexBuffer_, indexBufferMemory_,
+            quadVertexBuffer_, quadVertexBufferMemory_, quadIndexBuffer_, quadIndexBufferMemory_);
 
+        // Reset Vulkan resources
         swapchain_ = VK_NULL_HANDLE;
         swapchainImages_.clear();
         swapchainImageViews_.clear();
@@ -208,6 +175,7 @@ public:
         quadIndexBufferMemory_ = VK_NULL_HANDLE;
         vulkanDevice_ = VK_NULL_HANDLE;
 
+        // Update window dimensions
         int newWidth, newHeight;
         SDL_GetWindowSize(window_, &newWidth, &newHeight);
         width_ = std::max(1280, newWidth);
@@ -216,9 +184,11 @@ public:
             SDL_SetWindowSize(window_, width_, height_);
         }
 
+        // Reinitialize Vulkan resources
         initializeVulkan();
     }
 
+    // Cleans up all Vulkan and SDL3 resources
     void cleanup() {
         if (vulkanDevice_ != VK_NULL_HANDLE) {
             VkResult result = vkDeviceWaitIdle(vulkanDevice_);
@@ -227,95 +197,36 @@ public:
             }
         }
 
-        VulkanInitializer::cleanupVulkan(vulkanInstance_, vulkanDevice_, surface_, swapchain_, swapchainImageViews_,
-                                        swapchainFramebuffers_, pipeline_, pipelineLayout_, renderPass_,
-                                        commandPool_, commandBuffers_, imageAvailableSemaphore_, renderFinishedSemaphore_,
-                                        inFlightFence_, vertexBuffer_, vertexBufferMemory_, indexBuffer_, indexBufferMemory_,
-                                        quadVertexBuffer_, quadVertexBufferMemory_, quadIndexBuffer_, quadIndexBufferMemory_);
+        // Clean up Vulkan resources
+        VulkanInitializer::cleanupVulkan(
+            vulkanInstance_, vulkanDevice_, surface_, swapchain_, swapchainImageViews_,
+            swapchainFramebuffers_, pipeline_, pipelineLayout_, renderPass_,
+            commandPool_, commandBuffers_, imageAvailableSemaphore_, renderFinishedSemaphore_,
+            inFlightFence_, vertexBuffer_, vertexBufferMemory_, indexBuffer_, indexBufferMemory_,
+            quadVertexBuffer_, quadVertexBufferMemory_, quadIndexBuffer_, quadIndexBufferMemory_);
 
+        // Clean up SDL3 resources
         sdlInitializer_.cleanup();
+        delete amouranth_;
+        delete simulator_;
         window_ = nullptr;
         vulkanInstance_ = VK_NULL_HANDLE;
         surface_ = VK_NULL_HANDLE;
     }
 
-    void initializeSphereGeometry() {
-        const int stacks = 16;
-        const int slices = 16;
-        sphereVertices_.clear();
-        sphereIndices_.clear();
-
-        for (int i = 0; i <= stacks; ++i) {
-            float phi = i * M_PI / stacks;
-            float sinPhi = sinf(phi);
-            float cosPhi = cosf(phi);
-            for (int j = 0; j <= slices; ++j) {
-                float theta = j * 2.0f * M_PI / slices;
-                float sinTheta = sinf(theta);
-                float cosTheta = cosf(theta);
-                sphereVertices_.push_back(glm::vec3(sinPhi * cosTheta, cosPhi, sinPhi * sinTheta));
-            }
-        }
-
-        for (int i = 0; i < stacks; ++i) {
-            for (int j = 0; j < slices; ++j) {
-                uint32_t v0 = i * (slices + 1) + j;
-                uint32_t v1 = v0 + 1;
-                uint32_t v2 = (i + 1) * (slices + 1) + j;
-                uint32_t v3 = v2 + 1;
-                sphereIndices_.insert(sphereIndices_.end(), {v0, v1, v2, v2, v1, v3});
-            }
-        }
-    }
-
-    void initializeQuadGeometry() {
-        quadVertices_ = {
-            {-1.0f, -1.0f, 0.0f}, {1.0f, -1.0f, 0.0f}, {1.0f, 1.0f, 0.0f}, {-1.0f, 1.0f, 0.0f}
-        };
-        quadIndices_ = {0, 1, 2, 2, 3, 0};
-    }
-
-    void initializeCalculator() {
-        ue_ = UniversalEquation(9, 1, 1.0, 0.5, 0.5, 0.5, 1.5, 2.0, 0.27, 0.68, 5.0, 0.2, true);
-        updateCache();
-    }
-
-    void updateCache() {
-        cache_.clear();
-        cache_.reserve(kMaxRenderedDimensions);
-        for (int d = 1; d <= kMaxRenderedDimensions; ++d) {
-            ue_.setCurrentDimension(d);
-            auto result = ue_.compute();
-            cache_.push_back({d, result.observable, result.potential, result.darkMatter, result.darkEnergy});
-        }
-    }
-
-    double computeInteraction(int dimension, double distance) const {
-        double denom = std::max(1e-15, std::pow(static_cast<double>(ue_.getCurrentDimension()), dimension));
-        double modifier = (ue_.getCurrentDimension() > 3 && dimension > 3) ? ue_.getWeak() : 1.0;
-        if (ue_.getCurrentDimension() == 3 && (dimension == 2 || dimension == 4)) {
-            modifier *= ue_.getThreeDInfluence();
-        }
-        return ue_.getInfluence() * (distance / denom) * modifier;
-    }
-
-    double computePermeation(int dimension) const {
-        if (dimension == 1 || ue_.getCurrentDimension() == 1) return ue_.getOneDPermeation();
-        if (ue_.getCurrentDimension() == 2 && dimension > 2) return ue_.getTwoD();
-        if (ue_.getCurrentDimension() == 3 && (dimension == 2 || dimension == 4)) return ue_.getThreeDInfluence();
-        return 1.0;
-    }
-
-    double computeDarkEnergy(double distance) const {
-        return ue_.getDarkEnergyStrength() * std::exp(distance * (ue_.getMaxDimensions() > 0 ? 1.0 / ue_.getMaxDimensions() : 1e-15));
-    }
-
+    // Renders a single frame using Vulkan
     void render() {
-        if (isPaused_) return;
+        // Skip rendering if user camera is active (handled by AMOURANTH)
+        if (amouranth_->isUserCamActive()) return;
 
+        // Update AMOURANTH state (assumes 60 FPS)
+        amouranth_->update(0.016f);
+
+        // Wait for previous frame to complete
         vkWaitForFences(vulkanDevice_, 1, &inFlightFence_, VK_TRUE, UINT64_MAX);
         vkResetFences(vulkanDevice_, 1, &inFlightFence_);
 
+        // Acquire next swapchain image
         uint32_t imageIndex;
         VkResult result = vkAcquireNextImageKHR(vulkanDevice_, swapchain_, UINT64_MAX, imageAvailableSemaphore_, VK_NULL_HANDLE, &imageIndex);
         if (result == VK_ERROR_OUT_OF_DATE_KHR) {
@@ -326,44 +237,68 @@ public:
             throw std::runtime_error("Failed to acquire swapchain image: " + std::to_string(result));
         }
 
+        // Reset command buffer for the current frame
         vkResetCommandBuffer(commandBuffers_[imageIndex], 0);
 
+        // Begin command buffer recording
         VkCommandBufferBeginInfo beginInfo = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO, nullptr, 0, nullptr};
         if (vkBeginCommandBuffer(commandBuffers_[imageIndex], &beginInfo) != VK_SUCCESS) {
             throw std::runtime_error("Failed to begin command buffer");
         }
 
-        VkClearValue clearColor = {{{0.0f, 0.0f, 0.0f, 1.0f}}};
-        VkRenderPassBeginInfo renderPassInfo = {VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO, nullptr, renderPass_, swapchainFramebuffers_[imageIndex], {{0, 0}, {(uint32_t)width_, (uint32_t)height_}}, 1, &clearColor};
+        // Begin render pass with a dark gray clear color to distinguish from black screen
+        VkClearValue clearColor = {{{0.1f, 0.1f, 0.1f, 1.0f}}};
+        VkRenderPassBeginInfo renderPassInfo = {
+            VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
+            nullptr,
+            renderPass_,
+            swapchainFramebuffers_[imageIndex],
+            {{0, 0}, {(uint32_t)width_, (uint32_t)height_}},
+            1,
+            &clearColor
+        };
         vkCmdBeginRenderPass(commandBuffers_[imageIndex], &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+
+        // Bind the sphere rendering pipeline
         vkCmdBindPipeline(commandBuffers_[imageIndex], VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_);
 
-        updateCache();
-        switch (mode_) {
-            case 1: renderMode1(this, imageIndex); break;
-            case 2: renderMode2(this, imageIndex, vertexBuffer_, commandBuffers_, indexBuffer_, zoomLevel_, width_, height_, wavePhase_, cache_); break;
-            case 3: renderMode3(this, imageIndex, vertexBuffer_, commandBuffers_, indexBuffer_, zoomLevel_, width_, height_, wavePhase_, cache_); break;
-            case 4: renderMode4(this, imageIndex, vertexBuffer_, commandBuffers_, indexBuffer_, zoomLevel_, width_, height_, wavePhase_, cache_); break;
-            case 5: renderMode5(this, imageIndex, vertexBuffer_, commandBuffers_, indexBuffer_, zoomLevel_, width_, height_, wavePhase_, cache_); break;
-            case 6: renderMode6(this, imageIndex, vertexBuffer_, commandBuffers_, indexBuffer_, zoomLevel_, width_, height_, wavePhase_, cache_); break;
-            case 7: renderMode7(this, imageIndex, vertexBuffer_, commandBuffers_, indexBuffer_, zoomLevel_, width_, height_, wavePhase_, cache_); break;
-            case 8: renderMode8(this, imageIndex, vertexBuffer_, commandBuffers_, indexBuffer_, zoomLevel_, width_, height_, wavePhase_, cache_); break;
-            case 9: renderMode9(this, imageIndex, vertexBuffer_, commandBuffers_, indexBuffer_, zoomLevel_, width_, height_, wavePhase_, cache_); break;
-            default: renderMode1(this, imageIndex);
-        }
+        // Render using AMOURANTH (calls renderMode9 for mode 9)
+        amouranth_->render(imageIndex, vertexBuffer_, commandBuffers_[imageIndex], indexBuffer_, pipelineLayout_);
 
+        // End render pass and command buffer
         vkCmdEndRenderPass(commandBuffers_[imageIndex]);
         if (vkEndCommandBuffer(commandBuffers_[imageIndex]) != VK_SUCCESS) {
             throw std::runtime_error("Failed to end command buffer");
         }
 
+        // Submit command buffer to graphics queue
         VkPipelineStageFlags waitStages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
-        VkSubmitInfo submitInfo = {VK_STRUCTURE_TYPE_SUBMIT_INFO, nullptr, 1, &imageAvailableSemaphore_, waitStages, 1, &commandBuffers_[imageIndex], 1, &renderFinishedSemaphore_};
+        VkSubmitInfo submitInfo = {
+            VK_STRUCTURE_TYPE_SUBMIT_INFO,
+            nullptr,
+            1,
+            &imageAvailableSemaphore_,
+            waitStages,
+            1,
+            &commandBuffers_[imageIndex],
+            1,
+            &renderFinishedSemaphore_
+        };
         if (vkQueueSubmit(graphicsQueue_, 1, &submitInfo, inFlightFence_) != VK_SUCCESS) {
             throw std::runtime_error("Failed to submit queue");
         }
 
-        VkPresentInfoKHR presentInfo = {VK_STRUCTURE_TYPE_PRESENT_INFO_KHR, nullptr, 1, &renderFinishedSemaphore_, 1, &swapchain_, &imageIndex, nullptr};
+        // Present the rendered image
+        VkPresentInfoKHR presentInfo = {
+            VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
+            nullptr,
+            1,
+            &renderFinishedSemaphore_,
+            1,
+            &swapchain_,
+            &imageIndex,
+            nullptr
+        };
         result = vkQueuePresentKHR(presentQueue_, &presentInfo);
         if (result == VK_ERROR_OUT_OF_DATE_KHR) {
             recreateSwapchain();
@@ -372,8 +307,6 @@ public:
         if (result != VK_SUCCESS) {
             throw std::runtime_error("Failed to present queue: " + std::to_string(result));
         }
-
-        wavePhase_ += waveSpeed_;
     }
 };
 

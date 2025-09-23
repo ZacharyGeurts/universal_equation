@@ -1,77 +1,84 @@
-#include "modes.hpp"
-#include "main.hpp"
-#include "types.hpp"
+#include "modes_ue.hpp"
+#include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/constants.hpp>
+#include <vulkan/vulkan.h>
+#include <iostream>
+#include <cmath>
 
+// Define kMaxRenderedDimensions to avoid private access
 static constexpr int kMaxRenderedDimensions = 9;
 
-void renderMode8(DimensionalNavigator* navigator, uint32_t imageIndex, VkBuffer vertexBuffer_,
-                 std::vector<VkCommandBuffer>& commandBuffers_, VkBuffer indexBuffer_,
-                 float zoomLevel_, int width_, int height_, float wavePhase_,
-                 std::vector<DimensionData>& cache_) {
-    VkBuffer vertexBuffers[] = {vertexBuffer_};
+void renderMode8(AMOURANTH* amouranth, uint32_t imageIndex, VkBuffer vertexBuffer, VkCommandBuffer commandBuffer, VkBuffer indexBuffer, float zoomLevel, int width, int height, float wavePhase, const std::vector<DimensionData>& cache, VkPipelineLayout pipelineLayout) {
+    // Suppress unused parameter warning
+    (void)imageIndex;
+
+    // Bind vertex and index buffers (using quad geometry)
+    VkBuffer vertexBuffers[] = {vertexBuffer};
     VkDeviceSize offsets[] = {0};
-    vkCmdBindVertexBuffers(commandBuffers_[imageIndex], 0, 1, vertexBuffers, offsets);
-    vkCmdBindIndexBuffer(commandBuffers_[imageIndex], indexBuffer_, 0, VK_INDEX_TYPE_UINT32);
+    vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
+    vkCmdBindIndexBuffer(commandBuffer, indexBuffer, 0, VK_INDEX_TYPE_UINT32);
 
-    float zoomFactor = glm::max(zoomLevel_, 0.01f);
-    float aspect = static_cast<float>(width_) / glm::max(1.0f, static_cast<float>(height_));
-    glm::vec3 camPos = navigator->isUserCamActive_ ? navigator->userCamPos_ : glm::vec3(0.0f, 0.0f, 34.0f * zoomFactor);
-    glm::mat4 proj = glm::perspective(glm::radians(70.0f), aspect, 0.1f, 1000.0f);
-    glm::mat4 view = glm::lookAt(camPos, glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
-
-    float cycleProgress = std::fmod(wavePhase_ / (8.0f * kMaxRenderedDimensions), 1.0f);
-    float divineGlow = 0.88f + 0.12f * sinf(wavePhase_ * 0.45f);
-
-    if (cache_.size() < static_cast<size_t>(kMaxRenderedDimensions)) {
-        std::cerr << "Warning: Cache size " << cache_.size() << " < " << kMaxRenderedDimensions << "\n";
+    // Check quad indices
+    if (amouranth->getQuadIndices().empty()) {
+        std::cerr << "Warning: Quad indices empty\n";
         return;
     }
 
-    for (size_t i = 0; i < static_cast<size_t>(kMaxRenderedDimensions); ++i) {
-        if (cache_[i].dimension != static_cast<int>(i + 1)) {
-            std::cerr << "Warning: Invalid cache for dimension " << i + 1 << "\n";
+    // Ensure zoom is positive
+    float zoomFactor = glm::max(zoomLevel, 0.01f);
+    float aspect = static_cast<float>(width) / glm::max(1.0f, static_cast<float>(height));
+    glm::mat4 proj = glm::perspective(glm::radians(45.0f), aspect, 0.1f, 1000.0f);
+
+    // Camera setup
+    glm::vec3 camPos(0.0f, 0.0f, 10.0f * zoomFactor);
+    if (amouranth->isUserCamActive()) {
+        camPos = amouranth->getUserCamPos();
+    }
+    glm::vec3 camTarget(0.0f, 0.0f, 0.0f);
+    glm::vec3 camUp(0.0f, 1.0f, 0.0f);
+    glm::mat4 view = glm::lookAt(camPos, camTarget, camUp);
+
+    // Divine cycle
+    float cycleProgress = std::fmod(wavePhase / (2.0f * kMaxRenderedDimensions), 1.0f);
+
+    if (cache.size() < kMaxRenderedDimensions) {
+        std::cerr << "Warning: Cache size " << cache.size() << " < " << kMaxRenderedDimensions << "\n";
+        return;
+    }
+
+    for (size_t i = 0; i < kMaxRenderedDimensions; ++i) {
+        if (cache[i].dimension != static_cast<int>(i + 1)) {
+            std::cerr << "Warning: Invalid cache for dimension " << (i + 1) << "\n";
             continue;
         }
+        if (cache[i].dimension != 8) continue; // Only render dimension 8
 
-        float observableScale = 1.0f + static_cast<float>(cache_[i].observable) * 0.7f;
-        float darkMatterScale = 1.0f + static_cast<float>(cache_[i].darkMatter) * 0.85f;
-        float darkEnergyScale = 1.0f + static_cast<float>(cache_[i].darkEnergy) * 0.8f;
-        float radius = 1.3f * observableScale * darkMatterScale * darkEnergyScale * (1.0f + 0.6f * sinf(wavePhase_ + i));
-        radius *= zoomFactor;
-        radius = glm::clamp(radius, 0.5f * zoomFactor, 16.0f * zoomFactor);
+        // Hypercube oscillation
+        float osc = 1.0f + 0.2f * sinf(wavePhase * (1.0f + static_cast<float>(cache[i].darkEnergy) * 0.5f));
+        float value = static_cast<float>(cache[i].observable * osc);
+        value = glm::clamp(value, 0.01f, 2.0f);
 
-        float angle = wavePhase_ + (i + 1) * 2.0f * glm::pi<float>() / kMaxRenderedDimensions;
-        float spacing = 3.8f * (1.0f + static_cast<float>(cache_[i].darkEnergy) * 1.1f);
-        glm::vec3 pos;
-        switch (i) {
-            case 0: pos = glm::vec3(0.0f, 0.0f, 0.0f); break;
-            case 1: pos = glm::vec3(spacing * cosf(angle), spacing * sinf(angle), 0.0f); break;
-            case 2: pos = glm::vec3(spacing * cosf(angle + 2.0f * glm::pi<float>() / 3.0f), 
-                                    spacing * sinf(angle + 2.0f * glm::pi<float>() / 3.0f), spacing); break;
-            case 3: pos = glm::vec3(spacing * cosf(angle + 4.0f * glm::pi<float>() / 3.0f), 
-                                    spacing * sinf(angle + 4.0f * glm::pi<float>() / 3.0f), -spacing); break;
-            case 4: pos = glm::vec3(spacing * cosf(angle + glm::pi<float>()), 0.0f, spacing * sinf(angle)); break;
-            case 5: pos = glm::vec3(0.0f, spacing * sinf(angle), spacing * cosf(angle)); break;
-            case 6: pos = glm::vec3(spacing * cosf(angle + glm::pi<float>() / 2.0f), spacing * sinf(angle), 0.0f); break;
-            case 7: pos = glm::vec3(spacing * cosf(angle), 0.0f, spacing * sinf(angle + glm::pi<float>())); break;
-            case 8: pos = glm::vec3(spacing * cosf(angle + glm::pi<float>() / 4.0f), spacing * sinf(angle), spacing * sinf(wavePhase_ + i)); break;
-        }
-        pos *= zoomFactor;
-
+        // Grid-like positioning (hypercube projection)
+        float gridSize = 3.0f;
+        float x = gridSize * (static_cast<float>(i % 3) - 1.0f);
+        float y = gridSize * (static_cast<float>((i / 3) % 3) - 1.0f);
+        glm::vec3 pos = glm::vec3(
+            x + 0.5f * sinf(wavePhase + cycleProgress),
+            y + 0.5f * cosf(wavePhase + cycleProgress),
+            static_cast<float>(cache[i].darkMatter) * 1.0f
+        );
         glm::mat4 model = glm::mat4(1.0f);
         model = glm::translate(model, pos);
-        model = glm::scale(model, glm::vec3(radius));
-        model = glm::rotate(model, wavePhase_ * 0.4f + i * 0.25f, glm::normalize(glm::vec3(0.7f, 0.3f, 0.7f + 0.2f * i)));
+        model = glm::scale(model, glm::vec3(0.7f * zoomFactor * osc, 0.7f * zoomFactor * osc, 0.01f));
+        model = glm::rotate(model, wavePhase * 0.4f, glm::vec3(0.0f, 0.0f, 1.0f));
 
-        float dimValue = static_cast<float>(i + 1);
-        float value = glm::clamp(static_cast<float>(cache_[i].observable) * divineGlow, 0.01f, 1.0f);
-
+        // Color with hypercube effect
         glm::vec3 baseColor = glm::vec3(
-            0.65f + 0.35f * sinf(wavePhase_ * 0.91f + i),
-            0.5f + 0.3f * cosf(wavePhase_ * 0.77f + i),
-            0.75f + 0.35f * sinf(wavePhase_ * 1.31f + i)
+            0.5f + 0.5f * cosf(wavePhase + i * 0.7f + cycleProgress),
+            0.6f + 0.4f * sinf(wavePhase + i * 0.5f),
+            0.7f - 0.3f * cosf(wavePhase * 0.3f + i)
         );
-        baseColor = glm::clamp(baseColor, 0.0f, 1.0f);
 
         PushConstants pushConstants = {
             model,
@@ -79,79 +86,88 @@ void renderMode8(DimensionalNavigator* navigator, uint32_t imageIndex, VkBuffer 
             proj,
             baseColor,
             value,
-            dimValue,
-            wavePhase_,
+            static_cast<float>(i + 1),
+            wavePhase,
             cycleProgress,
-            static_cast<float>(cache_[i].darkMatter) * divineGlow,
-            static_cast<float>(cache_[i].darkEnergy) * divineGlow
+            static_cast<float>(cache[i].darkMatter),
+            static_cast<float>(cache[i].darkEnergy)
         };
-        vkCmdPushConstants(commandBuffers_[imageIndex], navigator->pipelineLayout_,
+        vkCmdPushConstants(commandBuffer, pipelineLayout,
                            VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
                            0, sizeof(PushConstants), &pushConstants);
-        vkCmdDrawIndexed(commandBuffers_[imageIndex], static_cast<uint32_t>(navigator->sphereIndices_.size()), 1, 0, 0, 0);
-
-        std::cerr << "Mode8[D=" << i + 1 << "]: radius=" << radius << ", value=" << value
-                  << ", pos=(" << pos.x << ", " << pos.y << ", " << pos.z << "), color=("
-                  << baseColor.x << ", " << baseColor.y << ", " << baseColor.z << ")\n";
+        vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(amouranth->getQuadIndices().size()), 1, 0, 0, 0);
     }
 
-    for (size_t i = 0; i < static_cast<size_t>(kMaxRenderedDimensions); ++i) {
-        navigator->ue_.setCurrentDimension(i + 1);
-        auto pairs = navigator->ue_.getInteractions();
-        if (pairs.empty()) {
-            std::cerr << "Warning: No interactions for dimension " << i + 1 << "\n";
-            continue;
-        }
-
+    // Interactions for dimension 8
+    amouranth->setCurrentDimension(8);
+    auto pairs = amouranth->getInteractions();
+    if (pairs.empty()) {
+        std::cerr << "Warning: No interactions for dimension 8\n";
+        glm::mat4 interactionModel = glm::mat4(1.0f);
+        interactionModel = glm::translate(interactionModel, glm::vec3(0.0f, 0.0f, 0.0f));
+        interactionModel = glm::scale(interactionModel, glm::vec3(0.6f * zoomFactor, 0.6f * zoomFactor, 0.01f));
+        glm::vec3 baseColor = glm::vec3(0.9f, 0.85f, 0.9f);
+        PushConstants pushConstants = {
+            interactionModel,
+            view,
+            proj,
+            baseColor,
+            0.5f,
+            8.0f,
+            wavePhase,
+            cycleProgress,
+            0.5f,
+            0.5f
+        };
+        vkCmdPushConstants(commandBuffer, pipelineLayout,
+                           VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                           0, sizeof(PushConstants), &pushConstants);
+        vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(amouranth->getQuadIndices().size()), 1, 0, 0, 0);
+    } else {
         for (const auto& pair : pairs) {
-            if (navigator->ue_.getCurrentDimension() != static_cast<int>(i + 1)) continue;
+            if (amouranth->getMode() != 8) continue;
 
             float interactionStrength = static_cast<float>(
-                navigator->computeInteraction(pair.vertexIndex, pair.distance) *
-                std::exp(-glm::abs(navigator->ue_.getAlpha() * pair.distance)) *
-                navigator->computePermeation(pair.vertexIndex) *
-                glm::max(0.0f, static_cast<float>(pair.strength)));
-            interactionStrength *= divineGlow;
-            interactionStrength = glm::clamp(interactionStrength, 0.01f, 2.5f);
-
-            float orbitRadius = 2.8f + static_cast<float>(pair.distance) * 0.65f * (1.0f + static_cast<float>(pair.strength) * 0.5f);
-            float angleA = wavePhase_ + pair.vertexIndex * 2.6f + pair.distance * 0.19f;
-            float angleB = wavePhase_ * 1.0f + pair.vertexIndex * 1.3f + pair.distance * 0.23f;
-            glm::vec3 orbitPos = glm::vec3(
-                cosf(angleA) * orbitRadius * zoomFactor,
-                sinf(angleA) * orbitRadius * zoomFactor,
-                sinf(angleB + pair.vertexIndex) * orbitRadius * 0.8f * zoomFactor
+                amouranth->computeInteraction(pair.vertexIndex, pair.distance) *
+                std::exp(-glm::abs(amouranth->getAlpha() * pair.distance)) *
+                amouranth->computePermeation(pair.vertexIndex) *
+                glm::max(0.0f, static_cast<float>(pair.strength))
             );
-            glm::mat4 interactionModel = glm::translate(glm::mat4(1.0f), orbitPos);
-            interactionModel = glm::scale(interactionModel, glm::vec3(0.48f * zoomFactor * (1.0f + divineGlow)));
+            interactionStrength = glm::max(interactionStrength, 0.01f);
+            interactionStrength = glm::min(interactionStrength, 2.0f);
 
-            glm::vec3 interactionColor = glm::vec3(
-                0.7f + 0.3f * sinf(wavePhase_ * 0.89f + pair.vertexIndex),
-                0.55f + 0.25f * cosf(wavePhase_ * 0.71f + pair.vertexIndex),
-                0.8f + 0.3f * sinf(wavePhase_ * 1.25f + pair.vertexIndex)
+            float offset = static_cast<float>(pair.distance) * 0.7f * (1.0f + static_cast<float>(pair.strength) * 0.4f);
+            float angle = wavePhase + pair.vertexIndex * 2.0f + pair.distance * 0.3f;
+            glm::vec3 offsetPos = glm::vec3(
+                offset * cosf(angle + cycleProgress),
+                offset * sinf(angle + cycleProgress),
+                0.0f
             );
-            interactionColor = glm::clamp(interactionColor, 0.0f, 1.0f);
+            glm::mat4 interactionModel = glm::translate(glm::mat4(1.0f), offsetPos);
+            interactionModel = glm::scale(interactionModel, glm::vec3(0.4f * zoomFactor, 0.4f * zoomFactor, 0.01f));
+
+            glm::vec3 baseColor = glm::vec3(
+                0.7f - 0.2f * sinf(angle),
+                0.8f - 0.2f * cosf(angle * 1.4f),
+                0.9f - 0.1f * sinf(angle * 0.9f)
+            );
 
             PushConstants pushConstants = {
                 interactionModel,
                 view,
                 proj,
-                interactionColor,
-                interactionStrength,
-                static_cast<float>(i + 1),
-                wavePhase_,
+                baseColor,
+                interactionStrength * (0.7f + 0.3f * cosf(wavePhase + pair.distance)),
+                8.0f,
+                wavePhase,
                 cycleProgress,
-                static_cast<float>(pair.strength) * divineGlow,
-                static_cast<float>(navigator->computeDarkEnergy(pair.distance)) * divineGlow
+                static_cast<float>(pair.strength),
+                static_cast<float>(amouranth->computeDarkEnergy(pair.distance))
             };
-            vkCmdPushConstants(commandBuffers_[imageIndex], navigator->pipelineLayout_,
+            vkCmdPushConstants(commandBuffer, pipelineLayout,
                                VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
                                0, sizeof(PushConstants), &pushConstants);
-            vkCmdDrawIndexed(commandBuffers_[imageIndex], static_cast<uint32_t>(navigator->sphereIndices_.size()), 1, 0, 0, 0);
-
-            std::cerr << "Mode8 Interaction[D=" << i + 1 << "]: strength=" << interactionStrength
-                      << ", orbitRadius=" << orbitRadius << ", color=("
-                      << interactionColor.x << ", " << interactionColor.y << ", " << interactionColor.z << ")\n";
+            vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(amouranth->getQuadIndices().size()), 1, 0, 0, 0);
         }
     }
 }

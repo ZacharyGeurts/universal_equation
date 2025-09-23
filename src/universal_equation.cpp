@@ -1,17 +1,4 @@
 #include "universal_equation.hpp"
-#include <cmath>
-#include <limits>
-#include <iostream>
-#include <algorithm>
-#include <stdexcept>
-#include <cstdint> // Added for uint64_t
-
-std::string UniversalEquation::EnergyResult::toString() const {
-    return "Observable: " + std::to_string(observable) +
-           ", Potential: " + std::to_string(potential) +
-           ", Dark Matter: " + std::to_string(darkMatter) +
-           ", Dark Energy: " + std::to_string(darkEnergy);
-}
 
 UniversalEquation::UniversalEquation(int maxDimensions, int mode, double influence,
                                    double weak, double collapse, double twoD,
@@ -37,7 +24,8 @@ UniversalEquation::UniversalEquation(int maxDimensions, int mode, double influen
       invMaxDim_(maxDimensions_ > 0 ? 1.0 / maxDimensions_ : 1e-15),
       interactions_(),
       nCubeVertices_(),
-      needsUpdate_(true) {
+      needsUpdate_(true),
+      navigator_(nullptr) {
     initializeWithRetry();
     if (debug_) {
         std::cout << "Initialized: maxDimensions=" << maxDimensions_ << ", mode=" << mode_
@@ -353,4 +341,21 @@ void UniversalEquation::initializeWithRetry() {
 
 double UniversalEquation::safeExp(double x) const {
     return std::exp(std::clamp(x, -709.0, 709.0));
+}
+
+void UniversalEquation::initializeCalculator(DimensionalNavigator* navigator) {
+    navigator_ = navigator;
+    needsUpdate_ = true;
+    initializeWithRetry();
+}
+
+UniversalEquation::DimensionData UniversalEquation::updateCache() {
+    auto result = compute();
+    DimensionData data;
+    data.dimension = currentDimension_;
+    data.observable = result.observable;
+    data.potential = result.potential;
+    data.darkMatter = result.darkMatter;
+    data.darkEnergy = result.darkEnergy;
+    return data;
 }
