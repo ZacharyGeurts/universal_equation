@@ -1,6 +1,7 @@
+// ue engine
 #ifndef UNIVERSAL_EQUATION_HPP
 #define UNIVERSAL_EQUATION_HPP
-// UE code
+
 #include <vector>
 #include <string>
 #include <cstdint>
@@ -9,6 +10,9 @@
 #include <algorithm>
 #include <stdexcept>
 #include <iostream>
+#include <mutex>
+#include <atomic>
+#include <omp.h>
 
 // Forward declaration to avoid circular dependency
 class DimensionalNavigator;
@@ -45,7 +49,7 @@ public:
                      double darkMatterStrength = 0.27, double darkEnergyStrength = 0.68,
                      double alpha = 2.0, double beta = 0.2, bool debug = false);
 
-    // Setters and Getters
+    // Setters and Getters (thread-safe)
     void setInfluence(double value);
     double getInfluence() const;
     void setWeak(double value);
@@ -74,7 +78,7 @@ public:
     int getCurrentDimension() const;
     int getMaxDimensions() const;
 
-    // Get interactions
+    // Get interactions (thread-safe)
     const std::vector<DimensionInteraction>& getInteractions() const;
 
     // Advance dimension cycle
@@ -100,27 +104,29 @@ public:
 
 private:
     int maxDimensions_;          // Maximum number of dimensions (1 to 20)
-    int currentDimension_;       // Current dimension for computation
-    int mode_;                  // Current mode (aligned with currentDimension_)
-    uint64_t maxVertices_;      // Maximum number of vertices (2^20)
-    double influence_;          // Influence factor (0 to 10)
-    double weak_;               // Weak interaction strength (0 to 1)
-    double collapse_;           // Collapse factor (0 to 5)
-    double twoD_;               // 2D influence factor (0 to 5)
-    double threeDInfluence_;    // 3D influence factor (0 to 5)
-    double oneDPermeation_;     // 1D permeation factor (0 to 5)
-    double darkMatterStrength_; // Dark matter strength (0 to 1)
-    double darkEnergyStrength_; // Dark energy strength (0 to 2)
-    double alpha_;              // Exponential decay factor (0.1 to 10)
-    double beta_;               // Permeation scaling factor (0 to 1)
-    bool debug_;                // Debug output flag
-    double omega_;              // Angular frequency for 2D oscillation
-    double invMaxDim_;          // Inverse of max dimensions for scaling
+    std::atomic<int> currentDimension_; // Current dimension for computation
+    std::atomic<int> mode_;      // Current mode (aligned with currentDimension_)
+    uint64_t maxVertices_;       // Maximum number of vertices (2^20)
+    std::atomic<double> influence_; // Influence factor (0 to 10)
+    std::atomic<double> weak_;   // Weak interaction strength (0 to 1)
+    std::atomic<double> collapse_; // Collapse factor (0 to 5)
+    std::atomic<double> twoD_;   // 2D influence factor (0 to 5)
+    std::atomic<double> threeDInfluence_; // 3D influence factor (0 to 5)
+    std::atomic<double> oneDPermeation_; // 1D permeation factor (0 to 5)
+    std::atomic<double> darkMatterStrength_; // Dark matter strength (0 to 1)
+    std::atomic<double> darkEnergyStrength_; // Dark energy strength (0 to 2)
+    std::atomic<double> alpha_;  // Exponential decay factor (0.1 to 10)
+    std::atomic<double> beta_;   // Permeation scaling factor (0 to 1)
+    std::atomic<bool> debug_;    // Debug output flag
+    double omega_;               // Angular frequency for 2D oscillation
+    double invMaxDim_;           // Inverse of max dimensions for scaling
     mutable std::vector<DimensionInteraction> interactions_; // Interaction data
-    std::vector<std::vector<double>> nCubeVertices_;        // Vertex coordinates for n-cube
-    mutable bool needsUpdate_;                              // Dirty flag for interactions
-    std::vector<double> cachedCos_;                         // Cached cosine values
-    DimensionalNavigator* navigator_;                        // Pointer to DimensionalNavigator
+    std::vector<std::vector<double>> nCubeVertices_; // Vertex coordinates for n-cube
+    mutable std::atomic<bool> needsUpdate_; // Dirty flag for interactions
+    std::vector<double> cachedCos_; // Cached cosine values
+    DimensionalNavigator* navigator_; // Pointer to DimensionalNavigator (assumed managed externally)
+    mutable std::mutex mutex_; // Protects interactions_, nCubeVertices_, cachedCos_
+    mutable std::mutex debugMutex_; // Protects debug output
 
     // Private methods
     double computeCollapse() const;
