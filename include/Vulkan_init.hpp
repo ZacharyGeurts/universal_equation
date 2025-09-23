@@ -1,6 +1,6 @@
 #ifndef VULKAN_INIT_HPP
 #define VULKAN_INIT_HPP
-// Vulkan AMOURANTH RTX
+// Vulkan AMOURANTH RTX engine
 #include <vulkan/vulkan.h>
 #include <SDL3/SDL_vulkan.h>
 #include <vector>
@@ -10,8 +10,10 @@
 #include <algorithm>
 #include <cstring>
 
+// Class for initializing core Vulkan resources.
 class VulkanInitializer {
 public:
+    // Initializes core Vulkan components including device, swapchain, pipeline, and buffers.
     static void initializeVulkan(
         VkInstance& instance, VkPhysicalDevice& physicalDevice, VkDevice& device, VkSurfaceKHR& surface,
         VkQueue& graphicsQueue, VkQueue& presentQueue, uint32_t& graphicsFamily, uint32_t& presentFamily,
@@ -37,6 +39,7 @@ public:
         createIndexBuffer(device, physicalDevice, commandPool, graphicsQueue, indexBuffer, indexBufferMemory, sphereIndices);
     }
 
+    // Initializes vertex and index buffers for a quad.
     static void initializeQuadBuffers(
         VkDevice device, VkPhysicalDevice physicalDevice, VkCommandPool commandPool, VkQueue graphicsQueue,
         VkBuffer& vertexBuffer, VkDeviceMemory& vertexBufferMemory, VkBuffer& indexBuffer,
@@ -47,6 +50,7 @@ public:
         createIndexBuffer(device, physicalDevice, commandPool, graphicsQueue, indexBuffer, indexBufferMemory, indices);
     }
 
+    // Cleans up all initialized Vulkan resources.
     static void cleanupVulkan(
         [[maybe_unused]] VkInstance instance, VkDevice& device, [[maybe_unused]] VkSurfaceKHR surface, VkSwapchainKHR& swapchain,
         std::vector<VkImageView>& swapchainImageViews, std::vector<VkFramebuffer>& swapchainFramebuffers,
@@ -100,6 +104,7 @@ public:
     }
 
 private:
+    // Selects a suitable physical device.
     static void createPhysicalDevice(VkInstance instance, VkPhysicalDevice& physicalDevice, uint32_t& graphicsFamily, uint32_t& presentFamily, VkSurfaceKHR surface) {
         uint32_t deviceCount;
         vkEnumeratePhysicalDevices(instance, &deviceCount, nullptr);
@@ -126,6 +131,7 @@ private:
         throw std::runtime_error("No suitable Vulkan device found");
     }
 
+    // Creates the logical device with required extensions and features.
     static void createLogicalDevice(VkPhysicalDevice physicalDevice, VkDevice& device, VkQueue& graphicsQueue, VkQueue& presentQueue, uint32_t graphicsFamily, uint32_t presentFamily) {
         uint32_t extCount;
         vkEnumerateDeviceExtensionProperties(physicalDevice, nullptr, &extCount, nullptr);
@@ -167,6 +173,7 @@ private:
         vkGetDeviceQueue(device, presentFamily, 0, &presentQueue);
     }
 
+    // Creates the swapchain and associated images/views.
     static void createSwapchain(VkPhysicalDevice physicalDevice, VkDevice device, VkSurfaceKHR surface, VkSwapchainKHR& swapchain,
                                 std::vector<VkImage>& swapchainImages, std::vector<VkImageView>& swapchainImageViews, VkFormat& swapchainFormat, int width, int height) {
         VkSurfaceCapabilitiesKHR caps;
@@ -219,6 +226,7 @@ private:
         }
     }
 
+    // Creates the render pass.
     static void createRenderPass(VkDevice device, VkRenderPass& renderPass, VkFormat format) {
         VkAttachmentDescription color = {
             0, format, VK_SAMPLE_COUNT_1_BIT, VK_ATTACHMENT_LOAD_OP_CLEAR, VK_ATTACHMENT_STORE_OP_STORE,
@@ -233,6 +241,7 @@ private:
         if (vkCreateRenderPass(device, &info, nullptr, &renderPass) != VK_SUCCESS) throw std::runtime_error("Render pass creation failed");
     }
 
+    // Utility to create a shader module from a SPIR-V file.
     static VkShaderModule createShaderModule(VkDevice device, const std::string& filename) {
         std::ifstream file(filename, std::ios::ate | std::ios::binary);
         if (!file) throw std::runtime_error("Failed to open shader: " + filename);
@@ -246,9 +255,10 @@ private:
         return module;
     }
 
+    // Creates the graphics pipeline.
     static void createGraphicsPipeline(VkDevice device, VkRenderPass renderPass, VkPipeline& pipeline, VkPipelineLayout& pipelineLayout, int width, int height) {
         VkShaderModule vert = createShaderModule(device, "assets/shaders/vertex.spv");
-        VkShaderModule frag = createShaderModule(device, "assets/shaders/fragment.spv");		
+        VkShaderModule frag = createShaderModule(device, "assets/shaders/fragment.spv");
         VkPipelineShaderStageCreateInfo stages[] = {
             { VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, nullptr, 0, VK_SHADER_STAGE_VERTEX_BIT, vert, "main", nullptr },
             { VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, nullptr, 0, VK_SHADER_STAGE_FRAGMENT_BIT, frag, "main", nullptr }
@@ -274,7 +284,7 @@ private:
             VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO, nullptr, 0, VK_SAMPLE_COUNT_1_BIT, VK_FALSE, 1.0f, nullptr, VK_FALSE, VK_FALSE
         };
         VkPipelineDepthStencilStateCreateInfo depthStencil = {
-            VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO, nullptr, 0, VK_TRUE, VK_TRUE, VK_COMPARE_OP_LESS,
+            VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO, nullptr, 0, VK_FALSE, VK_FALSE, VK_COMPARE_OP_LESS,
             VK_FALSE, VK_FALSE, {}, {}, 0.0f, 1.0f
         };
         VkPipelineColorBlendAttachmentState blendAttachment = {
@@ -304,6 +314,7 @@ private:
         vkDestroyShaderModule(device, frag, nullptr);
     }
 
+    // Creates framebuffers for the swapchain.
     static void createFramebuffers(VkDevice device, VkRenderPass renderPass, std::vector<VkImageView>& swapchainImageViews, std::vector<VkFramebuffer>& swapchainFramebuffers, int width, int height) {
         swapchainFramebuffers.resize(swapchainImageViews.size());
         for (size_t i = 0; i < swapchainImageViews.size(); ++i) {
@@ -314,6 +325,7 @@ private:
         }
     }
 
+    // Creates the command pool.
     static void createCommandPool(VkDevice device, VkCommandPool& commandPool, uint32_t graphicsFamily) {
         VkCommandPoolCreateInfo info = {
             VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO, nullptr, VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT, graphicsFamily
@@ -321,6 +333,7 @@ private:
         if (vkCreateCommandPool(device, &info, nullptr, &commandPool) != VK_SUCCESS) throw std::runtime_error("Command pool creation failed");
     }
 
+    // Allocates command buffers.
     static void createCommandBuffers(VkDevice device, VkCommandPool commandPool, std::vector<VkCommandBuffer>& commandBuffers, std::vector<VkFramebuffer>& swapchainFramebuffers) {
         commandBuffers.resize(swapchainFramebuffers.size());
         VkCommandBufferAllocateInfo info = {
@@ -329,6 +342,7 @@ private:
         if (vkAllocateCommandBuffers(device, &info, commandBuffers.data()) != VK_SUCCESS) throw std::runtime_error("Command buffer allocation failed");
     }
 
+    // Creates synchronization objects.
     static void createSyncObjects(VkDevice device, VkSemaphore& imageAvailableSemaphore, VkSemaphore& renderFinishedSemaphore, VkFence& inFlightFence) {
         VkSemaphoreCreateInfo semInfo = { VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO, nullptr, 0 };
         VkFenceCreateInfo fenceInfo = { VK_STRUCTURE_TYPE_FENCE_CREATE_INFO, nullptr, VK_FENCE_CREATE_SIGNALED_BIT };
@@ -339,6 +353,7 @@ private:
         }
     }
 
+    // Utility to create a Vulkan buffer.
     static void createBuffer(VkDevice device, VkPhysicalDevice physicalDevice, VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags props, VkBuffer& buffer, VkDeviceMemory& memory) {
         VkBufferCreateInfo bufferInfo = {
             VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO, nullptr, 0, size, usage, VK_SHARING_MODE_EXCLUSIVE, 0, nullptr
@@ -361,6 +376,7 @@ private:
         if (vkBindBufferMemory(device, buffer, memory, 0) != VK_SUCCESS) throw std::runtime_error("Buffer memory binding failed");
     }
 
+    // Utility to copy data between buffers.
     static void copyBuffer(VkDevice device, VkCommandPool commandPool, VkQueue graphicsQueue, VkBuffer src, VkBuffer dst, VkDeviceSize size) {
         VkCommandBufferAllocateInfo allocInfo = {
             VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO, nullptr, commandPool, VK_COMMAND_BUFFER_LEVEL_PRIMARY, 1
@@ -380,6 +396,7 @@ private:
         vkFreeCommandBuffers(device, commandPool, 1, &cmd);
     }
 
+    // Creates and fills the vertex buffer.
     static void createVertexBuffer(VkDevice device, VkPhysicalDevice physicalDevice, VkCommandPool commandPool, VkQueue graphicsQueue,
                                   VkBuffer& vertexBuffer, VkDeviceMemory& vertexBufferMemory, const std::vector<glm::vec3>& vertices) {
         if (vertices.empty()) throw std::runtime_error("Vertex buffer is empty");
@@ -397,6 +414,7 @@ private:
         vkFreeMemory(device, stagingMem, nullptr);
     }
 
+    // Creates and fills the index buffer.
     static void createIndexBuffer(VkDevice device, VkPhysicalDevice physicalDevice, VkCommandPool commandPool, VkQueue graphicsQueue,
                                  VkBuffer& indexBuffer, VkDeviceMemory& indexBufferMemory, const std::vector<uint32_t>& indices) {
         if (indices.empty()) throw std::runtime_error("Index buffer is empty");

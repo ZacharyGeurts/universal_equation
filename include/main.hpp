@@ -10,7 +10,7 @@
 #include <iostream>
 #include "SDL3_init.hpp"
 #include "Vulkan_init.hpp"
-#include "types_ue.hpp"
+#include "core.hpp"
 
 // Application class managing the Vulkan rendering pipeline and SDL3 window for the Dimensional Navigator.
 class Application {

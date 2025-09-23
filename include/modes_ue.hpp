@@ -1,9 +1,9 @@
 #ifndef MODES_UE_HPP
 #define MODES_UE_HPP
-
+// UE code
 #include <vulkan/vulkan.h>
 #include <vector>
-#include "types_ue.hpp"
+#include "core.hpp"
 
 void renderMode1(AMOURANTH* amouranth, uint32_t imageIndex);
 void renderMode2(AMOURANTH* amouranth, uint32_t imageIndex, VkBuffer vertexBuffer, VkCommandBuffer commandBuffer, VkBuffer indexBuffer, float zoomLevel, int width, int height, float wavePhase, const std::vector<DimensionData>& cache);
