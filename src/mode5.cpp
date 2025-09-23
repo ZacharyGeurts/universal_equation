@@ -10,6 +10,9 @@
 static constexpr int kMaxRenderedDimensions = 9;
 
 void renderMode5(AMOURANTH* amouranth, uint32_t imageIndex, VkBuffer vertexBuffer, VkCommandBuffer commandBuffer, VkBuffer indexBuffer, float zoomLevel, int width, int height, float wavePhase, const std::vector<DimensionData>& cache, VkPipelineLayout pipelineLayout) {
+    // Suppress unused parameter warning
+    (void)imageIndex;
+
     // Bind vertex and index buffers (using sphere geometry)
     VkBuffer vertexBuffers[] = {vertexBuffer};
     VkDeviceSize offsets[] = {0};
@@ -28,7 +31,7 @@ void renderMode5(AMOURANTH* amouranth, uint32_t imageIndex, VkBuffer vertexBuffe
     glm::mat4 proj = glm::perspective(glm::radians(45.0f), aspect, 0.1f, 1000.0f);
 
     // Camera setup
-    glm::vec3 camPos(0.0f, 0.0f, 12.0f * zoomFactor);
+    glm::vec3 camPos(0.0f, 0.0f, 12.0f * zoomFactor); // Adjusted for mode 5
     if (amouranth->isUserCamActive()) {
         camPos = amouranth->getUserCamPos();
     }
@@ -36,7 +39,7 @@ void renderMode5(AMOURANTH* amouranth, uint32_t imageIndex, VkBuffer vertexBuffe
     glm::vec3 camUp(0.0f, 1.0f, 0.0f);
     glm::mat4 view = glm::lookAt(camPos, camTarget, camUp);
 
-    // Divine cycle
+    // Divine cycle adjusted for mode 5
     float cycleProgress = std::fmod(wavePhase / (2.0f * kMaxRenderedDimensions), 1.0f);
 
     if (cache.size() < kMaxRenderedDimensions) {
@@ -44,55 +47,55 @@ void renderMode5(AMOURANTH* amouranth, uint32_t imageIndex, VkBuffer vertexBuffe
         return;
     }
 
-    for (size_t i = 0; i < kMaxRenderedDimensions; ++i) {
-        if (cache[i].dimension != static_cast<int>(i + 1)) {
-            std::cerr << "Warning: Invalid cache for dimension " << (i + 1) << "\n";
-            continue;
-        }
-        if (cache[i].dimension != 5) continue; // Only render dimension 5
-
-        // Hyperspace oscillation
-        float osc = 1.0f + 0.25f * sinf(wavePhase * (1.0f + static_cast<float>(cache[i].darkMatter) * 0.6f));
-        float value = static_cast<float>(cache[i].observable * osc);
-        value = glm::clamp(value, 0.01f, 2.0f);
-
-        // Spiraling position
-        float angle = wavePhase + (i + 1) * 2.0f * glm::pi<float>() / kMaxRenderedDimensions;
-        float radius = 3.5f * (1.0f + static_cast<float>(cache[i].darkEnergy) * 0.4f);
-        glm::vec3 pos = glm::vec3(
-            radius * cosf(angle),
-            radius * sinf(angle),
-            radius * sinf(wavePhase + i * 0.5f)
-        );
-        glm::mat4 model = glm::mat4(1.0f);
-        model = glm::translate(model, pos);
-        model = glm::scale(model, glm::vec3(0.7f * zoomFactor * osc, 0.7f * zoomFactor * osc, 0.7f * zoomFactor * osc));
-        model = glm::rotate(model, wavePhase * 0.5f, glm::vec3(1.0f, 1.0f, 0.0f));
-
-        // Color with hyperspace effect
-        glm::vec3 baseColor = glm::vec3(
-            0.4f + 0.6f * cosf(wavePhase + i * 0.8f),
-            0.6f + 0.4f * sinf(wavePhase + i * 0.6f),
-            0.8f - 0.2f * cosf(wavePhase * 0.4f + i)
-        );
-
-        PushConstants pushConstants = {
-            model,
-            view,
-            proj,
-            baseColor,
-            value,
-            static_cast<float>(i + 1),
-            wavePhase,
-            cycleProgress,
-            static_cast<float>(cache[i].darkMatter),
-            static_cast<float>(cache[i].darkEnergy)
-        };
-        vkCmdPushConstants(commandBuffer, pipelineLayout,
-                           VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-                           0, sizeof(PushConstants), &pushConstants);
-        vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(amouranth->getSphereIndices().size()), 1, 0, 0, 0);
+    // Render only dimension 5
+    size_t i = 4; // Index for dimension 5 (0-based index)
+    if (cache[i].dimension != 5) {
+        std::cerr << "Warning: Invalid cache for dimension 5\n";
+        return;
     }
+
+    // Fractal oscillation adjusted for mode 5
+    float osc = 1.0f + 0.3f * sinf(wavePhase * (1.0f + static_cast<float>(cache[i].darkEnergy) * 0.7f)); // Reduced amplitude
+    float value = static_cast<float>(cache[i].observable * osc);
+    value = glm::clamp(value, 0.01f, 1.5f); // Tighter clamp for mode 5
+
+    // Positioning adjusted for mode 5
+    float angle = wavePhase + 5 * 2.0f * glm::pi<float>() / kMaxRenderedDimensions;
+    float scaleFactor = 1.0f + static_cast<float>(cache[i].observable) * 0.4f; // Reduced scale factor
+    float radius = 4.0f * scaleFactor; // Smaller radius for mode 5
+    glm::vec3 pos = glm::vec3(
+        radius * cosf(angle + cycleProgress),
+        radius * sinf(angle + cycleProgress),
+        radius * sinf(wavePhase + i * 0.5f) * 0.4f // Reduced z oscillation
+    );
+    glm::mat4 model = glm::mat4(1.0f);
+    model = glm::translate(model, pos);
+    model = glm::scale(model, glm::vec3(0.4f * zoomFactor * osc * scaleFactor, 0.4f * zoomFactor * osc * scaleFactor, 0.4f * zoomFactor * osc * scaleFactor)); // Smaller scale
+    model = glm::rotate(model, wavePhase * 0.6f, glm::vec3(sinf(i * 0.4f), cosf(i * 0.4f), 0.4f)); // Slower rotation
+
+    // Color with adjusted fractal effect for mode 5
+    glm::vec3 baseColor = glm::vec3(
+        0.4f + 0.6f * cosf(wavePhase + i * 1.0f + cycleProgress), // Adjusted color frequencies
+        0.3f + 0.5f * sinf(wavePhase + i * 0.8f),
+        0.6f - 0.4f * cosf(wavePhase * 0.6f + i)
+    );
+
+    PushConstants pushConstants = {
+        model,
+        view,
+        proj,
+        baseColor,
+        value,
+        5.0f, // Dimension 5
+        wavePhase,
+        cycleProgress,
+        static_cast<float>(cache[i].darkMatter),
+        static_cast<float>(cache[i].darkEnergy)
+    };
+    vkCmdPushConstants(commandBuffer, pipelineLayout,
+                       VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                       0, sizeof(PushConstants), &pushConstants);
+    vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(amouranth->getSphereIndices().size()), 1, 0, 0, 0);
 
     // Interactions for dimension 5
     amouranth->setCurrentDimension(5);
@@ -101,19 +104,19 @@ void renderMode5(AMOURANTH* amouranth, uint32_t imageIndex, VkBuffer vertexBuffe
         std::cerr << "Warning: No interactions for dimension 5\n";
         glm::mat4 interactionModel = glm::mat4(1.0f);
         interactionModel = glm::translate(interactionModel, glm::vec3(0.0f, 0.0f, 0.0f));
-        interactionModel = glm::scale(interactionModel, glm::vec3(0.7f * zoomFactor, 0.7f * zoomFactor, 0.7f * zoomFactor));
-        glm::vec3 baseColor = glm::vec3(0.85f, 0.9f, 0.95f);
+        interactionModel = glm::scale(interactionModel, glm::vec3(0.4f * zoomFactor, 0.4f * zoomFactor, 0.4f * zoomFactor)); // Smaller scale
+        glm::vec3 baseColor = glm::vec3(0.8f, 0.85f, 0.9f); // Slightly different default color
         PushConstants pushConstants = {
             interactionModel,
             view,
             proj,
             baseColor,
-            0.5f,
-            5.0f,
+            0.4f, // Reduced value for default interaction
+            5.0f, // Dimension 5
             wavePhase,
             cycleProgress,
-            0.5f,
-            0.5f
+            0.4f, // Adjusted default dark matter
+            0.4f  // Adjusted default dark energy
         };
         vkCmdPushConstants(commandBuffer, pipelineLayout,
                            VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
@@ -130,21 +133,21 @@ void renderMode5(AMOURANTH* amouranth, uint32_t imageIndex, VkBuffer vertexBuffe
                 glm::max(0.0f, static_cast<float>(pair.strength))
             );
             interactionStrength = glm::max(interactionStrength, 0.01f);
-            interactionStrength = glm::min(interactionStrength, 2.0f);
+            interactionStrength = glm::min(interactionStrength, 1.5f); // Tighter clamp for mode 5
 
-            float offset = static_cast<float>(pair.distance) * 0.8f * (1.0f + static_cast<float>(pair.strength) * 0.5f);
-            float angle = wavePhase + pair.vertexIndex * 2.0f + pair.distance * 0.4f;
+            float offset = static_cast<float>(pair.distance) * 0.8f * (1.0f + static_cast<float>(pair.strength) * 0.5f); // Reduced offset
+            float angle = wavePhase + pair.vertexIndex * 1.8f + pair.distance * 0.4f; // Adjusted angle factors
             glm::vec3 offsetPos = glm::vec3(
-                offset * cosf(angle),
-                offset * sinf(angle),
-                offset * 0.4f * sinf(angle * 0.7f)
+                offset * cosf(angle + cycleProgress),
+                offset * sinf(angle + cycleProgress),
+                offset * 0.4f * sinf(angle * 0.7f) // Reduced z oscillation
             );
             glm::mat4 interactionModel = glm::translate(glm::mat4(1.0f), offsetPos);
-            interactionModel = glm::scale(interactionModel, glm::vec3(0.5f * zoomFactor, 0.5f * zoomFactor, 0.5f * zoomFactor));
+            interactionModel = glm::scale(interactionModel, glm::vec3(0.25f * zoomFactor, 0.25f * zoomFactor, 0.25f * zoomFactor)); // Smaller interaction scale
 
             glm::vec3 baseColor = glm::vec3(
-                0.6f - 0.3f * sinf(angle),
-                0.7f - 0.2f * cosf(angle * 1.5f),
+                0.6f - 0.2f * sinf(angle), // Adjusted color frequencies
+                0.5f - 0.15f * cosf(angle * 1.4f),
                 0.8f - 0.1f * sinf(angle * 1.0f)
             );
 
@@ -153,8 +156,8 @@ void renderMode5(AMOURANTH* amouranth, uint32_t imageIndex, VkBuffer vertexBuffe
                 view,
                 proj,
                 baseColor,
-                interactionStrength * (0.7f + 0.3f * cosf(wavePhase + pair.distance)),
-                5.0f,
+                interactionStrength * (0.6f + 0.2f * cosf(wavePhase + pair.distance)), // Reduced modulation
+                5.0f, // Dimension 5
                 wavePhase,
                 cycleProgress,
                 static_cast<float>(pair.strength),
