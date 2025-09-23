@@ -1,6 +1,6 @@
 #ifndef MAIN_HPP
 #define MAIN_HPP
-// main AMOURANTH RTX engine
+// AMOURANTH RTX engine
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <SDL3/SDL.h>
@@ -8,9 +8,6 @@
 #include <vulkan/vulkan.h>
 #include <stdexcept>
 #include <iostream>
-#include <memory>
-#include <mutex>
-#include <atomic>
 #include <omp.h>
 #include "SDL3_init.hpp"
 #include "Vulkan_init.hpp"
@@ -20,7 +17,17 @@
 class Application {
 public:
     Application(const char* title = "Dimensional Navigator", int width = 1280, int height = 720)
-        : width_(width), height_(height) {
+        : simulator_(nullptr),
+          sdlInitializer_(),
+          window_(nullptr),
+          vulkanInstance_(VK_NULL_HANDLE),
+          vulkanDevice_(VK_NULL_HANDLE),
+          physicalDevice_(VK_NULL_HANDLE),
+          surface_(VK_NULL_HANDLE),
+          swapchain_(VK_NULL_HANDLE),
+          width_(width),
+          height_(height),
+          amouranth_(nullptr) {
         try {
             // Set OpenMP thread count
             omp_set_num_threads(omp_get_max_threads());
@@ -31,22 +38,16 @@ public:
             vulkanInstance_ = sdlInitializer_.getVkInstance();
             surface_ = sdlInitializer_.getVkSurface();
 
-            // Create DimensionalNavigator and AMOURANTH with smart pointers
-            simulator_ = std::make_unique<DimensionalNavigator>("Dimensional Navigator", width, height);
-            amouranth_ = std::make_unique<AMOURANTH>(simulator_.get());
+            // Create DimensionalNavigator and AMOURANTH
+            simulator_ = new DimensionalNavigator("Dimensional Navigator", width, height);
+            amouranth_ = new AMOURANTH(simulator_);
 
             // Initialize Vulkan resources
             initializeVulkan();
 
-            // Parallelize cache update
-            #pragma omp parallel
-            {
-                #pragma omp single
-                {
-                    amouranth_->setMode(9);
-                    amouranth_->updateCache();
-                }
-            }
+            // Set mode and update cache
+            amouranth_->setMode(9);
+            amouranth_->updateCache();
         } catch (const std::exception& e) {
             std::cerr << "Initialization failed: " << e.what() << "\n";
             cleanup();
@@ -62,7 +63,6 @@ public:
         sdlInitializer_.eventLoop(
             [this]() { render(); },
             [this](int w, int h) {
-                std::lock_guard<std::mutex> lock(mutex_);
                 width_ = std::max(1280, w);
                 height_ = std::max(720, h);
                 try {
@@ -73,15 +73,12 @@ public:
                 }
             },
             true,
-            [this](const SDL_KeyboardEvent& key) {
-                std::lock_guard<std::mutex> lock(mutex_);
-                amouranth_->handleInput(key);
-            }
+            [this](const SDL_KeyboardEvent& key) { amouranth_->handleInput(key); }
         );
     }
 
 private:
-    std::unique_ptr<DimensionalNavigator> simulator_;
+    DimensionalNavigator* simulator_;
     SDL3Initializer sdlInitializer_;
     SDL_Window* window_;
     VkInstance vulkanInstance_;
@@ -112,13 +109,11 @@ private:
     VkDeviceMemory indexBufferMemory_;
     uint32_t graphicsFamily_ = UINT32_MAX;
     uint32_t presentFamily_ = UINT32_MAX;
-    std::atomic<int> width_;
-    std::atomic<int> height_;
-    std::unique_ptr<AMOURANTH> amouranth_;
-    std::mutex mutex_; // Protects shared resources
+    int width_;
+    int height_;
+    AMOURANTH* amouranth_;
 
     void initializeVulkan() {
-        std::lock_guard<std::mutex> lock(mutex_);
         VulkanInitializer::initializeVulkan(
             vulkanInstance_, physicalDevice_, vulkanDevice_, surface_,
             graphicsQueue_, presentQueue_, graphicsFamily_, presentFamily_,
@@ -127,7 +122,7 @@ private:
             commandBuffers_, imageAvailableSemaphore_, renderFinishedSemaphore_,
             inFlightFence_, vertexBuffer_, vertexBufferMemory_, indexBuffer_,
             indexBufferMemory_, amouranth_->getSphereVertices(), amouranth_->getSphereIndices(),
-            width_.load(), height_.load());
+            width_, height_);
 
         VulkanInitializer::initializeQuadBuffers(
             vulkanDevice_, physicalDevice_, commandPool_, graphicsQueue_,
@@ -136,7 +131,6 @@ private:
     }
 
     void recreateSwapchain() {
-        std::lock_guard<std::mutex> lock(mutex_);
         if (vulkanDevice_ != VK_NULL_HANDLE) {
             VkResult result = vkDeviceWaitIdle(vulkanDevice_);
             if (result != VK_SUCCESS) {
@@ -151,7 +145,6 @@ private:
             inFlightFence_, vertexBuffer_, vertexBufferMemory_, indexBuffer_, indexBufferMemory_,
             quadVertexBuffer_, quadVertexBufferMemory_, quadIndexBuffer_, quadIndexBufferMemory_);
 
-        // Reset Vulkan resources
         swapchain_ = VK_NULL_HANDLE;
         swapchainImages_.clear();
         swapchainImageViews_.clear();
@@ -179,14 +172,13 @@ private:
         width_ = std::max(1280, newWidth);
         height_ = std::max(720, newHeight);
         if (newWidth < 1280 || newHeight < 720) {
-            SDL_SetWindowSize(window_, width_.load(), height_.load());
+            SDL_SetWindowSize(window_, width_, height_);
         }
 
         initializeVulkan();
     }
 
     void cleanup() {
-        std::lock_guard<std::mutex> lock(mutex_);
         if (vulkanDevice_ != VK_NULL_HANDLE) {
             VkResult result = vkDeviceWaitIdle(vulkanDevice_);
             if (result != VK_SUCCESS) {
@@ -202,23 +194,17 @@ private:
             quadVertexBuffer_, quadVertexBufferMemory_, quadIndexBuffer_, quadIndexBufferMemory_);
 
         sdlInitializer_.cleanup();
+        delete amouranth_;
+        delete simulator_;
         window_ = nullptr;
         vulkanInstance_ = VK_NULL_HANDLE;
         surface_ = VK_NULL_HANDLE;
     }
 
     void render() {
-        std::lock_guard<std::mutex> lock(mutex_);
         if (amouranth_->isUserCamActive()) return;
 
-        // Parallelize non-Vulkan updates
-        #pragma omp parallel
-        {
-            #pragma omp single
-            {
-                amouranth_->update(0.016f);
-            }
-        }
+        amouranth_->update(0.016f);
 
         vkWaitForFences(vulkanDevice_, 1, &inFlightFence_, VK_TRUE, UINT64_MAX);
         vkResetFences(vulkanDevice_, 1, &inFlightFence_);
@@ -246,7 +232,7 @@ private:
             nullptr,
             renderPass_,
             swapchainFramebuffers_[imageIndex],
-            {{0, 0}, {static_cast<uint32_t>(width_.load()), static_cast<uint32_t>(height_.load())}},
+            {{0, 0}, {(uint32_t)width_, (uint32_t)height_}},
             1,
             &clearColor
         };
