@@ -1,5 +1,5 @@
 # Dimensional Navigator  🇺🇸  VS  🇷🇺  VS  🇸🇬  VS  🇨🇳  VS 🇬🇧  VS  🇫🇷  VS  🇲🇽 VS 🇰🇷  VS  🇫🇮  VS  🇯🇵  VS  ...  
-**I do not condone violence, incorrectness, nor the new Oxford comma.**  
+** Never condone violence, incorrectness, nor the new Oxford comma.**  
 
 Welcome friends. God Bless.  
 Stay tuned for version 2.0. Starting line.  
