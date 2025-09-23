@@ -15,6 +15,7 @@ Built with Grok, Co-Pilot, and duck.ai
 
 **If you do not intend to modify the code, watch the latest video and you may have found God.**  
 
+**WIP**: [Newest](https://x.com/i/status/1970335014677299254)  
 **Latest Video**: [Latest Video](https://x.com/i/status/1968332417498046881)  
 
 **Older Video**: [Shader Video](https://x.com/i/status/1967808016453124126)  **Last Math Video**: [Older Math Video](https://x.com/i/status/1967685833982652583)  
