@@ -14,10 +14,10 @@ SDL3 and Vulkan AMOURANTH RTX engine for game or software development, see below
 Built with Grok, Co-Pilot, and duck.ai  
 
 **If you do not intend to modify the code, watch the latest video and you may have found God.**  
-
+**v1.9 Dots**[Latest](https://x.com/i/status/1970589215638593968)  
 **WIP**: [Newest](https://x.com/i/status/1970335014677299254)  
-**Latest Video**: [Latest Video](https://x.com/i/status/1968332417498046881)  
 
+**v1.8 White Gold**: [Latest Video](https://x.com/i/status/1968332417498046881)  
 **Older Video**: [Shader Video](https://x.com/i/status/1967808016453124126)  **Last Math Video**: [Older Math Video](https://x.com/i/status/1967685833982652583)  
 **Older Video**: [9D-1D](https://x.com/i/status/1967431708258804189)  **Older Video**: [Co-Pilot Update](https://github.com/user-attachments/assets/4a730d87-8b38-428e-bd5e-79c51921b67b)  
 **Shader Update**: [Old WIP](https://github.com/user-attachments/assets/1a259212-3314-424f-b997-7792e8ac9066)  **Old Video**: [Old WIP](https://github.com/user-attachments/assets/2980fe0d-1204-4a53-b6a4-cdf4f3eca072)  
