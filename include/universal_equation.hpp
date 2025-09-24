@@ -13,9 +13,15 @@
 #include <mutex>
 #include <atomic>
 #include <omp.h>
+#include <sstream>
+#include <iomanip>
 
 // Forward declaration to avoid circular dependency
 class DimensionalNavigator;
+
+// Inspired by the time-dependent Schrödinger equation, the quiet architect of quantum reality:
+// i ħ ∂/∂t Ψ = Ĥ Ψ
+// This class simulates emergent behaviors in n-dimensional hypercube lattices, permeating probabilities through tunable parameters.
 
 class UniversalEquation {
 public:
@@ -26,10 +32,13 @@ public:
         double darkMatter;    // Dark matter contribution
         double darkEnergy;    // Dark energy contribution
         std::string toString() const {
-            return "Observable: " + std::to_string(observable) +
-                   ", Potential: " + std::to_string(potential) +
-                   ", Dark Matter: " + std::to_string(darkMatter) +
-                   ", Dark Energy: " + std::to_string(darkEnergy);
+            std::ostringstream oss;
+            oss << std::fixed << std::setprecision(6)
+                << "Observable: " << observable
+                << ", Potential: " << potential
+                << ", Dark Matter: " << darkMatter
+                << ", Dark Energy: " << darkEnergy;
+            return oss.str();
         }
     };
 
@@ -94,6 +103,16 @@ public:
     struct DimensionData {
         int dimension;
         double observable, potential, darkMatter, darkEnergy;
+        std::string toString() const {
+            std::ostringstream oss;
+            oss << std::fixed << std::setprecision(6)
+                << "Dimension: " << dimension
+                << ", Observable: " << observable
+                << ", Potential: " << potential
+                << ", Dark Matter: " << darkMatter
+                << ", Dark Energy: " << darkEnergy;
+            return oss.str();
+        }
     };
     DimensionData updateCache();
 
