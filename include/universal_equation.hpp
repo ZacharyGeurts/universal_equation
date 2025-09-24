@@ -41,7 +41,9 @@ public:
             return oss.str();
         }
     };
-
+const std::vector<std::vector<double>>& getNCubeVertices() const {
+    return nCubeVertices_;
+}
     // Structure to represent interactions between vertices
     struct DimensionInteraction {
         int vertexIndex;      // Index of the vertex
