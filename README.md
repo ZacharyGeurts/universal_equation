@@ -171,5 +171,5 @@ make -j4
 cd bin
 dir or ls
 cd your OS
-./Navigator
+Navigator or ./Navigator
 ```
