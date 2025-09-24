@@ -1,6 +1,7 @@
 # Dimensional Navigator  🇺🇸  VS  🇷🇺  VS  🇸🇬  VS  🇨🇳  VS 🇬🇧  VS  🇫🇷  VS  🇲🇽 VS 🇰🇷  VS  🇫🇮  VS  🇯🇵  VS  🇨🇦  VS  🏴󠁧󠁢󠁳󠁣󠁴󠁿  VS  🇦🇺  ...  
 **Never condone violence, incorrectness, nor the new Oxford comma.**  
 https://x.com/i/grok?conversation=1970860339336999387  
+https://x.com/i/status/1970892773109776716  
 Welcome friends. God Bless.  
 Stay tuned for version 2.0. Starting line.  
 
