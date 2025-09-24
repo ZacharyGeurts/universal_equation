@@ -5,6 +5,7 @@
 #include <vulkan/vulkan.h>
 #include <iostream>
 #include <cmath>
+#include <random> // For subtle randomness
 
 static constexpr int kMaxRenderedDimensions = 9;
 
@@ -25,12 +26,17 @@ void renderMode2(AMOURANTH* amouranth, uint32_t imageIndex, VkBuffer vertexBuffe
     float aspect = static_cast<float>(width) / glm::max(1.0f, static_cast<float>(height));
     glm::mat4 proj = glm::perspective(glm::radians(45.0f), aspect, 0.1f, 1000.0f);
 
-    glm::vec3 camPos(0.0f, 0.0f, 9.0f * zoomFactor); // Slightly further than mode 1
+    // Dynamic camera for 2D: Tilted view for planar emphasis, with gentle pan
+    glm::vec3 camPos(0.0f, 4.0f * zoomFactor, 5.0f * zoomFactor);
     if (amouranth->isUserCamActive()) {
         camPos = amouranth->getUserCamPos();
     }
     glm::vec3 camTarget(0.0f, 0.0f, 0.0f);
     glm::vec3 camUp(0.0f, 1.0f, 0.0f);
+    // Pan in yz plane for 2D sweep
+    float panAngle = wavePhase * 0.15f;
+    camPos.y = 3.0f * zoomFactor * cosf(panAngle);
+    camPos.z = 4.0f * zoomFactor * sinf(panAngle) + 2.0f * zoomFactor;
     glm::mat4 view = glm::lookAt(camPos, camTarget, camUp);
 
     float cycleProgress = std::fmod(wavePhase / (2.0f * kMaxRenderedDimensions), 1.0f);
@@ -46,28 +52,43 @@ void renderMode2(AMOURANTH* amouranth, uint32_t imageIndex, VkBuffer vertexBuffe
         return;
     }
 
-    float osc = 1.0f + 0.15f * sinf(wavePhase * (1.0f + static_cast<float>(cache[i].darkEnergy) * 0.6f));
-    float value = static_cast<float>(cache[i].observable * osc);
-    value = glm::clamp(value, 0.01f, 1.2f);
+    // Enhanced oscillation: Multi-harmonic for 2D wave-like undulation
+    float oscX = 1.0f + 0.4f * sinf(wavePhase * 1.2f + static_cast<float>(cache[i].darkEnergy) * 1.5f);
+    float oscY = 1.0f + 0.4f * cosf(wavePhase * 1.0f + static_cast<float>(cache[i].potential) * 2.5f);
+    float pulse = 0.6f + 0.4f * sinf(wavePhase * 1.8f + cycleProgress * glm::two_pi<float>());
+    float value = static_cast<float>(cache[i].observable * oscX * oscY * pulse);
+    value = glm::clamp(value, 0.01f, 2.5f); // Broader dynamic range
 
-    float angle = wavePhase + 2 * 2.0f * glm::pi<float>() / kMaxRenderedDimensions;
-    float scaleFactor = 1.0f + static_cast<float>(cache[i].observable) * 0.25f;
-    float radius = 2.5f * scaleFactor;
+    // 2D emphasis: Circular motion in xy-plane, with radial pulsing
+    float angularSpeed = 0.9f + static_cast<float>(cache[i].darkMatter) * 0.5f;
+    float angle = wavePhase * angularSpeed + i * glm::two_pi<float>() / kMaxRenderedDimensions;
+    float scaleFactor = 1.0f + static_cast<float>(cache[i].observable) * 0.6f * pulse;
+    float radius = 2.0f * scaleFactor * (1.0f + 0.2f * sinf(wavePhase * 0.7f));
     glm::vec3 pos = glm::vec3(
-        radius * cosf(angle + cycleProgress),
-        radius * sinf(angle + cycleProgress),
-        radius * sinf(wavePhase + i * 0.3f) * 0.1f // Slight z variation
+        radius * cosf(angle + cycleProgress * glm::two_pi<float>()),
+        radius * sinf(angle + cycleProgress * glm::two_pi<float>()),
+        0.5f * value * sinf(wavePhase * 0.8f) // Subtle z-wave for depth
     );
     glm::mat4 model = glm::mat4(1.0f);
     model = glm::translate(model, pos);
-    model = glm::scale(model, glm::vec3(0.25f * zoomFactor * osc * scaleFactor, 0.25f * zoomFactor * osc * scaleFactor, 0.25f * zoomFactor * osc * scaleFactor));
-    model = glm::rotate(model, wavePhase * 0.45f, glm::vec3(sinf(i * 0.35f), cosf(i * 0.35f), 0.35f));
+    // Asymmetric scaling: Wider in xy for planar feel
+    model = glm::scale(model, glm::vec3(0.5f * zoomFactor * oscX * scaleFactor,
+                                        0.5f * zoomFactor * oscY * scaleFactor,
+                                        0.3f * zoomFactor * pulse * scaleFactor));
 
+    // Vibrant, reactive colors: 2D-inspired gradients, cycling hues
+    float hueCycle = wavePhase * 0.5f + static_cast<float>(cache[i].darkMatter) * glm::pi<float>();
     glm::vec3 baseColor = glm::vec3(
-        0.45f + 0.55f * cosf(wavePhase + i * 0.9f + cycleProgress),
-        0.25f + 0.35f * sinf(wavePhase + i * 0.7f),
-        0.65f - 0.35f * cosf(wavePhase * 0.55f + i)
+        0.4f + 0.6f * sinf(hueCycle),
+        0.5f + 0.5f * cosf(hueCycle * 1.2f + cycleProgress * glm::pi<float>()),
+        0.7f + 0.3f * sinf(hueCycle * 0.8f + static_cast<float>(cache[i].darkEnergy) * 2.0f)
     );
+    baseColor = glm::clamp(baseColor, 0.0f, 1.0f);
+
+    // Organic noise for texture
+    static std::mt19937 rng(static_cast<unsigned>(wavePhase * 1000.0f + i));
+    std::uniform_real_distribution<float> noiseDist(-0.08f, 0.08f);
+    baseColor += glm::vec3(noiseDist(rng), noiseDist(rng), noiseDist(rng));
 
     PushConstants pushConstants = {
         model,
@@ -75,7 +96,7 @@ void renderMode2(AMOURANTH* amouranth, uint32_t imageIndex, VkBuffer vertexBuffe
         proj,
         baseColor,
         value,
-        2.0f,
+        2.0f, // Dimension 2
         wavePhase,
         cycleProgress,
         static_cast<float>(cache[i].darkMatter),
@@ -90,61 +111,82 @@ void renderMode2(AMOURANTH* amouranth, uint32_t imageIndex, VkBuffer vertexBuffe
     auto pairs = amouranth->getInteractions();
     if (pairs.empty()) {
         std::cerr << "Warning: No interactions for dimension 2\n";
-        glm::mat4 interactionModel = glm::mat4(1.0f);
-        interactionModel = glm::translate(interactionModel, glm::vec3(0.0f, 0.0f, 0.0f));
-        interactionModel = glm::scale(interactionModel, glm::vec3(0.25f * zoomFactor, 0.25f * zoomFactor, 0.25f * zoomFactor));
-        glm::vec3 baseColor = glm::vec3(0.75f, 0.85f, 0.9f);
-        PushConstants pushConstants = {
-            interactionModel,
-            view,
-            proj,
-            baseColor,
-            0.35f,
-            2.0f,
-            wavePhase,
-            cycleProgress,
-            0.35f,
-            0.35f
-        };
-        vkCmdPushConstants(commandBuffer, pipelineLayout,
-                           VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-                           0, sizeof(PushConstants), &pushConstants);
-        vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(amouranth->getSphereIndices().size()), 1, 0, 0, 0);
+        // Fallback: Pulsing ring of echoes
+        float fallbackRadius = radius * 0.6f;
+        for (int echo = 0; echo < 3; ++echo) {
+            float echoAngle = angle + echo * glm::two_pi<float>() / 3.0f;
+            glm::vec3 echoPos = glm::vec3(
+                fallbackRadius * cosf(echoAngle),
+                fallbackRadius * sinf(echoAngle),
+                0.0f
+            );
+            glm::mat4 fallbackModel = glm::translate(glm::mat4(1.0f), echoPos);
+            fallbackModel = glm::scale(fallbackModel, glm::vec3(0.15f * zoomFactor * pulse * (1.0f - echo * 0.3f),
+                                                                0.15f * zoomFactor * pulse * (1.0f - echo * 0.3f),
+                                                                0.15f * zoomFactor * pulse * (1.0f - echo * 0.3f)));
+            glm::vec3 fallbackColor = baseColor * (0.4f + 0.3f * (2 - echo));
+            PushConstants fallbackPush = {
+                fallbackModel, view, proj, fallbackColor, value * 0.4f * (1.0f - echo * 0.2f), 2.0f, wavePhase, cycleProgress, 0.15f, 0.15f
+            };
+            vkCmdPushConstants(commandBuffer, pipelineLayout,
+                               VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                               0, sizeof(PushConstants), &fallbackPush);
+            vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(amouranth->getSphereIndices().size()), 1, 0, 0, 0);
+        }
     } else {
-        for (const auto& pair : pairs) {
+        // Enhanced interactions: Planar orbits with linking "edges" simulated via offset spheres
+        for (size_t idx = 0; idx < pairs.size(); ++idx) {
             if (amouranth->getMode() != 2) continue;
 
+            const auto& pair = pairs[idx];
             float interactionStrength = static_cast<float>(
                 amouranth->computeInteraction(pair.vertexIndex, pair.distance) *
-                std::exp(-glm::abs(amouranth->getAlpha() * pair.distance)) *
+                std::exp(-glm::abs(static_cast<float>(amouranth->getAlpha()) * pair.distance)) *
                 amouranth->computePermeation(pair.vertexIndex) *
                 glm::max(0.0f, static_cast<float>(pair.strength))
             );
-            interactionStrength = glm::max(interactionStrength, 0.01f);
-            interactionStrength = glm::min(interactionStrength, 1.2f);
+            interactionStrength = glm::clamp(interactionStrength, 0.01f, 1.8f); // Boost for 2D visibility
 
-            float offset = static_cast<float>(pair.distance) * 0.65f * (1.0f + static_cast<float>(pair.strength) * 0.35f);
-            float angle = wavePhase + pair.vertexIndex * 1.6f + pair.distance * 0.35f;
-            glm::vec3 offsetPos = glm::vec3(
-                offset * cosf(angle + cycleProgress),
-                offset * sinf(angle + cycleProgress),
-                offset * 0.1f * sinf(angle * 0.6f)
+            // Position: Co-orbital in plane, with angular separation
+            float orbitalRadius = static_cast<float>(pair.distance) * 1.5f * (1.0f + interactionStrength * 1.0f);
+            float orbitalSpeed = 1.2f + static_cast<float>(pair.vertexIndex) * 0.4f;
+            float sepAngle = pair.vertexIndex * glm::pi<float>() / 4.0f;
+            float angle = wavePhase * orbitalSpeed + sepAngle + cycleProgress * glm::two_pi<float>();
+            glm::vec3 orbitalOffset = glm::vec3(
+                orbitalRadius * cosf(angle),
+                orbitalRadius * sinf(angle),
+                static_cast<float>(pair.strength) * 0.8f * cosf(wavePhase * 0.6f + sepAngle) // Z-tilt
             );
+            glm::vec3 offsetPos = pos + orbitalOffset;
+
+            // Scale with connection fade: Larger for stronger links
+            float linkFade = 1.0f - static_cast<float>(idx) / static_cast<float>(pairs.size() * 0.7f);
             glm::mat4 interactionModel = glm::translate(glm::mat4(1.0f), offsetPos);
-            interactionModel = glm::scale(interactionModel, glm::vec3(0.18f * zoomFactor, 0.18f * zoomFactor, 0.18f * zoomFactor));
+            interactionModel = glm::scale(interactionModel, glm::vec3(
+                0.25f * zoomFactor * interactionStrength * linkFade * oscX,
+                0.25f * zoomFactor * interactionStrength * linkFade * oscY,
+                0.2f * zoomFactor * interactionStrength * linkFade
+            ));
 
-            glm::vec3 baseColor = glm::vec3(
-                0.65f - 0.15f * sinf(angle),
-                0.45f - 0.1f * cosf(angle * 1.3f),
-                0.85f - 0.1f * sinf(angle * 0.9f)
-            );
+            // Reactive color: Planar palette, lerping to complementary hues
+            float colorLerp = interactionStrength * linkFade * 0.7f;
+            glm::vec3 interactionColor = glm::mix(baseColor, glm::vec3(
+                0.8f + 0.2f * sinf(angle * 1.3f),
+                0.3f + 0.4f * cosf(angle * 1.1f + wavePhase * 0.5f),
+                0.1f + 0.6f * sinf(angle * 0.7f)
+            ), colorLerp);
 
-            PushConstants pushConstants = {
+            // Sparkle noise
+            static std::mt19937 interactionRng(static_cast<unsigned>(wavePhase * 1000.0f + pair.vertexIndex * 10 + i));
+            std::uniform_real_distribution<float> sparkleDist(0.85f, 1.15f);
+            interactionColor *= sparkleDist(interactionRng);
+
+            PushConstants interactionPush = {
                 interactionModel,
                 view,
                 proj,
-                baseColor,
-                interactionStrength * (0.55f + 0.15f * cosf(wavePhase + pair.distance)),
+                interactionColor,
+                interactionStrength * (0.7f + 0.3f * sinf(wavePhase * 1.3f + pair.distance)),
                 2.0f,
                 wavePhase,
                 cycleProgress,
@@ -153,8 +195,24 @@ void renderMode2(AMOURANTH* amouranth, uint32_t imageIndex, VkBuffer vertexBuffe
             };
             vkCmdPushConstants(commandBuffer, pipelineLayout,
                                VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-                               0, sizeof(PushConstants), &pushConstants);
+                               0, sizeof(PushConstants), &interactionPush);
             vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(amouranth->getSphereIndices().size()), 1, 0, 0, 0);
+
+            // Bonus: "Link" spheres midway to main pos for edge simulation (every third interaction)
+            if (idx % 3 == 0) {
+                glm::vec3 midPos = (pos + offsetPos) * 0.5f;
+                float linkAlpha = linkFade * 0.3f * interactionStrength;
+                glm::mat4 linkModel = glm::translate(glm::mat4(1.0f), midPos);
+                linkModel = glm::scale(linkModel, glm::vec3(0.08f * zoomFactor * linkAlpha, 0.08f * zoomFactor * linkAlpha, 0.08f * zoomFactor * linkAlpha));
+                glm::vec3 linkColor = glm::mix(baseColor, interactionColor, 0.5f) * 0.6f;
+                PushConstants linkPush = {
+                    linkModel, view, proj, linkColor, interactionStrength * linkAlpha, 2.0f, wavePhase, cycleProgress, 0.05f, 0.05f
+                };
+                vkCmdPushConstants(commandBuffer, pipelineLayout,
+                                   VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                                   0, sizeof(PushConstants), &linkPush);
+                vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(amouranth->getSphereIndices().size()), 1, 0, 0, 0);
+            }
         }
     }
 }
