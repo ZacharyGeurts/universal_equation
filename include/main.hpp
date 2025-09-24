@@ -2,7 +2,7 @@
 #define MAIN_HPP
 
 // AMOURANTH RTX engine - Header and implementation for the main Application class.
-// This file defines the Application class, which serves as the central coordinator for the "Dimensional Navigator" application.
+// This file defines the Application class, the central coordinator for the "Dimensional Navigator" application.
 // It manages the entire application lifecycle, including:
 // - SDL3 window creation, event handling, and input processing for cross-platform support.
 // - Vulkan instance, surface, device, swapchain, and rendering resources (via VulkanInitializer).
@@ -67,40 +67,40 @@ public:
     // Throws: std::runtime_error on SDL3 or Vulkan initialization failures; calls cleanup() on errors.
     // Notes: Logs initialization failures to stderr before re-throwing.
     Application(const char* title = "Dimensional Navigator", int width = 1280, int height = 720)
-        : simulator_(nullptr),
-          sdlInitializer_(),
-          window_(nullptr),
-          vulkanInstance_(VK_NULL_HANDLE),
-          vulkanDevice_(VK_NULL_HANDLE),
-          physicalDevice_(VK_NULL_HANDLE),
-          surface_(VK_NULL_HANDLE),
-          swapchain_(VK_NULL_HANDLE),
-          quadVertexBuffer_(VK_NULL_HANDLE),
-          quadVertexBufferMemory_(VK_NULL_HANDLE),
-          quadIndexBuffer_(VK_NULL_HANDLE),
-          quadIndexBufferMemory_(VK_NULL_HANDLE),
-          commandBuffers_(),
-          swapchainImages_(),
-          swapchainImageViews_(),
-          swapchainFramebuffers_(),
-          graphicsQueue_(VK_NULL_HANDLE),
-          presentQueue_(VK_NULL_HANDLE),
-          pipeline_(VK_NULL_HANDLE),
-          pipelineLayout_(VK_NULL_HANDLE),
-          renderPass_(VK_NULL_HANDLE),
-          commandPool_(VK_NULL_HANDLE),
-          imageAvailableSemaphore_(VK_NULL_HANDLE),
-          renderFinishedSemaphore_(VK_NULL_HANDLE),
-          inFlightFence_(VK_NULL_HANDLE),
-          vertexBuffer_(VK_NULL_HANDLE),
-          vertexBufferMemory_(VK_NULL_HANDLE),
-          indexBuffer_(VK_NULL_HANDLE),
-          indexBufferMemory_(VK_NULL_HANDLE),
-          graphicsFamily_(UINT32_MAX),
-          presentFamily_(UINT32_MAX),
-          width_(width),
-          height_(height),
-          amouranth_(nullptr) {
+        : simulator_(nullptr),                    // Initialize simulator pointer to nullptr.
+          sdlInitializer_(),                      // Default-construct SDL3Initializer (window, instance, surface).
+          window_(nullptr),                       // Initialize SDL window to nullptr.
+          vulkanInstance_(VK_NULL_HANDLE),        // Initialize Vulkan instance to null handle.
+          vulkanDevice_(VK_NULL_HANDLE),          // Initialize logical device to null handle.
+          physicalDevice_(VK_NULL_HANDLE),        // Initialize physical device to null handle.
+          surface_(VK_NULL_HANDLE),               // Initialize surface to null handle.
+          quadVertexBuffer_(VK_NULL_HANDLE),      // Initialize quad vertex buffer to null handle.
+          quadVertexBufferMemory_(VK_NULL_HANDLE), // Initialize quad vertex buffer memory to null handle.
+          quadIndexBuffer_(VK_NULL_HANDLE),       // Initialize quad index buffer to null handle.
+          quadIndexBufferMemory_(VK_NULL_HANDLE), // Initialize quad index buffer memory to null handle.
+          commandBuffers_(),                      // Initialize command buffers vector (empty).
+          swapchain_(VK_NULL_HANDLE),             // Initialize swapchain to null handle.
+          swapchainImages_(),                     // Initialize swapchain images vector (empty).
+          swapchainImageViews_(),                 // Initialize swapchain image views vector (empty).
+          swapchainFramebuffers_(),               // Initialize swapchain framebuffers vector (empty).
+          graphicsQueue_(VK_NULL_HANDLE),         // Initialize graphics queue to null handle.
+          presentQueue_(VK_NULL_HANDLE),          // Initialize present queue to null handle.
+          pipeline_(VK_NULL_HANDLE),              // Initialize graphics pipeline to null handle.
+          pipelineLayout_(VK_NULL_HANDLE),        // Initialize pipeline layout to null handle.
+          renderPass_(VK_NULL_HANDLE),            // Initialize render pass to null handle.
+          commandPool_(VK_NULL_HANDLE),           // Initialize command pool to null handle.
+          imageAvailableSemaphore_(VK_NULL_HANDLE), // Initialize image available semaphore to null handle.
+          renderFinishedSemaphore_(VK_NULL_HANDLE), // Initialize render finished semaphore to null handle.
+          inFlightFence_(VK_NULL_HANDLE),         // Initialize in-flight fence to null handle.
+          vertexBuffer_(VK_NULL_HANDLE),          // Initialize sphere vertex buffer to null handle.
+          vertexBufferMemory_(VK_NULL_HANDLE),    // Initialize sphere vertex buffer memory to null handle.
+          indexBuffer_(VK_NULL_HANDLE),           // Initialize sphere index buffer to null handle.
+          indexBufferMemory_(VK_NULL_HANDLE),     // Initialize sphere index buffer memory to null handle.
+          graphicsFamily_(UINT32_MAX),            // Initialize graphics queue family index to invalid.
+          presentFamily_(UINT32_MAX),             // Initialize present queue family index to invalid.
+          width_(width),                          // Initialize window width from parameter.
+          height_(height),                        // Initialize window height from parameter.
+          amouranth_(nullptr) {                   // Initialize renderer pointer to nullptr.
         try {
             // Configure OpenMP to use maximum available threads for parallelism.
             // Useful for CPU-bound tasks like simulator updates or buffer uploads (if implemented).
@@ -205,8 +205,8 @@ private:
     VkDeviceMemory vertexBufferMemory_;  // Allocated memory for sphere vertex buffer.
     VkBuffer indexBuffer_;            // Index buffer for sphere geometry.
     VkDeviceMemory indexBufferMemory_;   // Allocated memory for sphere index buffer.
-    uint32_t graphicsFamily_ = UINT32_MAX;  // Graphics queue family index.
-    uint32_t presentFamily_ = UINT32_MAX;   // Present queue family index.
+    uint32_t graphicsFamily_;         // Graphics queue family index (initialized to UINT32_MAX).
+    uint32_t presentFamily_;          // Present queue family index (initialized to UINT32_MAX).
     int width_;                       // Current window width (clamped to min 1280).
     int height_;                      // Current window height (clamped to min 720).
     AMOURANTH* amouranth_;            // Owned pointer to renderer (visuals, input; deleted in cleanup).
