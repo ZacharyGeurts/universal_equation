@@ -169,7 +169,7 @@ git clone https://github.com/ZacharyGeurts/universal_equation
 cd universal_equation
 make -j4
 cd bin
-ls
+dir or ls
 cd your OS
 ./Navigator
 ```
