@@ -1,11 +1,11 @@
-// ue engine
+// ue engine implementation
 #include "universal_equation.hpp"
 
 UniversalEquation::UniversalEquation(int maxDimensions, int mode, double influence,
-                                   double weak, double collapse, double twoD,
-                                   double threeDInfluence, double oneDPermeation,
-                                   double darkMatterStrength, double darkEnergyStrength,
-                                   double alpha, double beta, bool debug)
+                                     double weak, double collapse, double twoD,
+                                     double threeDInfluence, double oneDPermeation,
+                                     double darkMatterStrength, double darkEnergyStrength,
+                                     double alpha, double beta, bool debug)
     : maxDimensions_(std::max(1, std::min(maxDimensions == 0 ? 20 : maxDimensions, 20))),
       currentDimension_(std::clamp(mode, 1, maxDimensions_)),
       mode_(std::clamp(mode, 1, maxDimensions_)),
@@ -27,6 +27,7 @@ UniversalEquation::UniversalEquation(int maxDimensions, int mode, double influen
       nCubeVertices_(),
       needsUpdate_(true),
       navigator_(nullptr) {
+    // Initialize with retry to handle memory allocation for large dimensions
     try {
         initializeWithRetry();
         if (debug_.load()) {
@@ -131,7 +132,8 @@ void UniversalEquation::setMode(int mode) {
 int UniversalEquation::getMode() const { return mode_.load(); }
 
 void UniversalEquation::setCurrentDimension(int dimension) {
-    if (dimension >= 1 && dimension <= maxDimensions_ && dimension != currentDimension_.load()) {
+    dimension = std::clamp(dimension, 1, maxDimensions_);
+    if (dimension != currentDimension_.load()) {
         currentDimension_.store(dimension);
         mode_.store(dimension);
         needsUpdate_.store(true);
@@ -147,6 +149,10 @@ int UniversalEquation::getCurrentDimension() const { return currentDimension_.lo
 
 int UniversalEquation::getMaxDimensions() const { return maxDimensions_; }
 
+double UniversalEquation::getOmega() const { return omega_; }
+
+double UniversalEquation::getInvMaxDim() const { return invMaxDim_; }
+
 const std::vector<UniversalEquation::DimensionInteraction>& UniversalEquation::getInteractions() const {
     if (needsUpdate_.load()) {
         if (debug_.load()) {
@@ -157,6 +163,16 @@ const std::vector<UniversalEquation::DimensionInteraction>& UniversalEquation::g
     }
     std::lock_guard<std::mutex> lock(mutex_);
     return interactions_;
+}
+
+const std::vector<std::vector<double>>& UniversalEquation::getNCubeVertices() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return nCubeVertices_;
+}
+
+const std::vector<double>& UniversalEquation::getCachedCos() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return cachedCos_;
 }
 
 void UniversalEquation::advanceCycle() {
@@ -201,7 +217,7 @@ UniversalEquation::EnergyResult UniversalEquation::compute() const {
             std::lock_guard<std::mutex> lock(mutex_);
             localInteractions = interactions_;
         }
-        // Only parallelize for large vertex counts to reduce overhead
+        // Only parallelize for large interaction counts to reduce overhead
         if (localInteractions.size() > 1000) {
             #pragma omp parallel reduction(+:interactionSum,totalDarkMatter,totalDarkEnergy)
             {
@@ -247,6 +263,8 @@ UniversalEquation::EnergyResult UniversalEquation::compute() const {
 }
 
 double UniversalEquation::computeInteraction(int vertexIndex, double distance) const {
+    // Computes the interaction strength between reference and a vertex
+    // Uses dimension-based denominator for scaling, with modifiers for weak interactions and 3D specifics
     double denom = std::max(1e-15, std::pow(static_cast<double>(currentDimension_.load()), (vertexIndex % maxDimensions_ + 1)));
     double modifier = (currentDimension_.load() > 3 && (vertexIndex % maxDimensions_ + 1) > 3) ? weak_.load() : 1.0;
     if (currentDimension_.load() == 3 && ((vertexIndex % maxDimensions_ + 1) == 2 || (vertexIndex % maxDimensions_ + 1) == 4)) {
@@ -261,6 +279,8 @@ double UniversalEquation::computeInteraction(int vertexIndex, double distance) c
 }
 
 double UniversalEquation::computePermeation(int vertexIndex) const {
+    // Computes permeation factor for a vertex, simulating probability flow in the lattice
+    // Special cases for 1D/2D/3D, fallback to magnitude-based scaling for higher dims
     if (vertexIndex < 0 || nCubeVertices_.empty()) {
         if (debug_.load()) {
             std::lock_guard<std::mutex> lock(debugMutex_);
@@ -286,7 +306,7 @@ double UniversalEquation::computePermeation(int vertexIndex) const {
         vertex = nCubeVertices_[safeIndex];
     }
     double vertexMagnitude = 0.0;
-    // Only parallelize for large dimensions
+    // Parallelize magnitude calculation for large dimensions to improve performance
     if (vertex.size() > 100) {
         #pragma omp parallel for reduction(+:vertexMagnitude)
         for (size_t i = 0; i < std::min(static_cast<size_t>(currentDimension_.load()), vertex.size()); ++i) {
@@ -307,6 +327,7 @@ double UniversalEquation::computePermeation(int vertexIndex) const {
 }
 
 double UniversalEquation::computeDarkEnergy(double distance) const {
+    // Computes dark energy contribution, clamped to avoid extreme values
     double d = std::min(distance, 10.0);
     double result = darkEnergyStrength_.load() * safeExp(d * invMaxDim_);
     if (debug_.load() && interactions_.size() <= 100) {
@@ -317,6 +338,8 @@ double UniversalEquation::computeDarkEnergy(double distance) const {
 }
 
 double UniversalEquation::computeCollapse() const {
+    // Computes collapse factor, simulating dimensional convergence or wave function collapse
+    // Returns 0 for 1D; uses precomputed cosines for oscillation in higher dims
     if (currentDimension_.load() == 1) return 0.0;
     double phase = static_cast<double>(currentDimension_.load()) / (2 * maxDimensions_);
     std::lock_guard<std::mutex> lock(mutex_);
@@ -335,6 +358,8 @@ double UniversalEquation::computeCollapse() const {
 }
 
 void UniversalEquation::initializeNCube() {
+    // Initializes hypercube vertices as binary combinations in n-space
+    // Parallelized for large dimensions to reduce computation time
     std::lock_guard<std::mutex> lock(mutex_);
     nCubeVertices_.clear();
     uint64_t numVertices = std::min(static_cast<uint64_t>(1ULL << currentDimension_.load()), maxVertices_);
@@ -343,7 +368,7 @@ void UniversalEquation::initializeNCube() {
         std::lock_guard<std::mutex> lock(debugMutex_);
         std::cout << "[DEBUG] Initializing nCube with " << numVertices << " vertices for dimension " << currentDimension_.load() << "\n";
     }
-    // Only parallelize for large vertex counts
+    // Parallelize vertex generation for large numVertices
     if (numVertices > 1000) {
         #pragma omp parallel
         {
@@ -378,6 +403,8 @@ void UniversalEquation::initializeNCube() {
 }
 
 void UniversalEquation::updateInteractions() const {
+    // Updates interaction data for current dimension, computing distances and strengths
+    // Parallelized for large vertex counts, with thread-safe local accumulation
     std::lock_guard<std::mutex> lock(mutex_);
     interactions_.clear();
     uint64_t numVertices = std::min(static_cast<uint64_t>(1ULL << currentDimension_.load()), maxVertices_);
@@ -392,7 +419,7 @@ void UniversalEquation::updateInteractions() const {
         std::lock_guard<std::mutex> lock(debugMutex_);
         std::cout << "[DEBUG] Updating interactions for " << numVertices - 1 << " vertices\n";
     }
-    // Only parallelize for large vertex counts
+    // Parallelize for large numVertices
     if (numVertices > 1000) {
         #pragma omp parallel
         {
@@ -455,13 +482,15 @@ void UniversalEquation::updateInteractions() const {
 }
 
 void UniversalEquation::initializeWithRetry() {
+    // Retries initialization by reducing dimension if memory allocation fails
+    // Ensures robust startup for high-dimensional simulations
     while (currentDimension_.load() >= 1) {
         try {
             initializeNCube();
             {
                 std::lock_guard<std::mutex> lock(mutex_);
                 cachedCos_.resize(maxDimensions_ + 1);
-                // Only parallelize for large maxDimensions_
+                // Parallelize cosine precomputation for efficiency
                 if (maxDimensions_ > 10) {
                     #pragma omp parallel for
                     for (int i = 0; i <= maxDimensions_; ++i) {
@@ -495,6 +524,8 @@ void UniversalEquation::initializeWithRetry() {
 }
 
 double UniversalEquation::safeExp(double x) const {
+    // Safe exponential with clamping to prevent overflow/underflow/NaN
+    // Clamps input to [-709, 709] to avoid extreme values in simulation
     double result = std::exp(std::clamp(x, -709.0, 709.0));
     if (debug_.load() && (std::isnan(result) || std::isinf(result))) {
         std::lock_guard<std::mutex> lock(debugMutex_);
@@ -504,6 +535,8 @@ double UniversalEquation::safeExp(double x) const {
 }
 
 void UniversalEquation::initializeCalculator(DimensionalNavigator* navigator) {
+    // Initializes the calculator with a navigator for rendering integration
+    // Throws if navigator is null to prevent invalid state
     std::lock_guard<std::mutex> lock(mutex_);
     navigator_ = navigator;
     if (!navigator_) {
@@ -516,6 +549,8 @@ void UniversalEquation::initializeCalculator(DimensionalNavigator* navigator) {
 }
 
 UniversalEquation::DimensionData UniversalEquation::updateCache() {
+    // Updates and returns the cache for the current dimension
+    // Computes energy results and packages into DimensionData for data scientists
     if (debug_.load()) {
         std::lock_guard<std::mutex> lock(debugMutex_);
         std::cout << "[DEBUG] Starting updateCache for dimension: " << currentDimension_.load() << "\n";
@@ -529,9 +564,7 @@ UniversalEquation::DimensionData UniversalEquation::updateCache() {
     data.darkEnergy = result.darkEnergy;
     if (debug_.load()) {
         std::lock_guard<std::mutex> lock(debugMutex_);
-        std::cout << "[DEBUG] updateCache completed: dimension=" << data.dimension
-                  << ", observable=" << data.observable << ", potential=" << data.potential
-                  << ", darkMatter=" << data.darkMatter << ", darkEnergy=" << data.darkEnergy << "\n";
+        std::cout << "[DEBUG] updateCache completed: " << data.toString() << "\n";
     }
     return data;
 }
