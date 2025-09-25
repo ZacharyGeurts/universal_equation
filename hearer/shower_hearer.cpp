@@ -1,11 +1,12 @@
-// Optimized ShowerHearer: Uses obs in render() for green color mod, full 16-channel audio for Dolby
-// - Uses getInteractions() (no getStrengths()), maps strengths to array for O(1) lookup
-// - Obs modulates green in vertex colors (visualizes observable energy, fixes warning)
-// - Audio: 16 channels, no pooling, all play simultaneously for immersive Dolby output
-// - Precomp edges/verts per dim, cached in display lists (DLs) for VBO-like speed
-// - Tone gen: 50ms bursts (2205 samples), 3 harmonics (40% less compute)
-// - Render: Batched GL calls, pre-padded verts to 3D, clamped rotation
-// - Micro-yield every 16 frames for thermal control
+// Hyper-Optimized ShowerHearer: OpenMP parallelized (tone only), dry-as-dust math humor
+// - Fixed segfault: Removed OpenMP from GL calls (thread-safety issue); per-dim vertBufs
+// - Visualizes n-Cube as a quirky math artifact with sarcastic console quips
+// - Fullscreen (F): "Drowning in pixels"; Mute (M): "Math goes quiet"; Esc: Exit
+// - Obs modulates green (math hype factor, fixes warning)
+// - Audio: 16 channels, no pooling, Dolby immersion, mute support
+// - Precomp edges/verts in display lists (DLs) for VBO-like speed
+// - Tone gen: 50ms bursts (2205 samples), 3 harmonics (40% less compute), OpenMP parallel
+// - Micro-yield every 16 frames for thermals
 // Compile: g++ -std=c++17 -O2 -fopenmp -lSDL2 -lSDL2_mixer -lGL -lGLU
 
 #include <SDL2/SDL.h>
@@ -19,89 +20,119 @@
 #include <cmath>
 #include <thread>
 #include <chrono>
-#include <algorithm>  // For std::min/max/clamp
-#include <cstring>    // For memcpy in audio buffer
+#include <algorithm>
+#include <cstring>
+#include <omp.h>
 
 #include "universal_equation.hpp"  // Assume: getNCubeVertices(), getInteractions()
 
 class ShowerHearer {
 public:
-    // Ctor: Inline inits, clamp max dims (1-5, caps at 32 verts), prealloc buffers
+    // Ctor: Clamp dims (1-5, 32 verts max), prealloc buffers
     ShowerHearer(int width, int height, int maxDims = 3)
         : screenWidth_(width), screenHeight_(height), maxDimensions_(std::min(5, std::max(1, maxDims))),
           ue_(maxDims, 1, 1.0, 0.1, 0.5, 0.2, 0.3, 0.1, 0.05, 0.02, 0.5, 0.1, true),
           rotation_{0.0f, 0.0f}, strengths_(32, 0.0f),  // Max 2^5 verts
-          vertBuf_(32 * 3), edgeBuf_(96 * 3 * 2),      // 32v*3f, 96e*6f (max d=5)
-          dlPoints_(maxDimensions_ + 1, 0), dlEdges_(maxDimensions_ + 1, 0) {
-        // Init SDL video+audio, exit on fail
+          vertBufs_(maxDimensions_ + 1), dlEdges_(maxDimensions_ + 1, 0),
+          isMuted_(false), isFullscreen_(false) {
+        // Init SDL, fail like a buggy matrix inversion
         if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO) < 0) { std::cerr << SDL_GetError() << std::endl; exit(1); }
         if (Mix_Init(MIX_INIT_MOD) == 0) { std::cerr << Mix_GetError() << std::endl; exit(1); }
-        Mix_OpenAudio(44100, MIX_DEFAULT_FORMAT, 2, 8192);  // 8K buffer for zero underruns
-        Mix_AllocateChannels(16);  // Full 16 channels for Dolby immersion
+        Mix_OpenAudio(44100, MIX_DEFAULT_FORMAT, 2, 8192);  // 8K buffer for crisp math vibes
+        Mix_AllocateChannels(16);  // 16 channels for Dolby number crunching
 
-        // Create OpenGL window, centered, 1024x768
-        window_ = SDL_CreateWindow("DUST v3: Hyper-Opt n-Cube Sonic Vortex",
+        // Create window for staring at math
+        window_ = SDL_CreateWindow("n-Cube Number Cruncher v3.14",
                                    SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
                                    width, height, SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN);
         if (!window_) { std::cerr << SDL_GetError() << std::endl; exit(1); }
         context_ = SDL_GL_CreateContext(window_);
         if (!context_) { std::cerr << SDL_GetError() << std::endl; exit(1); }
 
-        // GL setup: Perspective proj, depth test, smooth points, alpha blending
+        // GL setup: Perspective for nerdy PowerPoint slides
         glViewport(0, 0, width, height);
         glMatrixMode(GL_PROJECTION); glLoadIdentity(); gluPerspective(45.0, (double)width / height, 0.1, 100.0);
         glMatrixMode(GL_MODELVIEW); glLoadIdentity();
         glEnable(GL_DEPTH_TEST); glEnable(GL_POINT_SMOOTH); glEnable(GL_BLEND);
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-        glPointSize(8.0f);  // Balanced point size for visibility
+        glPointSize(8.0f);
 
-        // Pre-generate base tone and precompute geometry for all dimensions
+        // Pre-generate tone and geometry
         genBaseTone();
         precompAllDims();
     }
 
-    // Dtor: Clean up GL, SDL, and audio resources
+    // Dtor: Clean up like a bored intern
     ~ShowerHearer() {
-        for (auto dl : dlPoints_) glDeleteLists(dl, 1);
         for (auto dl : dlEdges_) glDeleteLists(dl, 1);
         Mix_FreeChunk(toneChunk_); Mix_CloseAudio(); Mix_Quit();
         SDL_GL_DeleteContext(context_); SDL_DestroyWindow(window_); SDL_Quit();
     }
 
-    // Main loop: Full-speed, micro-yield every 16 frames, handle dim switch
+    // Main loop: Handle F (fullscreen), M (mute), Esc (exit) with dry quips
     void run() {
         bool running = true; int dim = 1; ue_.setCurrentDimension(dim);
         auto lastYield = std::chrono::steady_clock::now();
         int frameCtr = 0;
 
+        // Cheeky dimension titles (index dim-1)
+        const char* dimTitles[5] = {
+            "1D: Just a Line, Yawn", "2D: Barely a Cube", "3D: Meh, Spatial Enough",
+            "4D: Math’s Midlife Crisis", "5D: Why Are We Here"
+        };
+
+        // Set initial title
+        SDL_SetWindowTitle(window_, dimTitles[dim - 1]);
+
         while (running) {
-            // Event handling: Quit or switch dimension on spacebar
+            // Handle events: Quit, dim switch, fullscreen, mute, exit
             SDL_Event ev; while (SDL_PollEvent(&ev)) {
                 if (ev.type == SDL_QUIT) running = false;
-                else if (ev.type == SDL_KEYDOWN && ev.key.keysym.sym == SDLK_SPACE) {
-                    dim = (dim % maxDimensions_) + 1; ue_.setCurrentDimension(dim);
+                else if (ev.type == SDL_KEYDOWN) {
+                    switch (ev.key.keysym.sym) {
+                        case SDLK_SPACE:  // Switch dimension, update title
+                            dim = (dim % maxDimensions_) + 1; ue_.setCurrentDimension(dim);
+                            SDL_SetWindowTitle(window_, dimTitles[dim - 1]);
+                            break;
+                        case SDLK_f:  // Toggle fullscreen
+                            isFullscreen_ = !isFullscreen_;
+                            SDL_SetWindowFullscreen(window_, isFullscreen_ ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0);
+                            std::cout << (isFullscreen_ ? "Fullscreen: Drowning in pixels." : "Windowed: Back to desk chaos.") << std::endl;
+                            break;
+                        case SDLK_m:  // Toggle mute
+                            isMuted_ = !isMuted_;
+                            if (isMuted_) Mix_HaltChannel(-1);  // Silence all
+                            std::cout << (isMuted_ ? "Muted. Math goes quiet." : "Unmuted. Numbers scream again.") << std::endl;
+                            break;
+                        case SDLK_ESCAPE:  // Exit
+                            std::cout << "Escaping the math void. Bye." << std::endl;
+                            running = false;
+                            break;
+                    }
                 }
             }
 
-            // Compute energies, extract needed values
+            // Compute energies
             auto res = ue_.compute();
             double obs = res.observable, de = res.darkEnergy;
 
-            // Sonify: Map observable to freq (40-300 Hz), generate tone if changed
+            // Sonify: Generate tone if not muted
             double freq = std::clamp(40.0 + (obs * 200.0), 40.0, 300.0);
-            genModTone(freq);
+            if (!isMuted_) genModTone(freq);
 
-            // Play on all 16 channels (no pooling, max Dolby immersion, 80% vol to avoid clipping)
-            for (int ch = 0; ch < 16; ++ch) {
-                Mix_Volume(ch, MIX_MAX_VOLUME * 0.8f);
-                Mix_PlayChannel(ch, toneChunk_, 0);
+            // Play on all 16 channels if not muted (no OpenMP, small/fast)
+            if (!isMuted_) {
+                for (int ch = 0; ch < 16; ++ch) {
+                    Mix_Volume(ch, MIX_MAX_VOLUME * 0.8f);
+                    Mix_PlayChannel(ch, toneChunk_, 0);
+                }
             }
 
-            // Render with observable and dark energy
+            // Render with energies and dimension
             render(obs, de, dim);
             SDL_GL_SwapWindow(window_);
 
-            // Yield every 16 frames (~60fps) to manage thermals
+            // Yield every 16 frames (~60fps) for thermals
             ++frameCtr; if (frameCtr % 16 == 0) {
                 if (std::chrono::steady_clock::now() - lastYield > std::chrono::milliseconds(1)) {
                     std::this_thread::yield(); lastYield = std::chrono::steady_clock::now();
@@ -111,17 +142,17 @@ public:
     }
 
 private:
-    // Render: Draw edges (static DL), points (dynamic DL w/ colors), obs boosts green
+    // Render: Edges (static DL), points (dynamic DL), obs as math hype factor
     void render(double obs, double de, int dim) {
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
         glLoadIdentity(); glTranslatef(0.0f, 0.0f, -5.0f);
         glRotatef(rotation_[0], 1.0f, 0.0f, 0.0f); glRotatef(rotation_[1], 0.0f, 0.0f, 1.0f);
         rotation_[0] = std::fmod(rotation_[0] + 1.2f, 360.0f); rotation_[1] = std::fmod(rotation_[1] + 0.8f, 360.0f);
 
-        // Draw static edges (gray wireframe)
+        // Draw static edges for PowerPoint slide
         glColor3f(0.5f, 0.5f, 0.5f); glCallList(dlEdges_[dim]);
 
-        // Map interactions to strengths array (O(n), n=2^dim)
+        // Map interactions to strengths (no OpenMP, small n)
         std::fill(strengths_.begin(), strengths_.end(), 0.0f);
         auto interactions = ue_.getInteractions();
         for (const auto& intr : interactions) {
@@ -130,36 +161,37 @@ private:
             }
         }
 
-        // Dynamic point DL: Colors based on strength, obs boosts green, de modulates alpha
+        // Dynamic point DL: Colors with obs as math hype factor (no OpenMP in GL)
         GLuint newDl = glGenLists(1); glNewList(newDl, GL_COMPILE);
         glBegin(GL_POINTS);
         int nVerts = 1 << dim;
         for (int i = 1; i < nVerts; ++i) {
             float str = strengths_[i]; float norm = std::min(1.0f, str * 3.0f);
-            // Obs boosts green (0-1 range, clamped), ties viz to observable energy
+            // Obs boosts green for nerdy flair
             float r = 1.0f - norm, g = norm * (0.7f + static_cast<float>(obs) * 0.3f), b = norm;
-            g = std::clamp(g, 0.0f, 1.0f);  // Prevent color overflow
+            g = std::clamp(g, 0.0f, 1.0f);  // No color overflow
             float a = 0.6f + (de * 0.4f);
             glColor4f(r, g, b, a);
-            glVertex3fv(&vertBuf_[0] + (i * 3));
+            glVertex3fv(&vertBufs_[dim][0] + (i * 3));
         }
         glEnd(); glEndList();
 
         glCallList(newDl); glDeleteLists(newDl, 1);
     }
 
-    // Precompute vertices and edges for all dimensions, store edges in DLs
+    // Precompute vertices and edges for all dimensions (per-dim vertBufs)
     void precompAllDims() {
         for (int d = 1; d <= maxDimensions_; ++d) {
             ue_.setCurrentDimension(d);
             const auto& verts = ue_.getNCubeVertices();
             int nV = 1 << d;
 
-            // Pad vertices to 3D (interleaved float array)
-            std::fill(vertBuf_.begin(), vertBuf_.end(), 0.0f);
+            // Pad vertices to 3D per dimension
+            auto& vbuf = vertBufs_[d];
+            vbuf.assign(nV * 3, 0.0f);
             for (int i = 0; i < nV; ++i) {
                 for (int k = 0; k < std::min(3, d); ++k) {
-                    vertBuf_[(i * 3) + k] = static_cast<GLfloat>(verts[i][k]);
+                    vbuf[(i * 3) + k] = static_cast<GLfloat>(verts[i][k]);
                 }
             }
 
@@ -172,19 +204,19 @@ private:
                 }
             }
 
-            // Store edges in DL (static geometry)
+            // Store edges in DL for fast math lines
             dlEdges_[d] = glGenLists(1); glNewList(dlEdges_[d], GL_COMPILE);
             glBegin(GL_LINES);
             for (auto& e : edges) {
                 int i = e.first, j = e.second;
-                glVertex3fv(&vertBuf_[0] + (i * 3));
-                glVertex3fv(&vertBuf_[0] + (j * 3));
+                glVertex3fv(&vbuf[0] + (i * 3));
+                glVertex3fv(&vbuf[0] + (j * 3));
             }
             glEnd(); glEndList();
         }
     }
 
-    // Generate tone: 50ms burst, 3 harmonics, skip if freq unchanged
+    // Generate tone: 50ms burst, 3 harmonics, parallelized
     void genModTone(double freq) {
         static double lastFreq = -1.0; if (std::abs(freq - lastFreq) < 1.0) return; lastFreq = freq;
         int samples = 2205;  // 44100 * 0.05
@@ -192,16 +224,17 @@ private:
         double pi2 = 2 * M_PI;
         double f3 = 3 * freq, f5 = 5 * freq;  // Precompute harmonics
 
-        // Unrolled sine wave gen (3 harmonics, normalized)
+        // Parallelize sample calc for mathy beeps
+        #pragma omp parallel for schedule(dynamic)
         for (int i = 0; i < samples; ++i) {
             double t = i / 44100.0;
             double w = std::sin(pi2 * freq * t);
             w += 0.5 * std::sin(pi2 * f3 * t);
             w += 0.3 * std::sin(pi2 * f5 * t);
-            buf[i] = w / 1.8;  // Normalize for 3 harmonics
+            buf[i] = w / 1.8;  // Normalize
         }
 
-        // Convert to int16 stereo buffer
+        // Convert to int16 stereo
         int16_t* abuf = new int16_t[2 * samples];
         for (int i = 0; i < samples; ++i) {
             int16_t s = static_cast<int16_t>(32767 * buf[i]);
@@ -213,7 +246,7 @@ private:
         delete[] abuf;
     }
 
-    // Generate base tone (440 Hz) for initialization
+    // Base tone: 440 Hz for startup math hum
     void genBaseTone() { genModTone(440.0); }
 
     // Member variables
@@ -223,13 +256,15 @@ private:
     SDL_GLContext context_;
     Mix_Chunk* toneChunk_ = nullptr;
     std::array<float, 2> rotation_;
-    std::vector<float> strengths_;  // Strength per vertex (2^dim)
-    std::vector<GLfloat> vertBuf_, edgeBuf_;  // Pre-padded vertex/edge buffers
-    std::vector<GLuint> dlPoints_, dlEdges_;  // Display lists per dimension
+    std::vector<float> strengths_;  // Strength per vertex
+    std::vector<std::vector<GLfloat>> vertBufs_;  // Per-dim padded vertex buffers
+    std::vector<GLuint> dlEdges_;  // Display lists per dim
+    bool isMuted_;    // Mute state
+    bool isFullscreen_;  // Fullscreen state
 };
 
 int main(int argc, char* argv[]) {
-    // Parse max dimensions from args, clamp to 1-5
+    // Parse max dims, clamp to 1-5
     int maxD = 3; if (argc > 1) { maxD = std::stoi(argv[1]); maxD = std::min(5, std::max(1, maxD)); }
     ShowerHearer sh(1024, 768, maxD); sh.run();
     return 0;
