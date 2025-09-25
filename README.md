@@ -8,7 +8,7 @@ Stay tuned for version 2.0. Starting line.
 **Platform**: Currently Linux-only  
 
 Modular design. Modify with your favorite AI coding program.  
-This project uses an SDL3 and Vulkan backend for rendering, chosen from idiocy, ignorance, and patience.  
+This project uses an SDL3 backend for rendering (yay Vulkan), chosen from idiocy, ignorance, and patience.  
 
 Software with free distribution can use the software without restriction.  
 SDL3 and Vulkan AMOURANTH RTX engine for game or software development, see below for licensing.  
