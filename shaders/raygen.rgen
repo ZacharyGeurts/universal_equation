@@ -1,66 +1,32 @@
 #version 460
 #extension GL_EXT_ray_tracing : require
-#extension GL_ARB_separate_shader_objects : enable
-#extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
+#extension GL_EXT_nonuniform_qualifier : enable
 
-// Common definitions shared across shaders
-struct PushConstants {
-    mat4 view;          // offset 0 (model not needed in RT; handled by BLAS/TLAS)
-    mat4 proj;          // offset 64
-    vec3 baseColor;     // offset 128
-    float value;        // offset 140
-    float dimValue;     // offset 144
-    float wavePhase;    // offset 148
-    float cycleProgress; // offset 152
-    float darkMatter;   // offset 156
-    float darkEnergy;   // offset 160
-};
-
-// Ray payload for color
-layout(location = 0) rayPayloadEXT vec3 payload;
-
-// Push constants (adjusted offsets since model is omitted)
-layout(push_constant) uniform PushConstantsPC {
-    PushConstants pc;
-} pushConstants;
-
-// =====================================================================
-// Ray Generation Shader
-// =====================================================================
-// File: raygen.rgen
 layout(binding = 0, set = 0) uniform accelerationStructureEXT topLevelAS;
-layout(binding = 1, set = 0, rgba8) uniform image2D outputImage;
+layout(binding = 1, set = 0, rgba8) writeonly uniform image2D outputImage;
+layout(binding = 2, set = 0) uniform CameraProperties {
+    mat4 viewInverse;
+    mat4 projInverse;
+} camera;
+
+layout(location = 0) rayPayloadEXT vec3 hitValue;
 
 void main() {
-    // Get launch dimensions
-    const vec2 pixelCenter = vec2(gl_LaunchIDEXT.xy) + vec2(0.5);
-    const vec2 inUV = pixelCenter / vec2(gl_LaunchSizeEXT.xy);
-    const vec2 inND = 2.0 * inUV - 1.0;
+    ivec2 launchId = ivec2(gl_LaunchIDEXT.xy);
+    vec2 pixelCenter = vec2(launchId) + vec2(0.5);
+    vec2 inUV = pixelCenter / vec2(gl_LaunchSizeEXT.xy);
+    vec2 ndc = 2.0 * inUV - 1.0;
+    vec2 ndcFlipY = vec2(ndc.x, -ndc.y);
 
-    // Unproject to view space (assuming standard projection inverse)
-    const mat4 invProj = inverse(pushConstants.pc.proj);
-    const mat4 invView = inverse(pushConstants.pc.view);
-    const vec4 ndcNear = vec4(inND, -1.0, 1.0);
-    const vec4 viewNear = invProj * ndcNear;
-    const vec4 viewDir = normalize(vec4(viewNear.xy, -viewNear.w, 0.0));
-    const vec3 origin = (invView * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
-    const vec3 dir = (invView * vec4(viewDir.xyz, 0.0)).xyz;
+    vec4 origin = camera.viewInverse * vec4(0.0, 0.0, 0.0, 1.0);
+    vec4 target = camera.projInverse * vec4(ndcFlipY, 0.0, 1.0);
+    vec3 direction = normalize((camera.viewInverse * target).xyz - origin.xyz);
 
-    // Trace ray
-    traceRayEXT(
-        topLevelAS,                // accelerationStructure
-        gl_RayFlagsOpaqueEXT,      // rayFlags
-        0xFF,                      // cullMask
-        0,                         // sbtRecordOffset
-        0,                         // sbtRecordStride
-        0,                         // missShaderIndex
-        origin,                    // rayOrigin
-        0.001,                     // rayTmin
-        dir,                       // rayDirection
-        10000.0,                   // rayTmax
-        0                          // payload location (0)
-    );
-    
-    // Write to output image
-    imageStore(outputImage, ivec2(gl_LaunchIDEXT.xy), vec4(payload, 1.0));
+    float tMin = 0.001;
+    float tMax = 1000.0;
+    hitValue = vec3(0.0);
+
+    traceRayEXT(topLevelAS, gl_RayFlagsOpaqueEXT, 0xFF, 0, 0, 0, origin.xyz, tMin, direction, tMax, 0);
+
+    imageStore(outputImage, launchId, vec4(hitValue, 1.0));
 }
