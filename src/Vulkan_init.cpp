@@ -3,58 +3,31 @@
 // Vulkan AMOURANTH RTX engine September, 2025 - Implementation for Vulkan initialization.
 // Provides high-level initialization and cleanup functions for Vulkan resources.
 // Delegates resource creation to VulkanInitializer in Vulkan_func.cpp.
+// Multi-platform support: Relies on SDL_Vulkan_GetInstanceExtensions for platform-specific surface extensions (Windows, macOS/MoltenVK, Android, Linux).
 // Zachary Geurts 2025
 
 #include <stdexcept>
 #include <iostream>
 #include <cstring>
+#include <SDL3/SDL_vulkan.h>
 
 namespace VulkanInit {
     void initInstanceAndSurface(SDL_Window* window, VkInstance& instance, VkSurfaceKHR& surface, [[maybe_unused]] bool preferNvidia) {
-        // Query available instance extensions
-        uint32_t extensionCount = 0;
-        vkEnumerateInstanceExtensionProperties(nullptr, &extensionCount, nullptr);
-        std::vector<VkExtensionProperties> availableExtensions(extensionCount);
-        vkEnumerateInstanceExtensionProperties(nullptr, &extensionCount, availableExtensions.data());
-
-        // Required extensions
-        std::vector<const char*> requiredExtensions = {
-            VK_KHR_SURFACE_EXTENSION_NAME
-        };
-
-        // Add platform-specific surface extension based on SDL's backend
-        #ifdef VK_USE_PLATFORM_XLIB_KHR
-        requiredExtensions.push_back(VK_KHR_XLIB_SURFACE_EXTENSION_NAME);
-        #elif VK_USE_PLATFORM_XCB_KHR
-        requiredExtensions.push_back(VK_KHR_XCB_SURFACE_EXTENSION_NAME);
-        #endif
-
-        // Get SDL Vulkan extensions
+        // Get SDL Vulkan extensions (includes VK_KHR_surface and platform-specific surface extension automatically)
         uint32_t sdlExtensionCount = 0;
         if (!SDL_Vulkan_GetInstanceExtensions(&sdlExtensionCount)) {
             throw std::runtime_error("Failed to get SDL Vulkan extension count: " + std::string(SDL_GetError()));
         }
-        std::vector<const char*> sdlExtensions(sdlExtensionCount);
+        std::vector<const char*> extensions(sdlExtensionCount);
         if (!SDL_Vulkan_GetInstanceExtensions(&sdlExtensionCount)) {
             throw std::runtime_error("Failed to get SDL Vulkan extensions: " + std::string(SDL_GetError()));
         }
 
-        // Combine SDL and required extensions
-        requiredExtensions.insert(requiredExtensions.end(), sdlExtensions.begin(), sdlExtensions.end());
-
-        // Verify all required extensions are available
-        for (const auto& reqExt : requiredExtensions) {
-            bool found = false;
-            for (const auto& ext : availableExtensions) {
-                if (std::strcmp(reqExt, ext.extensionName) == 0) {
-                    found = true;
-                    break;
-                }
-            }
-            if (!found) {
-                throw std::runtime_error(std::string("Required Vulkan extension not supported: ") + reqExt);
-            }
-        }
+        // Optional: Add validation layers for debugging (only in non-release builds)
+        std::vector<const char*> layers;
+#ifndef NDEBUG
+        layers = {"VK_LAYER_KHRONOS_validation"};
+#endif
 
         // Create Vulkan instance
         VkApplicationInfo appInfo{};
@@ -68,12 +41,10 @@ namespace VulkanInit {
         VkInstanceCreateInfo createInfo{};
         createInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
         createInfo.pApplicationInfo = &appInfo;
-        createInfo.enabledExtensionCount = static_cast<uint32_t>(requiredExtensions.size());
-        createInfo.ppEnabledExtensionNames = requiredExtensions.data();
-        // Add validation layers for debugging (optional)
-        const char* validationLayers[] = {"VK_LAYER_KHRONOS_validation"};
-        createInfo.enabledLayerCount = 0; // Set to 1 for debugging
-        createInfo.ppEnabledLayerNames = validationLayers;
+        createInfo.enabledExtensionCount = static_cast<uint32_t>(extensions.size());
+        createInfo.ppEnabledExtensionNames = extensions.data();
+        createInfo.enabledLayerCount = static_cast<uint32_t>(layers.size());
+        createInfo.ppEnabledLayerNames = layers.data();
 
         if (vkCreateInstance(&createInfo, nullptr, &instance) != VK_SUCCESS) {
             throw std::runtime_error("Failed to create Vulkan instance");
