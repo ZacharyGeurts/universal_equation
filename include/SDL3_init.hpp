@@ -3,25 +3,25 @@
 
 // AMOURANTH RTX Engine September 2025 - SDL3Initializer for window, input, audio, and Vulkan integration.
 // Manages SDL3 and Vulkan initialization, including window creation, input handling, audio setup,
-// and Vulkan instance/surface creation with Linux compatibility (X11, Wayland).
+// and Vulkan instance/surface creation with multi-platform compatibility (Linux/X11/Wayland, Windows, macOS/MoltenVK, Android).
 // Uses RAII for resource management, thread-safe event processing, and asynchronous font loading.
 // Key features:
-// - Vulkan window with SDL_WINDOW_VULKAN and Linux-specific surface extensions (VK_KHR_xlib_surface, VK_KHR_wayland_surface).
+// - Vulkan window with SDL_WINDOW_VULKAN and platform-specific surface extensions (e.g., VK_KHR_win32_surface, VK_EXT_metal_surface, VK_KHR_android_surface).
 // - Thread-safe input handling for keyboard, mouse, touch, and gamepad events.
-// - Parallel audio processing with customizable callbacks, supporting PulseAudio/ALSA.
+// - Parallel audio processing with customizable callbacks, supporting platform-specific backends (WASAPI, CoreAudio, AAudio/OpenSL ES, PulseAudio/ALSA).
 // - Asynchronous TTF font loading to reduce startup latency.
 // - Configurable Vulkan validation layers and explicit NVIDIA GPU selection for hybrid systems.
 // - Fallback to AMD GPU if NVIDIA fails, then to non-Vulkan rendering if both fail.
-// Dependencies: SDL3, SDL_ttf, Vulkan 1.3+, libX11-dev, libwayland-dev, mesa-vulkan-drivers, nvidia-driver.
+// Dependencies: SDL3, SDL_ttf, Vulkan 1.3+, platform-specific libs (libX11-dev/libwayland-dev for Linux, MoltenVK for macOS).
 // Best Practices:
 // - Use SDL_Vulkan_GetInstanceExtensions and SDL_Vulkan_CreateSurface for Vulkan setup.
 // - Handle window resize by recreating swapchain in callback.
-// - Select NVIDIA GPU with SDL hints and environment variables for Linux hybrid graphics.
+// - Select NVIDIA GPU with SDL hints and environment variables for hybrid graphics.
 // - Enable validation layers in debug builds for error detection.
 // Potential Issues:
-// - Ensure NVIDIA GPU is used in hybrid systems (PRIME offload) to avoid Vulkan errors.
+// - Ensure NVIDIA GPU is used in hybrid systems (e.g., PRIME offload on Linux, D3D on Windows) to avoid Vulkan errors.
 // - Verify VK_KHR_surface and platform-specific extensions via vulkaninfo.
-// - Ensure libX11-dev and libwayland-dev are installed for vulkan_xlib.h and vulkan_wayland.h.
+// - On Android: Use 0x0 for fullscreen window; font paths relative to assets.
 // Usage example:
 //   SDL3Initializer sdl;
 //   sdl.initialize("Dimensional Navigator", 1280, 720, true, "assets/fonts/custom.ttf", true, true);
@@ -35,9 +35,6 @@
 #include <SDL3/SDL_gamepad.h>
 #include <SDL3_ttf/SDL_ttf.h>
 #include <vulkan/vulkan.h>
-#include <X11/Xlib.h>  // Required for Display, Window, VisualID in vulkan_xlib.h
-#include <vulkan/vulkan_xlib.h>
-#include <vulkan/vulkan_wayland.h>
 #include <stdexcept>
 #include <vector>
 #include <string>
@@ -58,6 +55,19 @@
 #include <cstdlib>  // For setenv
 #include <filesystem>  // For ICD path validation
 #include "Vulkan_func.hpp"
+
+// Platform-specific Vulkan surface includes
+#ifdef _WIN32
+#include <vulkan/vulkan_win32.h>
+#elif defined(__ANDROID__)
+#include <vulkan/vulkan_android.h>
+#elif defined(__linux__)
+#include <X11/Xlib.h>  // Required for Display, Window, VisualID in vulkan_xlib.h
+#include <vulkan/vulkan_xlib.h>
+#include <vulkan/vulkan_wayland.h>
+#elif defined(__APPLE__)
+#include <vulkan/vulkan_macos_moltenvk.h>  // For VK_MVK_macos_surface
+#endif
 
 // Configuration for audio initialization.
 // Notes: Defaults to stereo (2 channels) for better hardware compatibility.
@@ -475,6 +485,8 @@ private:
         std::string platform = SDL_GetPlatform();
         logMessage("Detected platform: " + platform);
 
+        // Platform-specific audio driver selection
+        const char* audioDriver = nullptr;
         bool pulseAvailable = false;
         int driverCount = SDL_GetNumAudioDrivers();
         for (int i = 0; i < driverCount; ++i) {
@@ -484,9 +496,19 @@ private:
                 break;
             }
         }
-        const char* audioDriver = pulseAvailable ? "pulse" : "alsa";
-        logMessage("Selecting audio driver: " + std::string(audioDriver));
-        SDL_SetHint(SDL_HINT_AUDIO_DRIVER, audioDriver);
+        if (platform == "Windows") {
+            audioDriver = "wasapi";
+        } else if (platform == "Mac OS X") {
+            audioDriver = "coreaudio";
+        } else if (platform == "Android") {
+            audioDriver = "aaudio";
+        } else { // Linux
+            audioDriver = pulseAvailable ? "pulse" : "alsa";
+        }
+        logMessage("Selecting audio driver: " + std::string(audioDriver ? audioDriver : "default"));
+        if (audioDriver) {
+            SDL_SetHint(SDL_HINT_AUDIO_DRIVER, audioDriver);
+        }
 
         if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_GAMEPAD | SDL_INIT_EVENTS) == 0) {
             std::string error = "SDL_Init failed: " + std::string(SDL_GetError());
@@ -546,8 +568,18 @@ private:
                 hasSurfaceExtension = true;
                 logMessage("VK_KHR_surface extension found");
             }
-            if (strcmp(ext.extensionName, VK_KHR_XLIB_SURFACE_EXTENSION_NAME) == 0 ||
-                strcmp(ext.extensionName, VK_KHR_WAYLAND_SURFACE_EXTENSION_NAME) == 0) {
+            // Platform-specific surface extensions
+            if (platform == "Linux" && (strcmp(ext.extensionName, VK_KHR_XLIB_SURFACE_EXTENSION_NAME) == 0 ||
+                                        strcmp(ext.extensionName, VK_KHR_WAYLAND_SURFACE_EXTENSION_NAME) == 0)) {
+                platformSurfaceExtensions.push_back(ext.extensionName);
+                logMessage("Platform surface extension found: " + std::string(ext.extensionName));
+            } else if (platform == "Windows" && strcmp(ext.extensionName, "VK_KHR_win32_surface") == 0) {
+                platformSurfaceExtensions.push_back(ext.extensionName);
+                logMessage("Platform surface extension found: " + std::string(ext.extensionName));
+            } else if (platform == "Android" && strcmp(ext.extensionName, "VK_KHR_android_surface") == 0) {
+                platformSurfaceExtensions.push_back(ext.extensionName);
+                logMessage("Platform surface extension found: " + std::string(ext.extensionName));
+            } else if (platform == "Mac OS X" && strcmp(ext.extensionName, "VK_MVK_macos_surface") == 0) {
                 platformSurfaceExtensions.push_back(ext.extensionName);
                 logMessage("Platform surface extension found: " + std::string(ext.extensionName));
             }
@@ -654,6 +686,12 @@ private:
         }
 
         std::string resolvedFontPath = fontPath;
+#ifdef __ANDROID__
+        // On Android, prepend asset path if needed; assume SDL handles relative paths
+        if (!resolvedFontPath.empty() && resolvedFontPath[0] != '/') {
+            resolvedFontPath = "assets/" + resolvedFontPath;
+        }
+#endif
         logMessage("Loading TTF font in background thread: " + resolvedFontPath);
         std::future<TTF_Font*> fontFuture = std::async(std::launch::async, [resolvedFontPath] {
             TTF_Font* font = TTF_OpenFont(resolvedFontPath.c_str(), 24);
