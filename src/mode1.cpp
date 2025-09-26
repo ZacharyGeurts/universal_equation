@@ -1,4 +1,4 @@
-// Fancy-Ass RenderMode1: Vulkan/GLM Hyperdrive Edition (C++17, D=1)
+// RenderMode1: Vulkan/GLM Hyperdrive Edition (C++17, D=1)
 // - Renders 1D n-Cube as spheres, modulated by observable/darkEnergy
 // - Constexpr constants, inlined sin/cos, GLM swizzles for cache-friendly math
 // - Dry humor: "Math’s bored in 1D" warnings, "n-Cube’s 1D nap"
@@ -152,9 +152,12 @@ void renderMode1(AMOURANTH* amouranth, uint32_t imageIndex, VkBuffer vertexBuffe
     const glm::vec3 baseColor = genBaseColor(wavePhase, i, cycleProgress);
 
     // Push main sphere
+    const glm::mat4 mvp = proj * view * model;
+    const glm::vec4 color_alpha = glm::vec4(baseColor, 1.0f);
     const PushConstants pushConstants = {
-        model, view, proj, baseColor, value, 1.0f, wavePhase, cycleProgress,
-        static_cast<float>(cache[i].darkMatter), static_cast<float>(cache[i].darkEnergy)
+        mvp, camPos, wavePhase, cycleProgress, zoomFactor, value,
+        static_cast<float>(cache[i].darkMatter), static_cast<float>(cache[i].darkEnergy),
+        color_alpha, {0.0f, 0.0f, 0.0f}
     };
     vkCmdPushConstants(commandBuffer, pipelineLayout,
                        VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
@@ -166,7 +169,12 @@ void renderMode1(AMOURANTH* amouranth, uint32_t imageIndex, VkBuffer vertexBuffe
     const auto pairs = amouranth->getInteractions();
     if (pairs.empty()) {
         const glm::mat4 fallbackModel = glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(0.0f)), glm::vec3(kSphereScale * zoomFactor));
-        const PushConstants fallbackPush = {fallbackModel, view, proj, kDefaultColor, 0.4f, 1.0f, wavePhase, cycleProgress, 0.4f, 0.4f};
+        const glm::mat4 fallback_mvp = proj * view * fallbackModel;
+        const glm::vec4 fallback_color = glm::vec4(kDefaultColor, 1.0f);
+        const PushConstants fallbackPush = {
+            fallback_mvp, camPos, wavePhase, cycleProgress, zoomFactor, 0.4f, 0.4f, 0.4f,
+            fallback_color, {0.0f, 0.0f, 0.0f}
+        };
         vkCmdPushConstants(commandBuffer, pipelineLayout,
                            VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
                            0, sizeof(PushConstants), &fallbackPush);
@@ -200,8 +208,13 @@ void renderMode1(AMOURANTH* amouranth, uint32_t imageIndex, VkBuffer vertexBuffe
         const float strengthMod = interactionStrength * (0.6f + 0.2f * cosf(wavePhase + static_cast<float>(pair.distance)));
         const float deCompute = static_cast<float>(amouranth->computeDarkEnergy(pair.distance));
 
-        const PushConstants iPush = {iModel, view, proj, iColor, strengthMod, 1.0f, wavePhase, cycleProgress,
-                                     static_cast<float>(pair.strength), deCompute};
+        const glm::mat4 i_mvp = proj * view * iModel;
+        const glm::vec4 i_color_alpha = glm::vec4(iColor, 1.0f);
+        const PushConstants iPush = {
+            i_mvp, camPos, wavePhase, cycleProgress, zoomFactor, strengthMod,
+            static_cast<float>(pair.strength), deCompute,
+            i_color_alpha, {0.0f, 0.0f, 0.0f}
+        };
         vkCmdPushConstants(commandBuffer, pipelineLayout,
                            VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
                            0, sizeof(PushConstants), &iPush);

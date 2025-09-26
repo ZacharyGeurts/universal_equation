@@ -1,7 +1,7 @@
-// Fancy-Ass RenderMode5: Vulkan/GLM Hyperdrive Edition (C++17, D=5)
+// RenderMode5: Vulkan/GLM Hyperdrive Edition (C++17, D=5)
 // - Renders 5D n-Cube as spheres, modulated by observable/darkEnergy
 // - Constexpr constants, inlined sin/cos, GLM swizzles for cache-friendly math
-// - Dry humor: "Math’s having an existential crisis" warnings, "n-Cube’s 5D meltdown"
+// - Dry humor: "Math’s twisting in 5D" warnings, "n-Cube’s 5D twist"
 // - Vulkan: Per-draw push constants, zoom-clamped proj, early-exit guards
 // - C++17: std::copy_if + std::for_each, explicit lambda params
 // Compile: g++ -O3 -std=c++17 -Wall -Wextra -g -fopenmp -Iinclude
@@ -22,9 +22,9 @@ static constexpr float kMaxValueClamp = 1.3f;
 static constexpr float kOscAmp = 0.2f;
 static constexpr float kScaleBias = 0.3f;
 static constexpr float kRadiusBase = 3.0f;
-static constexpr float kSphereScale = 0.26f;  // Smaller for 5D
-static constexpr float kInteractScale = 0.16f;
-static constexpr float kZOffset = 14.0f;  // Further for 5D
+static constexpr float kSphereScale = 0.14f;  // Smaller for 5D
+static constexpr float kInteractScale = 0.10f;
+static constexpr float kZOffset = 4.0f;  // Farther for 5D
 static constexpr float kCamNear = 0.1f;
 static constexpr float kCamFar = 1000.0f;
 static constexpr float kFovRad = glm::radians(45.0f);
@@ -35,7 +35,7 @@ static constexpr glm::vec3 kCamUp{0.0f, 1.0f, 0.0f};
 static constexpr glm::vec3 kCamTarget{0.0f, 0.0f, 0.0f};
 
 namespace {
-    // Osc/value
+    // Osc/value: Inlined sin-clamp
     auto makeOscValue(const DimensionData& cacheEntry, float wavePhase) {
         return [wavePhase, &cacheEntry](float baseOsc = 1.0f) -> float {
             const float deMod = static_cast<float>(cacheEntry.darkEnergy) * 0.65f;
@@ -51,22 +51,22 @@ namespace {
         return std::fmod(wavePhase / (2.0f * kMaxRenderedDimensions), 1.0f);
     }
 
-    // Model builder
+    // Model builder: Translate-scale-rotate
     auto buildModel(float angle, float cycleProgress, float wavePhase, float scaleFactor, const glm::vec3& posOffset = {}) {
         return [angle, cycleProgress, wavePhase, scaleFactor, posOffset](glm::mat4 base = glm::mat4(1.0f)) -> glm::mat4 {
-            const float rotAngle = wavePhase * 0.7f;  // Faster for 5D
-            const glm::vec3 rotAxis{sinf(angle * 0.6f), cosf(angle * 0.6f), 0.2f};
+            const float rotAngle = wavePhase * 0.5f;  // Faster for 5D
+            const glm::vec3 rotAxis{sinf(angle * 0.4f), cosf(angle * 0.4f), 0.2f};
             return glm::rotate(glm::scale(glm::translate(base, posOffset), glm::vec3(kSphereScale * scaleFactor)),
                                rotAngle, rotAxis);
         };
     }
 
-    // Color gen
+    // Color gen: Dimension-shifted rainbow
     auto genBaseColor(float wavePhase, size_t i, float cycleProgress) {
         return glm::vec3(
-            0.6f + 0.4f * cosf(wavePhase + static_cast<float>(i) * 1.3f + cycleProgress),
-            0.5f + 0.2f * sinf(wavePhase + static_cast<float>(i) * 1.0f),
-            0.8f - 0.2f * cosf(wavePhase * 0.8f + static_cast<float>(i))
+            0.2f + 0.8f * cosf(wavePhase + static_cast<float>(i) * 0.8f + cycleProgress),
+            0.1f + 0.6f * sinf(wavePhase + static_cast<float>(i) * 0.6f),
+            0.4f - 0.6f * cosf(wavePhase * 0.4f + static_cast<float>(i))
         );
     }
 
@@ -81,11 +81,11 @@ namespace {
 
     // Pos offset: 5D-adjusted
     auto genOffsetPos(float dist, float strength, float angle, float cycleProgress) {
-        const float offsetMult = dist * 0.5f * (1.0f + static_cast<float>(strength) * 0.6f);  // Tighter for 5D
+        const float offsetMult = dist * 0.7f * (1.0f + static_cast<float>(strength) * 0.4f);  // Adjusted for 5D
         return glm::vec3(
             offsetMult * cosf(angle + cycleProgress),
             offsetMult * sinf(angle + cycleProgress),
-            offsetMult * 0.3f * sinf(angle * 0.75f)
+            offsetMult * 0.3f * sinf(angle * 0.9f)
         );
     }
 }
@@ -101,7 +101,7 @@ void renderMode5(AMOURANTH* amouranth, uint32_t imageIndex, VkBuffer vertexBuffe
 
     // Early-exit
     if (amouranth->getSphereIndices().empty()) {
-        std::cerr << "Warning: Sphere indices empty. Math’s having an existential crisis.\n";
+        std::cerr << "Warning: Sphere indices empty. Math’s twisting in 5D.\n";
         return;
     }
 
@@ -126,7 +126,7 @@ void renderMode5(AMOURANTH* amouranth, uint32_t imageIndex, VkBuffer vertexBuffe
     // Dim 5: Index 4
     constexpr size_t i = 4;
     if (cache[i].dimension != 5) {
-        std::cerr << "Warning: Invalid cache for dimension 5. Math’s 5D meltdown.\n";
+        std::cerr << "Warning: Invalid cache for dimension 5. Math’s 5D twist.\n";
         return;
     }
 
@@ -135,13 +135,14 @@ void renderMode5(AMOURANTH* amouranth, uint32_t imageIndex, VkBuffer vertexBuffe
     const float value = oscValue(1.0f);
 
     // Angle/scale/radius
-    const float angle = wavePhase + 5 * 2.0f * glm::pi<float>() / kMaxRenderedDimensions;
+    const float dim = 5.0f;
+    const float angle = wavePhase + dim * 2.0f * glm::pi<float>() / kMaxRenderedDimensions;
     const float scaleFactor = 1.0f + static_cast<float>(cache[i].observable) * kScaleBias;
     const float radius = kRadiusBase * scaleFactor;
     const glm::vec3 pos{
         radius * cosf(angle + cycleProgress),
         radius * sinf(angle + cycleProgress),
-        radius * sinf(wavePhase + static_cast<float>(i) * 0.6f) * 0.3f
+        radius * sinf(wavePhase + static_cast<float>(i) * 0.4f) * 0.3f
     };
 
     // Model
@@ -152,9 +153,12 @@ void renderMode5(AMOURANTH* amouranth, uint32_t imageIndex, VkBuffer vertexBuffe
     const glm::vec3 baseColor = genBaseColor(wavePhase, i, cycleProgress);
 
     // Push main sphere
+    const glm::mat4 mvp = proj * view * model;
+    const glm::vec4 color_alpha = glm::vec4(baseColor, 1.0f);
     const PushConstants pushConstants = {
-        model, view, proj, baseColor, value, 5.0f, wavePhase, cycleProgress,
-        static_cast<float>(cache[i].darkMatter), static_cast<float>(cache[i].darkEnergy)
+        mvp, camPos, wavePhase, cycleProgress, zoomFactor, value,
+        static_cast<float>(cache[i].darkMatter), static_cast<float>(cache[i].darkEnergy),
+        color_alpha, {0.0f, 0.0f, 0.0f}
     };
     vkCmdPushConstants(commandBuffer, pipelineLayout,
                        VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
@@ -166,7 +170,12 @@ void renderMode5(AMOURANTH* amouranth, uint32_t imageIndex, VkBuffer vertexBuffe
     const auto pairs = amouranth->getInteractions();
     if (pairs.empty()) {
         const glm::mat4 fallbackModel = glm::scale(glm::translate(glm::mat4(1.0f), glm::vec3(0.0f)), glm::vec3(kSphereScale * zoomFactor));
-        const PushConstants fallbackPush = {fallbackModel, view, proj, kDefaultColor, 0.4f, 5.0f, wavePhase, cycleProgress, 0.4f, 0.4f};
+        const glm::mat4 fallback_mvp = proj * view * fallbackModel;
+        const glm::vec4 fallback_color = glm::vec4(kDefaultColor, 1.0f);
+        const PushConstants fallbackPush = {
+            fallback_mvp, camPos, wavePhase, cycleProgress, zoomFactor, 0.4f, 0.4f, 0.4f,
+            fallback_color, {0.0f, 0.0f, 0.0f}
+        };
         vkCmdPushConstants(commandBuffer, pipelineLayout,
                            VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
                            0, sizeof(PushConstants), &fallbackPush);
@@ -186,22 +195,27 @@ void renderMode5(AMOURANTH* amouranth, uint32_t imageIndex, VkBuffer vertexBuffe
     std::for_each(filteredPairs.begin(), filteredPairs.end(), [&](const UniversalEquation::DimensionInteraction& pair) {
         const float alpha = amouranth->getAlpha();
         const float interactionStrength = computeStrength(*amouranth, pair, alpha);
-        const float iAngle = wavePhase + static_cast<float>(pair.vertexIndex) * 1.9f + static_cast<float>(pair.distance) * 0.6f;
+        const float iAngle = wavePhase + static_cast<float>(pair.vertexIndex) * 1.5f + static_cast<float>(pair.distance) * 0.2f;
         const glm::vec3 offsetPos = genOffsetPos(static_cast<float>(pair.distance), static_cast<float>(pair.strength), iAngle, cycleProgress);
 
         const glm::mat4 iModel = glm::scale(glm::translate(glm::mat4(1.0f), offsetPos), glm::vec3(kInteractScale * zoomFactor));
 
         const glm::vec3 iColor{
-            0.8f - 0.2f * sinf(iAngle),
-            0.7f - 0.15f * cosf(iAngle * 1.6f),
-            1.0f - 0.1f * sinf(iAngle * 1.2f)
+            0.3f - 0.2f * sinf(iAngle),
+            0.2f - 0.15f * cosf(iAngle * 1.2f),
+            0.5f - 0.1f * sinf(iAngle * 0.8f)
         };
 
         const float strengthMod = interactionStrength * (0.6f + 0.2f * cosf(wavePhase + static_cast<float>(pair.distance)));
         const float deCompute = static_cast<float>(amouranth->computeDarkEnergy(pair.distance));
 
-        const PushConstants iPush = {iModel, view, proj, iColor, strengthMod, 5.0f, wavePhase, cycleProgress,
-                                     static_cast<float>(pair.strength), deCompute};
+        const glm::mat4 i_mvp = proj * view * iModel;
+        const glm::vec4 i_color_alpha = glm::vec4(iColor, 1.0f);
+        const PushConstants iPush = {
+            i_mvp, camPos, wavePhase, cycleProgress, zoomFactor, strengthMod,
+            static_cast<float>(pair.strength), deCompute,
+            i_color_alpha, {0.0f, 0.0f, 0.0f}
+        };
         vkCmdPushConstants(commandBuffer, pipelineLayout,
                            VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
                            0, sizeof(PushConstants), &iPush);

@@ -1,7 +1,7 @@
 #ifndef MAIN_HPP
 #define MAIN_HPP
 
-// AMOURANTH RTX engine - Header and implementation for the main Application class.
+// AMOURANTH RTX engine September, 2025 - Header and implementation for the main Application class.
 // This file defines the Application class, the central coordinator for the "Dimensional Navigator" application.
 // It manages the entire application lifecycle, including:
 // - SDL3 window creation, event handling, and input processing for cross-platform support.
@@ -29,6 +29,7 @@
 // - Render loop skips frames if user camera is active to avoid input/render conflicts.
 // - Fullscreen support enabled by default in SDL3 event loop for immersive experience.
 // - Assumes VulkanInitializer, SDL3Initializer, and core (DimensionalNavigator, AMOURANTH) are defined elsewhere.
+// Zachary Geurts 2025
 
 // Core includes for math, windowing, Vulkan, exceptions, I/O, and parallelism.
 #include <glm/glm.hpp>              // For matrix and vector operations (e.g., viewProj, camPos).
@@ -74,6 +75,7 @@ public:
           vulkanDevice_(VK_NULL_HANDLE),          // Initialize logical device to null handle.
           physicalDevice_(VK_NULL_HANDLE),        // Initialize physical device to null handle.
           surface_(VK_NULL_HANDLE),               // Initialize surface to null handle.
+          descriptorSetLayout_(VK_NULL_HANDLE),   // Initialize descriptor set layout to null handle.
           quadVertexBuffer_(VK_NULL_HANDLE),      // Initialize quad vertex buffer to null handle.
           quadVertexBufferMemory_(VK_NULL_HANDLE), // Initialize quad vertex buffer memory to null handle.
           quadIndexBuffer_(VK_NULL_HANDLE),       // Initialize quad index buffer to null handle.
@@ -183,6 +185,7 @@ private:
     VkDevice vulkanDevice_;           // Logical Vulkan device for resource creation.
     VkPhysicalDevice physicalDevice_; // Physical Vulkan device (GPU; selected by VulkanInitializer).
     VkSurfaceKHR surface_;            // Vulkan surface for swapchain presentation (from SDL3Initializer).
+    VkDescriptorSetLayout descriptorSetLayout_;  // Descriptor set layout for bindings (e.g., UBO, sampler).
     VkBuffer quadVertexBuffer_;       // Vertex buffer for quad geometry (e.g., UI overlays).
     VkDeviceMemory quadVertexBufferMemory_;  // Allocated memory for quad vertex buffer.
     VkBuffer quadIndexBuffer_;        // Index buffer for quad geometry.
@@ -212,23 +215,23 @@ private:
     AMOURANTH* amouranth_;            // Owned pointer to renderer (visuals, input; deleted in cleanup).
 
     // Initializes Vulkan resources: device, queues, swapchain, pipeline, buffers, and sync objects.
-    // Calls VulkanInitializer::initializeVulkan for core resources and initializeQuadBuffers for quad geometry.
+    // Calls VulkanInit::initializeVulkan for core resources and initializeQuadBuffers for quad geometry.
     // Uses sphere and quad vertices/indices from AMOURANTH (assumed to provide mesh data).
     // Assumes SDL3Initializer has already created window, instance, and surface.
     // Throws: std::runtime_error on any Vulkan resource creation failure.
     // Notes: Initializes both sphere (main object) and quad (e.g., UI) buffers for rendering flexibility.
     void initializeVulkan() {
-        VulkanInitializer::initializeVulkan(
+        VulkanInit::initializeVulkan(
             vulkanInstance_, physicalDevice_, vulkanDevice_, surface_,
             graphicsQueue_, presentQueue_, graphicsFamily_, presentFamily_,
             swapchain_, swapchainImages_, swapchainImageViews_, renderPass_,
-            pipeline_, pipelineLayout_, swapchainFramebuffers_, commandPool_,
+            pipeline_, pipelineLayout_, descriptorSetLayout_, swapchainFramebuffers_, commandPool_,
             commandBuffers_, imageAvailableSemaphore_, renderFinishedSemaphore_,
             inFlightFence_, vertexBuffer_, vertexBufferMemory_, indexBuffer_,
             indexBufferMemory_, amouranth_->getSphereVertices(), amouranth_->getSphereIndices(),
             width_, height_);
 
-        VulkanInitializer::initializeQuadBuffers(
+        VulkanInit::initializeQuadBuffers(
             vulkanDevice_, physicalDevice_, commandPool_, graphicsQueue_,
             quadVertexBuffer_, quadVertexBufferMemory_, quadIndexBuffer_,
             quadIndexBufferMemory_, amouranth_->getQuadVertices(), amouranth_->getQuadIndices());
@@ -237,7 +240,7 @@ private:
     // Recreates the swapchain and related resources on window resize.
     // Steps (ensures no pending GPU operations):
     // 1. Wait for device idle (logs non-fatal errors to stderr).
-    // 2. Clean up all Vulkan resources using VulkanInitializer::cleanupVulkan.
+    // 2. Clean up all Vulkan resources using VulkanInit::cleanupVulkan.
     // 3. Null all Vulkan handles and clear vectors to prevent dangling references.
     // 4. Get new window size via SDL_GetWindowSize; clamp to min 1280x720.
     // 5. Resize window if below minimum to ensure valid swapchain creation.
@@ -255,14 +258,16 @@ private:
         }
 
         // Clean up all Vulkan resources (swapchain, pipeline, buffers, etc.).
-        VulkanInitializer::cleanupVulkan(
+        VulkanInit::cleanupVulkan(
             vulkanInstance_, vulkanDevice_, surface_, swapchain_, swapchainImageViews_,
             swapchainFramebuffers_, pipeline_, pipelineLayout_, renderPass_,
             commandPool_, commandBuffers_, imageAvailableSemaphore_, renderFinishedSemaphore_,
             inFlightFence_, vertexBuffer_, vertexBufferMemory_, indexBuffer_, indexBufferMemory_,
-            quadVertexBuffer_, quadVertexBufferMemory_, quadIndexBuffer_, quadIndexBufferMemory_);
+            quadVertexBuffer_, quadVertexBufferMemory_, quadIndexBuffer_, quadIndexBufferMemory_,
+            descriptorSetLayout_);
 
         // Null all handles and clear vectors to ensure no dangling pointers.
+        descriptorSetLayout_ = VK_NULL_HANDLE;
         swapchain_ = VK_NULL_HANDLE;
         swapchainImages_.clear();
         swapchainImageViews_.clear();
@@ -302,7 +307,7 @@ private:
     // Performs full cleanup of all resources to prevent memory leaks.
     // Steps (idempotent and safe for partial initialization):
     // 1. Wait for device idle to ensure no pending GPU operations (logs non-fatal errors).
-    // 2. Call VulkanInitializer::cleanupVulkan to free Vulkan resources (swapchain, pipeline, buffers, etc.).
+    // 2. Call VulkanInit::cleanupVulkan to free Vulkan resources (swapchain, pipeline, buffers, etc.).
     // 3. Call sdlInitializer_.cleanup() to free SDL3 resources (window, instance, surface).
     // 4. Delete owned pointers (amouranth_, simulator_).
     // 5. Null window and Vulkan instance/surface handles for safety.
@@ -317,13 +322,14 @@ private:
             }
         }
 
-        // Free all Vulkan resources using VulkanInitializer.
-        VulkanInitializer::cleanupVulkan(
+        // Free all Vulkan resources using VulkanInit.
+        VulkanInit::cleanupVulkan(
             vulkanInstance_, vulkanDevice_, surface_, swapchain_, swapchainImageViews_,
             swapchainFramebuffers_, pipeline_, pipelineLayout_, renderPass_,
             commandPool_, commandBuffers_, imageAvailableSemaphore_, renderFinishedSemaphore_,
             inFlightFence_, vertexBuffer_, vertexBufferMemory_, indexBuffer_, indexBufferMemory_,
-            quadVertexBuffer_, quadVertexBufferMemory_, quadIndexBuffer_, quadIndexBufferMemory_);
+            quadVertexBuffer_, quadVertexBufferMemory_, quadIndexBuffer_, quadIndexBufferMemory_,
+            descriptorSetLayout_);
 
         // Clean up SDL3 resources (window, instance, surface).
         sdlInitializer_.cleanup();
@@ -338,6 +344,7 @@ private:
         window_ = nullptr;
         vulkanInstance_ = VK_NULL_HANDLE;
         surface_ = VK_NULL_HANDLE;
+        descriptorSetLayout_ = VK_NULL_HANDLE;
     }
 
     // Renders a single frame (called by SDL3 event loop).
