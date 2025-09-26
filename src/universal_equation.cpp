@@ -10,7 +10,6 @@
 // Thread-safe, parallelized; for physics sims/viz of high-D systems.
 
 #include "universal_equation.hpp"
-#include <random> // For asymmetric collapse (deterministic sin-based "stochasticity")
 
 // Constructor: Now includes new params for crack fixes
 // - carrollFactor: Ultra-rel Carroll limit (0=Schrödinger, 1=Carroll; default 0)
