@@ -17,7 +17,19 @@
 #include <vulkan/vulkan.h>
 #include <stdexcept>
 #include <cmath>
+#include <algorithm>
 #include "universal_equation.hpp"
+
+// Platform-specific font path
+#ifdef __ANDROID__
+#define FONT_PATH "fonts/sf-plasmatica-open.ttf"
+#elif defined(_WIN32) || defined(__WIN32__) || defined(WIN32) || defined(__NT__)
+#define FONT_PATH "assets\\fonts\\sf-plasmatica-open.ttf"
+#elif defined(__APPLE__) || defined(__MACH__)
+#define FONT_PATH "assets/fonts/sf-plasmatica-open.ttf"
+#else
+#define FONT_PATH "assets/fonts/sf-plasmatica-open.ttf"
+#endif
 
 // Structure to hold data for each rendered dimension, used for caching physics simulation results.
 struct DimensionData {
@@ -69,31 +81,8 @@ private:
     int char_width_, char_height_;
 };
 
-// Manages navigation and state for multidimensional rendering.
-class DimensionalNavigator {
-public:
-    DimensionalNavigator(const std::string& name, int width, int height)
-        : name_(name), width_(width), height_(height), mode_(1), zoomLevel_(1.0f), wavePhase_(0.0f) {}
-
-    int getMode() const { return mode_; }
-    float getZoomLevel() const { return zoomLevel_; }
-    float getWavePhase() const { return wavePhase_; }
-    const std::vector<DimensionData>& getCache() const { return cache_; }
-    int getWidth() const { return width_; }
-    int getHeight() const { return height_; }
-
-    void setMode(int mode) { mode_ = std::clamp(mode, 1, 9); }
-    void setZoomLevel(float zoom) { zoomLevel_ = std::max(0.1f, zoom); }
-    void setWavePhase(float phase) { wavePhase_ = phase; }
-
-private:
-    std::string name_;
-    int width_, height_;
-    int mode_;
-    float zoomLevel_;
-    float wavePhase_;
-    std::vector<DimensionData> cache_;
-};
+// Forward declaration of DimensionalNavigator
+class DimensionalNavigator;
 
 // Core class of the AMOURANTH RTX engine, orchestrating rendering and simulation.
 class AMOURANTH {
@@ -124,16 +113,8 @@ public:
     }
 
     void updateCache();
-    void updateZoom(bool zoomIn) {
-        zoomLevel_ *= zoomIn ? 1.1f : 0.9f;
-        zoomLevel_ = std::max(0.1f, zoomLevel_);
-        simulator_->setZoomLevel(zoomLevel_);
-    }
-
-    void setMode(int mode) {
-        mode_ = mode;
-        simulator_->setMode(mode_);
-    }
+    void updateZoom(bool zoomIn);
+    void setMode(int mode);
 
     void setCurrentDimension(int dimension) { ue_.setCurrentDimension(dimension); }
 
@@ -176,6 +157,41 @@ private:
     bool isUserCamActive_ = false;
     int width_ = 800;
     int height_ = 600;
+};
+
+// Manages navigation and state for multidimensional rendering.
+class DimensionalNavigator {
+public:
+    DimensionalNavigator(const std::string& name, int width, int height)
+        : name_(name), width_(width), height_(height), mode_(1), zoomLevel_(1.0f), wavePhase_(0.0f) {
+        cache_.resize(AMOURANTH::kMaxRenderedDimensions);
+        for (size_t i = 0; i < cache_.size(); ++i) {
+            cache_[i].dimension = static_cast<int>(i + 1);
+            cache_[i].observable = 1.0;
+            cache_[i].potential = 0.0;
+            cache_[i].darkMatter = 0.0;
+            cache_[i].darkEnergy = 0.0;
+        }
+    }
+
+    int getMode() const { return mode_; }
+    float getZoomLevel() const { return zoomLevel_; }
+    float getWavePhase() const { return wavePhase_; }
+    const std::vector<DimensionData>& getCache() const { return cache_; }
+    int getWidth() const { return width_; }
+    int getHeight() const { return height_; }
+
+    void setMode(int mode) { mode_ = std::clamp(mode, 1, 9); }
+    void setZoomLevel(float zoom) { zoomLevel_ = std::max(0.1f, zoom); }
+    void setWavePhase(float phase) { wavePhase_ = phase; }
+
+private:
+    std::string name_;
+    int width_, height_;
+    int mode_;
+    float zoomLevel_;
+    float wavePhase_;
+    std::vector<DimensionData> cache_;
 };
 
 // Forward declarations for mode-specific rendering functions.
@@ -290,6 +306,17 @@ inline void AMOURANTH::updateCache() {
     }
 }
 
+inline void AMOURANTH::updateZoom(bool zoomIn) {
+    zoomLevel_ *= zoomIn ? 1.1f : 0.9f;
+    zoomLevel_ = std::max(0.1f, zoomLevel_);
+    simulator_->setZoomLevel(zoomLevel_);
+}
+
+inline void AMOURANTH::setMode(int mode) {
+    mode_ = mode;
+    simulator_->setMode(mode_);
+}
+
 inline void AMOURANTH::initializeSphereGeometry() {
     float radius = 1.0f;
     uint32_t sectors = 32, rings = 16;
@@ -352,7 +379,7 @@ inline TextFont::~TextFont() {
 }
 
 inline bool TextFont::load_font() {
-    font_ = TTF_OpenFont("assets/fonts/arial.ttf", char_height_);
+    font_ = TTF_OpenFont(FONT_PATH, char_height_);
     if (!font_) {
         return false;
     }
