@@ -8,7 +8,7 @@
 // Designed for developer-friendliness: Thread-safe function pointer loading, exception-based error handling,
 // comprehensive cleanup, optional shader support (e.g., any-hit, intersection, callable), and extensive comments.
 // Optimizations: Lazy loading of extensions, one-time command buffers for AS builds, aligned SBT handles, and efficient image transitions.
-// Memory safety: All resources are RAII-managed via references; cleanup nulls handles and destroys in reverse order.
+// Memory safety: All resources are RAII-managed internally; destructor automatically cleans up in reverse order.
 // Note: Requires Vulkan 1.2+ with ray tracing extensions enabled in the device (VK_KHR_ray_tracing_pipeline, VK_KHR_acceleration_structure).
 // Best Practices Incorporated:
 // - Minimize active ray queries for performance (from Khronos Vulkan Ray Tracing Best Practices).
@@ -16,15 +16,26 @@
 // - Prefer fast-trace flags for AS builds.
 // - Aligned SBT handles to avoid misalignment issues.
 // - Hybrid integration: Record ray tracing into existing raster command buffers; use storage images for output.
-// - Extensibility: Add descriptor sets for input textures/buffers if needed for advanced shaders.
+// - Extensibility: Descriptor sets for TLAS, output image, camera, and material buffer; easy to add more bindings for textures/buffers.
 // Usage Example:
 //   VulkanRTX rtx(device);
-//   rtx.initializeRTX(physicalDevice, commandPool, queue, vertexBuffer, indexBuffer, vertexCount, indexCount, rtPipeline, rtLayout, sbt, tlas, tlasBuffer, tlasMemory, blas, blasBuffer, blasMemory);
+//   rtx.initializeRTX(physicalDevice, commandPool, queue, vertexBuffer, indexBuffer, vertexCount, indexCount);
+//   // Create storage image:
+//   VkImage rtOutputImage = VK_NULL_HANDLE;
+//   VkImageView rtOutputImageView = VK_NULL_HANDLE;
+//   VkDeviceMemory rtOutputMemory = VK_NULL_HANDLE;
+//   rtx.createStorageImage(physicalDevice, {width, height}, VK_FORMAT_R8G8B8A8_UNORM, rtOutputImage, rtOutputImageView, rtOutputMemory);
+//   // Create camera and material buffers:
+//   VkBuffer cameraBuffer = ...; VkDeviceMemory cameraMemory = ...;
+//   VkBuffer materialBuffer = ...; VkDeviceMemory materialMemory = ...;
+//   rtx.createRayTracingDescriptorSet(descriptorPool, cameraBuffer, materialBuffer);
 //   // In render loop:
 //   VkCommandBuffer cmd = ...; // Begin command buffer.
-//   VkImage rtOutputImage = ...; // Create storage image beforehand.
-//   rtx.recordRayTracingCommands(cmd, {width, height}, rtOutputImage, tlas);
+//   VulkanRTX::PushConstants pc = {viewProj, camPos, ...};
+//   rtx.recordRayTracingCommands(cmd, {width, height}, rtOutputImage, rtOutputImageView, pc);
 //   // End and submit cmd; composite rtOutputImage with raster result if hybrid.
+//   // On shutdown or resize:
+//   rtx.cleanupRTX(); // Or let destructor handle it.
 
 #include <vulkan/vulkan.h>
 #include <vector>
@@ -45,6 +56,9 @@ struct VkPipelineLayout_T;        // VkPipelineLayout
 struct VkAccelerationStructureKHR_T;  // VkAccelerationStructureKHR
 struct VkDeviceMemory_T;          // VkDeviceMemory
 struct VkShaderModule_T;          // VkShaderModule
+struct VkDescriptorSetLayout_T;   // VkDescriptorSetLayout
+struct VkDescriptorPool_T;        // VkDescriptorPool
+struct VkDescriptorSet_T;         // VkDescriptorSet
 
 class VulkanRTX {
 public:
@@ -79,8 +93,8 @@ public:
     // Developer Note: Function pointers are static for sharing across instances; mutex prevents race conditions.
     explicit VulkanRTX(VkDevice device);
 
-    // Destructor: No-op; cleanup is explicit via cleanupRTX for control over resource lifetime.
-    ~VulkanRTX() = default;
+    // Destructor: Automatically cleans up all RTX resources.
+    ~VulkanRTX();
 
     // Non-copyable and non-movable for safety (Vulkan handles are not thread-safe to copy).
     VulkanRTX(const VulkanRTX&) = delete;
@@ -88,34 +102,24 @@ public:
     VulkanRTX(VulkanRTX&&) = delete;
     VulkanRTX& operator=(VulkanRTX&&) = delete;
 
-    // Initializes all RTX resources: pipeline, BLAS, TLAS, SBT.
+    // Initializes all RTX resources: pipeline, BLAS, TLAS, SBT, descriptor sets.
     // Inputs: Physical device, command pool/queue for AS builds, vertex/index buffers and counts for geometry.
-    // Outputs: Pipeline, layout, SBT, TLAS/BLAS handles and buffers/memories (null-initialized on entry).
-    // Throws std::runtime_error on failure; calls cleanupRTX on partial failure for safety.
+    // Throws std::runtime_error on failure; cleans up partially allocated resources.
     // Developer Note: Use after rasterization setup for hybrid rendering; extend for dynamic geometry updates.
     void initializeRTX(
         VkPhysicalDevice physicalDevice, VkCommandPool commandPool, VkQueue graphicsQueue,
-        VkBuffer vertexBuffer, VkBuffer indexBuffer, uint32_t vertexCount, uint32_t indexCount,
-        VkPipeline& rtPipeline, VkPipelineLayout& rtPipelineLayout, ShaderBindingTable& sbt,
-        VkAccelerationStructureKHR& tlas, VkBuffer& tlasBuffer, VkDeviceMemory& tlasMemory,
-        VkAccelerationStructureKHR& blas, VkBuffer& blasBuffer, VkDeviceMemory& blasMemory
+        VkBuffer vertexBuffer, VkBuffer indexBuffer, uint32_t vertexCount, uint32_t indexCount
     );
 
-    // Cleans up all RTX resources: Destroys pipeline/layout, SBT buffer/memory, TLAS/BLAS and their buffers/memories.
-    // Safe to call on null handles; nulls all output parameters after destruction.
-    // Waits for device idle implicitly via Vulkan destruction order.
-    // Developer Note: Call in app shutdown or on resize if AS needs rebuilding; extend for dynamic updates.
-    void cleanupRTX(
-        VkPipeline& rtPipeline, VkPipelineLayout& rtPipelineLayout,
-        VkBuffer& sbtBuffer, VkDeviceMemory& sbtMemory, VkAccelerationStructureKHR& tlas,
-        VkBuffer& tlasBuffer, VkDeviceMemory& tlasMemory, VkAccelerationStructureKHR& blas,
-        VkBuffer& blasBuffer, VkDeviceMemory& blasMemory
-    );
+    // Cleans up all RTX resources: Destroys pipeline/layout, SBT buffer/memory, TLAS/BLAS and their buffers/memories, descriptors.
+    // Safe to call multiple times; nulls all internal handles after destruction.
+    // Developer Note: Call on resize if AS needs rebuilding; destructor calls automatically.
+    void cleanupRTX();
 
     // Extension: Creates a storage image for ray tracing output (e.g., for hybrid rendering).
-    // Inputs: Physical device for memory, device for creation, image extent, format (default B8G8R8A8_UNORM for color).
+    // Inputs: Physical device for memory, image extent, format (e.g., VK_FORMAT_R8G8B8A8_UNORM for color).
     // Outputs: Image, image view, memory (null-initialized on entry).
-    // Throws std::runtime_error on failure.
+    // Throws: std::runtime_error on failure.
     // Developer Note: Use for ray traced effects (e.g., reflections); composite with raster image in post-processing.
     // Best Practice: Use device-local memory for performance; transition layout before/after tracing.
     void createStorageImage(
@@ -123,23 +127,60 @@ public:
         VkImage& image, VkImageView& imageView, VkDeviceMemory& memory
     );
 
+    // Extension: Creates and updates descriptor set for ray tracing with camera and material buffers.
+    // Inputs: Descriptor pool, camera buffer (uniform), material buffer (storage).
+    // Throws: std::runtime_error on failure.
+    // Developer Note: Call after initializeRTX to bind camera and material data.
+    void createRayTracingDescriptorSet(
+        VkDescriptorPool descriptorPool, VkBuffer cameraBuffer, VkBuffer materialBuffer
+    );
+
     // Extension: Records ray tracing commands into a command buffer for hybrid rendering.
-    // Inputs: Command buffer (assumed begun), image extent for dispatch, output storage image, TLAS for scene.
-    // Assumes pipeline is bound and push constants set before call (e.g., viewProj, camPos).
+    // Inputs: Command buffer (assumed begun), image extent for dispatch, output storage image/view, push constants, optional TLAS (uses internal if null).
     // Steps:
     // 1. Transition output image to GENERAL layout for storage.
-    // 2. Bind ray tracing pipeline.
-    // 3. Trace rays using SBT regions.
-    // 4. Transition output image back to OPTIMAL for post-processing/compositing.
-    // Throws std::runtime_error on pipeline bind or trace failure.
-    // Developer Note: Call after raster pass for hybrid effects; extend with descriptors for input textures.
+    // 2. Update descriptors for output image (and TLAS if provided).
+    // 3. Bind ray tracing pipeline and descriptor set.
+    // 4. Push constants.
+    // 5. Trace rays using SBT regions.
+    // 6. Transition output image back to COLOR_ATTACHMENT_OPTIMAL for post-processing/compositing.
+    // Throws std::runtime_error on failure.
+    // Developer Note: Call after raster pass for hybrid effects; extend with more descriptors for input textures.
     // Best Practice: Minimize ray queries (from Khronos); use for targeted effects like shadows/reflections.
     void recordRayTracingCommands(
-        VkCommandBuffer cmdBuffer, VkExtent2D extent, VkImage outputImage, VkAccelerationStructureKHR tlas
+        VkCommandBuffer cmdBuffer, VkExtent2D extent, VkImage outputImage, VkImageView outputImageView,
+        const PushConstants& pc, VkAccelerationStructureKHR tlas = VK_NULL_HANDLE
     );
+
+    // Getters for internal resources (for advanced usage or manual control).
+    VkPipeline getPipeline() const { return rtPipeline_; }
+    VkPipelineLayout getPipelineLayout() const { return rtPipelineLayout_; }
+    const ShaderBindingTable& getSBT() const { return sbt_; }
+    VkAccelerationStructureKHR getTLAS() const { return tlas_; }
+    VkAccelerationStructureKHR getBLAS() const { return blas_; }
+    VkDescriptorSet getDescriptorSet() const { return ds_; }
 
 private:
     VkDevice device_;  // Stored device handle for all operations.
+
+    // Internal resources (RAII-managed).
+    VkPipeline rtPipeline_ = VK_NULL_HANDLE;
+    VkPipelineLayout rtPipelineLayout_ = VK_NULL_HANDLE;
+    ShaderBindingTable sbt_;
+    VkAccelerationStructureKHR tlas_ = VK_NULL_HANDLE;
+    VkBuffer tlasBuffer_ = VK_NULL_HANDLE;
+    VkDeviceMemory tlasMemory_ = VK_NULL_HANDLE;
+    VkAccelerationStructureKHR blas_ = VK_NULL_HANDLE;
+    VkBuffer blasBuffer_ = VK_NULL_HANDLE;
+    VkDeviceMemory blasMemory_ = VK_NULL_HANDLE;
+    VkDescriptorSetLayout dsLayout_ = VK_NULL_HANDLE;
+    VkDescriptorPool dsPool_ = VK_NULL_HANDLE;
+    VkDescriptorSet ds_ = VK_NULL_HANDLE;
+
+    // Flags for optional shaders.
+    bool hasAnyHit_ = false;
+    bool hasIntersection_ = false;
+    bool hasCallable_ = false;
 
     // Static mutexes for thread-safe initialization of function pointers and shared resources.
     static std::mutex functionPtrMutex_;   // Protects function pointer loading.
@@ -156,23 +197,32 @@ private:
     static PFN_vkCreateRayTracingPipelinesKHR vkCreateRayTracingPipelinesKHR;
     static PFN_vkGetRayTracingShaderGroupHandlesKHR vkGetRayTracingShaderGroupHandlesKHR;
 
+    // Creates descriptor set layout for ray tracing (TLAS, storage image, camera, material buffer).
+    void createDescriptorSetLayout();
+
+	void createDescriptorPoolAndSet();
+
     // Creates ray tracing pipeline with optional shaders.
-    void createRayTracingPipeline(VkPipeline& pipeline, VkPipelineLayout& rtPipelineLayout);
+    void createRayTracingPipeline();
 
     // Creates shader binding table with aligned handles.
-    void createShaderBindingTable(VkPhysicalDevice physicalDevice, VkPipeline pipeline, ShaderBindingTable& sbt);
+    void createShaderBindingTable(VkPhysicalDevice physicalDevice);
 
     // Builds bottom-level acceleration structure (BLAS) from triangle geometry.
     void createBottomLevelAS(VkPhysicalDevice physicalDevice, VkCommandPool commandPool, VkQueue queue,
-                             VkBuffer vertexBuffer, VkBuffer indexBuffer, uint32_t vertexCount, uint32_t indexCount,
-                             VkAccelerationStructureKHR& as, VkBuffer& asBuffer, VkDeviceMemory& asMemory);
+                             VkBuffer vertexBuffer, VkBuffer indexBuffer, uint32_t vertexCount, uint32_t indexCount);
 
     // Builds top-level acceleration structure (TLAS) instancing the BLAS.
-    void createTopLevelAS(VkPhysicalDevice physicalDevice, VkCommandPool commandPool, VkQueue queue,
-                          VkAccelerationStructureKHR blas, VkAccelerationStructureKHR& as, VkBuffer& asBuffer, VkDeviceMemory& asMemory);
+    void createTopLevelAS(VkPhysicalDevice physicalDevice, VkCommandPool commandPool, VkQueue queue);
+
+    // Updates descriptor set for TLAS.
+    void updateDescriptorSetForTLAS(VkAccelerationStructureKHR tlas);
 
     // Generic buffer creation utility.
     void createBuffer(VkPhysicalDevice physicalDevice, VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags props, VkBuffer& buffer, VkDeviceMemory& memory);
+
+    // Finds suitable memory type index.
+    uint32_t findMemoryType(VkPhysicalDevice physicalDevice, uint32_t typeFilter, VkMemoryPropertyFlags props);
 
     // Creates shader module from SPIR-V file.
     VkShaderModule createShaderModule(const std::string& filename);
