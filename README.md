@@ -12,7 +12,7 @@ This project uses an SDL3 backend for rendering (yay Vulkan), chosen from idiocy
 If you want to skip SDL3 Vulkan setup, and get to coding, you can license below.  
 
 Software with free distribution can use the software without restriction.  
-SDL3 and Vulkan AMOURANTH RTX engine for game or software development, see below for licensing.  
+SDL3 and Vulkan AMOURANTH RTX engine for game or software development.  
 Built with Grok, Co-Pilot, and duck.ai  
 
 **If you do not intend to modify the code, watch the latest video and you may have found God.**  
