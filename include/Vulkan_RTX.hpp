@@ -9,6 +9,8 @@
 // comprehensive cleanup, optional shader support (e.g., any-hit, intersection, callable), and extensive comments.
 // Optimizations: Lazy loading of extensions, one-time command buffers for AS builds, aligned SBT handles, and efficient image transitions.
 // Memory safety: All resources are RAII-managed internally; destructor automatically cleans up in reverse order.
+// Multi-platform support: Vulkan ray tracing is cross-platform (Linux, Windows, macOS/MoltenVK, Android); 
+// shader paths relative to assets on Android, device-local memory for AS/scratch buffers across platforms.
 // Note: Requires Vulkan 1.2+ with ray tracing extensions enabled in the device (VK_KHR_ray_tracing_pipeline, VK_KHR_acceleration_structure).
 // Best Practices Incorporated:
 // - Minimize active ray queries for performance (from Khronos Vulkan Ray Tracing Best Practices).
@@ -59,6 +61,13 @@ struct VkShaderModule_T;          // VkShaderModule
 struct VkDescriptorSetLayout_T;   // VkDescriptorSetLayout
 struct VkDescriptorPool_T;        // VkDescriptorPool
 struct VkDescriptorSet_T;         // VkDescriptorSet
+
+#ifdef __ANDROID__
+// On Android, shaders are loaded from assets; implementation in cpp handles path prefix.
+#define SHADER_PATH_PREFIX "assets/shaders/"
+#else
+#define SHADER_PATH_PREFIX "shaders/"
+#endif
 
 class VulkanRTX {
 public:
@@ -200,7 +209,7 @@ private:
     // Creates descriptor set layout for ray tracing (TLAS, storage image, camera, material buffer).
     void createDescriptorSetLayout();
 
-	void createDescriptorPoolAndSet();
+    void createDescriptorPoolAndSet();
 
     // Creates ray tracing pipeline with optional shaders.
     void createRayTracingPipeline();
