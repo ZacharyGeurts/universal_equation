@@ -3,7 +3,7 @@
 #include <ctime>     // For std::time, std::localtime, and std::strftime (timestamp generation).
 #include <stdexcept> // For std::runtime_error (custom exception throwing on invalid resolution).
 
-// AMOURANTH RTX engine - Entry point for the Dimensional Navigator application.
+// AMOURANTH RTX engine September, 2025 - Entry point for the application.
 // This file serves as the program's main entry point, responsible for:
 // - Validating minimum resolution requirements (320x200) to ensure Vulkan swapchain compatibility.
 // - Instantiating the Application class with user-specified (or default) window dimensions.
@@ -14,12 +14,13 @@
 // - Resolution clamping: Enforces minimum size to prevent Vulkan validation errors.
 // - Simplicity: Minimal main function; all logic delegated to Application class.
 // - Extensibility: Easy to modify resolution or add command-line parsing (e.g., for variable sizes).
+// - Cross-platform readiness: Defaults to 1280x720 on desktop (Linux, Windows, macOS); uses 0x0 on Android for fullscreen auto-sizing.
 // Requirements:
 // - Application class from main.hpp (integrates SDL3, Vulkan, and engine logic).
 // - Compiled with -O3 -std=c++17 -Wall -Wextra -g -fopenmp -Iinclude (for OpenMP and debugging).
 // Usage: Compile and run; the app launches a Vulkan window with the Dimensional Navigator renderer.
 // Notes:
-// - Default resolution: 1280x720 (change via const int width/height).
+// - On Android: Window size parameters are ignored by SDL3; fullscreen is used automatically.
 // - On error: Logs "[YYYY-MM-DD HH:MM:SS] Error: <message>" and exits with code 1.
 // - For debugging: Use Vulkan validation layers to catch GPU issues; enable SDL3 logging for input/window events.
 
@@ -27,9 +28,17 @@ int main() {
     try {
         // Define and validate the initial window resolution.
         // Minimum size (320x200) ensures Vulkan swapchain creation succeeds without validation errors.
-        const int width = 1280;   // Horizontal resolution (pixels; customizable for testing).
-        const int height = 720;   // Vertical resolution (pixels; customizable for testing).
-        if (width < 320 || height < 200) {
+        // On Android, use 0x0 to let SDL3 handle fullscreen sizing automatically.
+        int width, height;
+#ifdef __ANDROID__
+        width = 0;
+        height = 0;
+#else
+        width = 1280;   // Horizontal resolution (pixels; customizable for testing).
+        height = 720;   // Vertical resolution (pixels; customizable for testing).
+#endif
+        // Only validate if explicit size is provided (skip for Android's auto-sizing).
+        if (width > 0 && height > 0 && (width < 320 || height < 200)) {
             // Throw early if resolution is invalid to prevent downstream Vulkan failures.
             throw std::runtime_error("Resolution must be at least 320x200");
         }
