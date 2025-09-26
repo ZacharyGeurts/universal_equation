@@ -4,6 +4,7 @@
 // Vulkan AMOURANTH RTX engine September, 2025 - Header for Vulkan initialization.
 // Provides static methods for high-level initialization and cleanup of Vulkan resources.
 // Delegates to VulkanInitializer utility functions in Vulkan_func.hpp.
+// Multi-platform support: Uses SDL3_Vulkan for instance/surface creation (handles Windows, macOS/MoltenVK, Android, Linux/X11/Wayland automatically).
 // Zachary Geurts 2025
 
 #include <vulkan/vulkan.h>
@@ -16,6 +17,7 @@ namespace VulkanInit {
     // Initializes the Vulkan instance and surface using SDL3.
     // Inputs: SDL window, preferNvidia flag for GPU selection.
     // Outputs: Vulkan instance and surface.
+    // Notes: SDL_Vulkan_GetInstanceExtensions automatically includes platform-specific surface extensions (e.g., VK_KHR_win32_surface, VK_KHR_android_surface).
     void initInstanceAndSurface(
         SDL_Window* window, VkInstance& instance, VkSurfaceKHR& surface, bool preferNvidia = true
     );
@@ -24,6 +26,7 @@ namespace VulkanInit {
     // command pool/buffers, sync objects, and geometry buffers for a sphere.
     // Inputs: instance, surface, geometry data (vertices/indices), window dimensions.
     // Outputs: All other parameters are filled with created resources.
+    // Notes: Swapchain creation adapts to platform surface capabilities via SDL3.
     void initializeVulkan(
         VkInstance& instance, VkPhysicalDevice& physicalDevice, VkDevice& device, VkSurfaceKHR& surface,
         VkQueue& graphicsQueue, VkQueue& presentQueue, uint32_t& graphicsFamily, uint32_t& presentFamily,
@@ -38,6 +41,7 @@ namespace VulkanInit {
 
     // Initializes vertex and index buffers for quad geometry (e.g., UI or post-processing).
     // Reuses existing device, physical device, command pool, and queue.
+    // Notes: Buffer creation is platform-agnostic (Vulkan API level).
     void initializeQuadBuffers(
         VkDevice device, VkPhysicalDevice physicalDevice, VkCommandPool commandPool, VkQueue graphicsQueue,
         VkBuffer& vertexBuffer, VkDeviceMemory& vertexBufferMemory, VkBuffer& indexBuffer,
@@ -47,6 +51,7 @@ namespace VulkanInit {
 
     // Cleans up all resources created by initializeVulkan and initializeQuadBuffers.
     // Safe to call even if some resources are null. Instance and surface are not destroyed (handled externally).
+    // Notes: Cleanup order ensures no dangling resources; platform-specific surfaces handled by SDL3.
     void cleanupVulkan(
         VkInstance instance, VkDevice& device, VkSurfaceKHR surface, VkSwapchainKHR& swapchain,
         std::vector<VkImageView>& swapchainImageViews, std::vector<VkFramebuffer>& swapchainFramebuffers,
