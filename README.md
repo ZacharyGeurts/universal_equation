@@ -52,7 +52,7 @@ Built with Grok, Co-Pilot, and duck.ai
 This is **not free (as in freedom) software**. It is provided for **educational purposes only**.  
 - **Restrictions**: You may not sell unlicensed software or require any compensation from users.  
 - **Distribution**: Projects using UE code must be distributed freely (no cost).  
-- **Commercial use of engine requires license**  
+- **Commercial use of AMOURANTH RTX engine requires license**  
 - **Distribution**: https://www.twitch.tv/amouranth for AMOURANTH RTX engine license  
 - **Source**: Obtain the software exclusively from [https://github.com/ZacharyGeurts/universal_equation](https://github.com/ZacharyGeurts/universal_equation).  
 
