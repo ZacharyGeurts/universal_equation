@@ -19,8 +19,20 @@ layout(push_constant) uniform PushConstants {
 } push;
 
 layout(location = 0) out vec4 outColor;
+layout(location = 2) out vec2 outUV;
 
 void main() {
-    gl_Position = push.viewProj * vec4(inPosition * push.zoomLevel, 1.0);
+    // Apply wave-like displacement using wavePhase and cycleProgress
+    vec3 offset = inNormal * sin(push.wavePhase + push.cycleProgress + length(inPosition)) * 0.1;
+    
+    // Scale position by zoomLevel and offset relative to camPos
+    vec3 pos = inPosition * push.zoomLevel + normalize(inPosition - push.camPos) * push.observable * 0.05;
+    pos += offset; // Add wave displacement
+    
+    // Transform position
+    gl_Position = push.viewProj * vec4(pos, 1.0);
+    
+    // Pass vertex color and UVs
     outColor = inColor;
+    outUV = inUV;
 }

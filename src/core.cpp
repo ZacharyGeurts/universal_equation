@@ -5,7 +5,7 @@
 
 // Platform-specific font file
 #ifdef __ANDROID__
-const char* FONT_FILE = "fonts/sf-plasmatica-open.ttf";
+const char* FONT_FILE = "fonts/arial.ttf";
 #elif defined(_WIN32) || defined(__WIN32__) || defined(WIN32) || defined(__NT__)
 const char* FONT_FILE = "assets\\fonts\\sf-plasmatica-open.ttf";
 #elif defined(__APPLE__) || defined(__MACH__)

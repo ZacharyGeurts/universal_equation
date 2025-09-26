@@ -1,14 +1,15 @@
 # Operating System Boot-Inspired Makefile (September 2025)
 # This Makefile simulates an OS boot process while building the AMOURANTH RTX Engine.
-# Supports cross-platform compilation for Linux, macOS, and Windows (via MinGW).
+# Supports cross-platform compilation for Linux, macOS, Windows (via MinGW), and Android (via NDK).
 # Detects the host OS and adjusts compilers, flags, and library links accordingly.
 # Key features:
 # - Compiles C++17 sources with SDL3, Vulkan 1.3+, and SDL_ttf dependencies.
 # - Builds SPIR-V shaders for Vulkan ray tracing (vertex, fragment, raygen, etc.).
 # - Copies assets (shaders, fonts) to the output directory.
 # - Includes X11 libraries for Linux to resolve BadMatch errors.
+# - Adds Android NDK cross-compilation support for ARM64.
 # - Detailed logging for build debugging.
-# Dependencies: SDL3, SDL_ttf, Vulkan 1.3+, libX11-dev (Linux), libomp (macOS), MinGW (Windows).
+# Dependencies: SDL3, SDL_ttf, Vulkan 1.3+, libX11-dev (Linux), libomp (macOS), MinGW (Windows), Android NDK (Android).
 # Usage: make [all|clean|directories|shaders|objects|link|copy-assets]
 # Zachary Geurts, September 2025
 
@@ -16,7 +17,7 @@
 ifeq ($(OS),Windows_NT)
 	# Windows (MinGW)
 	UNAME_S := Windows
-	CXX ?= g++
+	CXX ?= x86_64-w64-mingw32-g++
 	CXXFLAGS ?= -O3 -std=c++17 -Wall -Wextra -g -fopenmp -Iinclude
 	LDFLAGS ?= -lSDL3 -lvulkan -lSDL3_ttf -fopenmp -static-libgcc -static-libstdc++
 	EXE_SUFFIX ?= .exe
@@ -28,68 +29,92 @@ ifeq ($(OS),Windows_NT)
 else
 	UNAME_S := $(shell uname -s)
 	ifeq ($(UNAME_S),Linux)
-		# Linux
-		CXX ?= g++
-		CXXFLAGS ?= -O3 -std=c++17 -Wall -Wextra -g -fopenmp -Iinclude
-		LDFLAGS ?= -lSDL3 -lvulkan -lSDL3_ttf -lX11 -lxcb -fopenmp
-		EXE_SUFFIX ?=
-		MKDIR ?= mkdir -p
-		CP ?= cp
-		RM ?= rm -f
-		RMDIR ?= rm -rf
-		PATH_SEP ?= /
+	    # Linux
+	    CXX ?= g++
+	    CXXFLAGS ?= -O3 -std=c++17 -Wall -Wextra -g -fopenmp -Iinclude
+	    LDFLAGS ?= -lSDL3 -lvulkan -lSDL3_ttf -lX11 -lxcb -fopenmp
+	    EXE_SUFFIX ?=
+	    MKDIR ?= mkdir -p
+	    CP ?= cp
+	    RM ?= rm -f
+	    RMDIR ?= rm -rf
+	    PATH_SEP ?= /
 	endif
 	ifeq ($(UNAME_S),Darwin)
-		# macOS
-		CXX ?= clang++
-		CXXFLAGS ?= -O3 -std=c++17 -Wall -Wextra -g -Xclang -fopenmp -Iinclude -I/usr/local/include
-		LDFLAGS ?= -lSDL3 -lvulkan -lSDL3_ttf -lomp
-		EXE_SUFFIX ?=
-		MKDIR ?= mkdir -p
-		CP ?= cp
-		RM ?= rm -f
-		RMDIR ?= rm -rf
-		PATH_SEP ?= /
+	    # macOS
+	    CXX ?= clang++
+	    CXXFLAGS ?= -O3 -std=c++17 -Wall -Wextra -g -Xclang -fopenmp -Iinclude -I/usr/local/include
+	    LDFLAGS ?= -lSDL3 -lvulkan -lSDL3_ttf -lomp
+	    EXE_SUFFIX ?=
+	    MKDIR ?= mkdir -p
+	    CP ?= cp
+	    RM ?= rm -f
+	    RMDIR ?= rm -rf
+	    PATH_SEP ?= /
 	endif
 endif
 
-# Override OS detection with TARGET_OS=Linux/macOS/Windows
+# Override OS detection with TARGET_OS=Linux/macOS/Windows/Android
 ifdef TARGET_OS
 	ifeq ($(TARGET_OS),Windows)
-		UNAME_S := Windows
-		CXX ?= x86_64-w64-mingw32-g++
-		CXXFLAGS ?= -O3 -std=c++17 -Wall -Wextra -g -fopenmp -Iinclude
-		LDFLAGS ?= -lSDL3 -lvulkan -lSDL3_ttf -fopenmp -static-libgcc -static-libstdc++
-		EXE_SUFFIX ?= .exe
-		MKDIR ?= mkdir -p
-		CP ?= cp
-		RM ?= rm -f
-		RMDIR ?= rm -rf
-		PATH_SEP ?= /
+	    UNAME_S := Windows
+	    CXX ?= x86_64-w64-mingw32-g++
+	    CXXFLAGS ?= -O3 -std=c++17 -Wall -Wextra -g -fopenmp -Iinclude
+	    LDFLAGS ?= -lSDL3 -lvulkan -lSDL3_ttf -fopenmp -static-libgcc -static-libstdc++
+	    EXE_SUFFIX ?= .exe
+	    MKDIR ?= mkdir -p
+	    CP ?= cp
+	    RM ?= rm -f
+	    RMDIR ?= rm -rf
+	    PATH_SEP ?= /
 	endif
 	ifeq ($(TARGET_OS),macOS)
-		UNAME_S := Darwin
-		CXX ?= clang++
-		CXXFLAGS ?= -O3 -std=c++17 -Wall -Wextra -g -Xclang -fopenmp -Iinclude -I/usr/local/include
-		LDFLAGS ?= -lSDL3 -lvulkan -lSDL3_ttf -lomp
-		EXE_SUFFIX ?=
-		MKDIR ?= mkdir -p
-		CP ?= cp
-		RM ?= rm -f
-		RMDIR ?= rm -rf
-		PATH_SEP ?= /
+	    UNAME_S := Darwin
+	    CXX ?= clang++
+	    CXXFLAGS ?= -O3 -std=c++17 -Wall -Wextra -g -Xclang -fopenmp -Iinclude -I/usr/local/include
+	    LDFLAGS ?= -lSDL3 -lvulkan -lSDL3_ttf -lomp
+	    EXE_SUFFIX ?=
+	    MKDIR ?= mkdir -p
+	    CP ?= cp
+	    RM ?= rm -f
+	    RMDIR ?= rm -rf
+	    PATH_SEP ?= /
 	endif
 	ifeq ($(TARGET_OS),Linux)
-		UNAME_S := Linux
-		CXX ?= g++
-		CXXFLAGS ?= -O3 -std=c++17 -Wall -Wextra -g -fopenmp -Iinclude
-		LDFLAGS ?= -lSDL3 -lvulkan -lSDL3_ttf -lX11 -lxcb -fopenmp
-		EXE_SUFFIX ?=
-		MKDIR ?= mkdir -p
-		CP ?= cp
-		RM ?= rm -f
-		RMDIR ?= rm -rf
-		PATH_SEP ?= /
+	    UNAME_S := Linux
+	    CXX ?= g++
+	    CXXFLAGS ?= -O3 -std=c++17 -Wall -Wextra -g -fopenmp -Iinclude
+	    LDFLAGS ?= -lSDL3 -lvulkan -lSDL3_ttf -lX11 -lxcb -fopenmp
+	    EXE_SUFFIX ?=
+	    MKDIR ?= mkdir -p
+	    CP ?= cp
+	    RM ?= rm -f
+	    RMDIR ?= rm -rf
+	    PATH_SEP ?= /
+	endif
+	# New: Android cross-compilation
+	ifeq ($(TARGET_OS),Android)
+	    UNAME_S := Android
+	    # Android NDK settings
+	    NDK_HOME ?= $(shell echo $$NDK_HOME)
+	    ifeq ($(NDK_HOME),)
+	        $(error NDK_HOME is not set. Please set the Android NDK path.)
+	    endif
+	    # Target ARM64 for Android
+	    ARCH ?= aarch64-linux-android
+	    API_LEVEL ?= 33
+	    TOOLCHAIN = $(NDK_HOME)/toolchains/llvm/prebuilt/$(shell uname -s | tr A-Z a-z)-x86_64
+	    CXX = $(TOOLCHAIN)/bin/$(ARCH)-$(API_LEVEL)-clang++
+	    CXXFLAGS ?= -O3 -std=c++17 -Wall -Wextra -g -Iinclude -I$(NDK_HOME)/sysroot/usr/include -I$(NDK_HOME)/sysroot/usr/include/aarch64-linux-android
+	    LDFLAGS ?= -L$(NDK_HOME)/sysroot/usr/lib/aarch64-linux-android/$(API_LEVEL) -lSDL3 -lvulkan -lSDL3_ttf -llog
+	    EXE_SUFFIX ?=
+	    MKDIR ?= mkdir -p
+	    CP ?= cp
+	    RM ?= rm -f
+	    RMDIR ?= rm -rf
+	    PATH_SEP ?= /
+	    # Android-specific output (shared library instead of executable)
+	    EXECUTABLE = $(BIN_DIR)/libNavigator.so
 	endif
 endif
 
@@ -110,7 +135,8 @@ FONT_OUT_DIR = $(ASSET_DIR)$(PATH_SEP)fonts
 # Files
 SOURCES = $(wildcard $(SRC_DIR)/*.cpp)
 OBJECTS = $(patsubst $(SRC_DIR)/%.cpp,$(BUILD_DIR)/%.o,$(SOURCES))
-EXECUTABLE = $(BIN_DIR)/Navigator$(EXE_SUFFIX)
+# Modified: Use shared library for Android
+EXECUTABLE ?= $(BIN_DIR)/Navigator$(EXE_SUFFIX)
 
 # Shader source files by type
 VERT_SHADERS = $(wildcard $(SHADER_DIR)/*.vert)
@@ -173,15 +199,16 @@ link: $(EXECUTABLE)
 copy-assets: copy-shaders copy-fonts
 	@echo "Userland assets deployed."
 
-# Link object files to create executable
+# Link object files to create executable or shared library
 $(EXECUTABLE): $(OBJECTS) $(SHADER_OBJECTS)
 	@echo "Linking system kernel: $@"
-	$(CXX) $(OBJECTS) -o $@ $(LDFLAGS)
+	# Modified: Add -shared flag for Android
+	$(CXX) $(OBJECTS) -o $@ $(LDFLAGS) $(if $(filter Android,$(UNAME_S)),-shared,)
 
 # Compile source files to object files
 $(BUILD_DIR)/%.o: $(SRC_DIR)/%.cpp
 	@echo "Loading module: $<"
-	$(CXX) $(CXXFLAGS) -c $< -o $@
+	$(CXX) $(CXXFLAGS) -c $< -o $@ $(if $(filter Android,$(UNAME_S)),-fPIC,)
 
 # Compile shader files to SPIR-V (Vulkan 1.3 for ray tracing support)
 $(SHADER_DIR)/%.spv: $(SHADER_DIR)/%.vert
@@ -212,26 +239,26 @@ $(SHADER_DIR)/%.spv: $(SHADER_DIR)/%.rgen $(COMMON_GLSL)
 copy-shaders: $(SHADER_OBJECTS)
 	@echo "Mounting shader filesystem..."
 	@if [ -n "$(SHADER_OBJECTS)" ]; then \
-		$(CP) $(SHADER_DIR)$(PATH_SEP)*.spv $(SHADER_OUT_DIR); \
+	    $(CP) $(SHADER_DIR)$(PATH_SEP)*.spv $(SHADER_OUT_DIR); \
 	else \
-		echo "No shaders to copy."; \
+	    echo "No shaders to copy."; \
 	fi
 
 # Copy font files to bin/assets/fonts directory
 copy-fonts:
 	@echo "Mounting font filesystem..."
 	@if [ -d "$(FONT_DIR)" ] && [ -n "$(wildcard $(FONT_DIR)/*.ttf)" ]; then \
-		$(CP) $(FONT_DIR)$(PATH_SEP)*.ttf $(FONT_OUT_DIR); \
+	    $(CP) $(FONT_DIR)$(PATH_SEP)*.ttf $(FONT_OUT_DIR); \
 	else \
-		echo "Warning: No TTF fonts found in $(FONT_DIR) or directory does not exist."; \
+	    echo "Warning: No TTF fonts found in $(FONT_DIR) or directory does not exist."; \
 	fi
 
 # Clean build artifacts (System Shutdown)
 clean:
 	@echo "=== SYSTEM SHUTDOWN INITIATED ==="
 	@echo "Unmounting filesystems..."
-	@$(RMDIR) $(BUILD_DIR)
-	@$(RMDIR) $(BIN_DIR)
+	@$(RMDIR) bin
+	@$(RMDIR) build
 	@$(RM) $(SHADER_DIR)$(PATH_SEP)*.spv
 	@echo "=== SHUTDOWN COMPLETE ==="
 

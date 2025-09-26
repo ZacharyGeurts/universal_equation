@@ -4,7 +4,7 @@
 // AMOURANTH RTX engine September, 2025 - Header and implementation for the main Application class.
 // This file defines the Application class, the central coordinator for the "Dimensional Navigator" application.
 // It manages the entire application lifecycle, including:
-// - SDL3 window creation, event handling, and input processing for cross-platform support.
+// - SDL3 window creation, event handling, and input processing for cross-platform support (Linux, Windows, macOS, Android).
 // - Vulkan instance, surface, device, swapchain, and rendering resources (via VulkanInitializer).
 // - Integration with DimensionalNavigator for computational logic (e.g., physics, simulation modes).
 // - Integration with AMOURANTH for rendering, visual effects, mode management, and input handling.
@@ -14,7 +14,7 @@
 // - Memory-safe: Explicit cleanup in destructor and error handlers; null-checks in render loop to prevent crashes.
 // - Error handling: Throws std::runtime_error on critical failures (e.g., Vulkan init); logs non-fatal issues to stderr.
 // - Developer-friendly: Extensive comments on Vulkan flow, error handling, resource management, and extensibility.
-// - Performance: Clamps window size to minimums (1280x720), uses single-frame-in-flight (extendable to multi-frame).
+// - Performance: Clamps window size to minimums (1280x720) on desktop; uses fullscreen auto-sizing on Android.
 // - Extensibility: Supports new rendering modes (via AMOURANTH::setMode), custom input handlers, and additional Vulkan pipelines.
 // Requirements:
 // - SDL3 for windowing, input, and Vulkan instance/surface creation.
@@ -22,10 +22,11 @@
 // - GLM for matrix transformations (e.g., viewProj in push constants).
 // - OpenMP for CPU parallelism (optional; used via omp_set_num_threads).
 // Usage Example:
-//   Application app("Custom Title", 1920, 1080);  // Create app with custom window size.
+//   Application app("Custom Title", 1920, 1080);  // Create app with custom window size (desktop).
 //   app.run();  // Start event loop and rendering.
 // Notes:
-// - Window resize triggers swapchain recreation, which cleans and reinitializes Vulkan resources.
+// - On Android: Window size parameters are ignored; fullscreen is used automatically by SDL3.
+// - Window resize triggers swapchain recreation, which cleans and reinitializes Vulkan resources (no clamping on Android).
 // - Render loop skips frames if user camera is active to avoid input/render conflicts.
 // - Fullscreen support enabled by default in SDL3 event loop for immersive experience.
 // - Assumes VulkanInitializer, SDL3Initializer, and core (DimensionalNavigator, AMOURANTH) are defined elsewhere.
@@ -58,15 +59,16 @@ public:
     // Constructor: Initializes the full application stack.
     // Parameters:
     // - title: SDL3 window title (default: "Dimensional Navigator").
-    // - width, height: Initial window dimensions (default: 1280x720; clamped on resize to min 1280x720).
+    // - width, height: Initial window dimensions (default: 1280x720 on desktop; 0x0 on Android for auto-sizing).
     // Steps:
     // 1. Set OpenMP thread count to max available for potential parallelism (e.g., in simulator or buffer uploads).
     // 2. Initialize SDL3 via SDL3Initializer (creates window, Vulkan instance, surface).
-    // 3. Create DimensionalNavigator (simulator) and AMOURANTH (renderer) with initial dimensions.
-    // 4. Initialize Vulkan resources (device, swapchain, pipeline, buffers, sync objects) via VulkanInitializer.
-    // 5. Set AMOURANTH to mode 9 (default mode) and update its cache for rendering.
+    // 3. On Android (width/height == 0), query actual window size via SDL_GetWindowSize.
+    // 4. Create DimensionalNavigator (simulator) and AMOURANTH (renderer) with (queried) dimensions.
+    // 5. Initialize Vulkan resources (device, swapchain, pipeline, buffers, sync objects) via VulkanInitializer.
+    // 6. Set AMOURANTH to mode 9 (default mode) and update its cache for rendering.
     // Throws: std::runtime_error on SDL3 or Vulkan initialization failures; calls cleanup() on errors.
-    // Notes: Logs initialization failures to stderr before re-throwing.
+    // Notes: Logs initialization failures to stderr before re-throwing. No min-size clamping on Android.
     Application(const char* title = "Dimensional Navigator", int width = 1280, int height = 720)
         : simulator_(nullptr),                    // Initialize simulator pointer to nullptr.
           sdlInitializer_(),                      // Default-construct SDL3Initializer (window, instance, surface).
@@ -114,10 +116,17 @@ public:
             vulkanInstance_ = sdlInitializer_.getVkInstance();
             surface_ = sdlInitializer_.getVkSurface();
 
+            // On Android, query actual window size (SDL3 ignores initial 0x0 for fullscreen).
+#ifdef __ANDROID__
+            if (width == 0 || height == 0) {
+                SDL_GetWindowSize(window_, &width_, &height_);
+            }
+#endif
+
             // Create simulator and renderer objects.
             // DimensionalNavigator handles computational logic (e.g., physics, modes).
             // AMOURANTH handles rendering, input, and mode-specific visuals.
-            simulator_ = new DimensionalNavigator("Dimensional Navigator", width, height);
+            simulator_ = new DimensionalNavigator("Dimensional Navigator", width_, height_);
             amouranth_ = new AMOURANTH(simulator_);
 
             // Initialize Vulkan resources (device, swapchain, pipeline, buffers, etc.).
@@ -152,17 +161,22 @@ public:
     // Main entry point: Runs the SDL3 event loop with custom callbacks.
     // Callbacks:
     // - Render: Calls render() each frame (targets ~60 FPS via SDL3).
-    // - Resize: Recreates swapchain on window size change (clamps to min 1280x720).
+    // - Resize: Recreates swapchain on window size change (clamps to min 1280x720 on desktop only).
     // - Input: Forwards SDL_KeyboardEvent to AMOURANTH for mode/input handling.
     // - Fullscreen: Enabled by default for immersive experience.
     // Throws: std::runtime_error on critical failures (e.g., swapchain recreation).
-    // Notes: Event loop runs until user quits (e.g., via SDL_QUIT or Alt+F4).
+    // Notes: Event loop runs until user quits (e.g., via SDL_QUIT or Alt+F4). No clamping on Android.
     void run() {
         sdlInitializer_.eventLoop(
             [this]() { render(); },  // Render callback: Called each frame.
             [this](int w, int h) {   // Resize callback: Update dimensions and recreate swapchain.
+#ifdef __ANDROID__
+                width_ = w;
+                height_ = h;
+#else
                 width_ = std::max(1280, w);
                 height_ = std::max(720, h);
+#endif
                 try {
                     recreateSwapchain();
                 } catch (const std::exception& e) {
@@ -210,8 +224,8 @@ private:
     VkDeviceMemory indexBufferMemory_;   // Allocated memory for sphere index buffer.
     uint32_t graphicsFamily_;         // Graphics queue family index (initialized to UINT32_MAX).
     uint32_t presentFamily_;          // Present queue family index (initialized to UINT32_MAX).
-    int width_;                       // Current window width (clamped to min 1280).
-    int height_;                      // Current window height (clamped to min 720).
+    int width_;                       // Current window width (clamped to min 1280 on desktop).
+    int height_;                      // Current window height (clamped to min 720 on desktop).
     AMOURANTH* amouranth_;            // Owned pointer to renderer (visuals, input; deleted in cleanup).
 
     // Initializes Vulkan resources: device, queues, swapchain, pipeline, buffers, and sync objects.
@@ -242,11 +256,11 @@ private:
     // 1. Wait for device idle (logs non-fatal errors to stderr).
     // 2. Clean up all Vulkan resources using VulkanInit::cleanupVulkan.
     // 3. Null all Vulkan handles and clear vectors to prevent dangling references.
-    // 4. Get new window size via SDL_GetWindowSize; clamp to min 1280x720.
-    // 5. Resize window if below minimum to ensure valid swapchain creation.
+    // 4. Get new window size via SDL_GetWindowSize; clamp to min 1280x720 on desktop only.
+    // 5. Resize window if below minimum on desktop to ensure valid swapchain creation.
     // 6. Reinitialize Vulkan resources via initializeVulkan().
     // Throws: std::runtime_error on cleanup or reinitialization failures.
-    // Notes: Called on window resize events or VK_ERROR_OUT_OF_DATE_KHR in render().
+    // Notes: Called on window resize events or VK_ERROR_OUT_OF_DATE_KHR in render(). No clamping/resizing on Android.
     void recreateSwapchain() {
         if (vulkanDevice_ != VK_NULL_HANDLE) {
             // Wait for device to finish pending operations before cleanup.
@@ -290,17 +304,22 @@ private:
         quadIndexBufferMemory_ = VK_NULL_HANDLE;
         vulkanDevice_ = VK_NULL_HANDLE;
 
-        // Get new window dimensions and clamp to minimum size.
+        // Get new window dimensions.
         int newWidth, newHeight;
         SDL_GetWindowSize(window_, &newWidth, &newHeight);
+        width_ = newWidth;
+        height_ = newHeight;
+#ifndef __ANDROID__
+        // Clamp and resize only on desktop platforms.
         width_ = std::max(1280, newWidth);
         height_ = std::max(720, newHeight);
         if (newWidth < 1280 || newHeight < 720) {
             // Resize window if below minimum to ensure valid swapchain creation.
             SDL_SetWindowSize(window_, width_, height_);
         }
+#endif
 
-        // Reinitialize Vulkan resources with new dimensions.
+        // Reinitialize Vulkan resources with (clamped) new dimensions.
         initializeVulkan();
     }
 
