@@ -86,35 +86,46 @@ public:
             : vertexIndex(idx), distance(dist), strength(str) {}
     };
 
-    // Constructor with default parameters for easy instantiation
-    // Parameters:
-    //   - maxDimensions: Maximum number of dimensions (1 to 20, default 9)
-    //   - mode: Initial dimensional mode (1 to maxDimensions, default 1)
-    //   - influence: Base interaction strength (0 to 10, default 0.05)
-    //   - weak: Weak interaction modifier (0 to 1, default 0.01)
-    //   - collapse: Dimensional collapse factor (0 to 5, default 0.1)
-    //   - twoD: 2D interaction strength (0 to 5, default 0.0)
-    //   - threeDInfluence: 3D-specific interaction strength (0 to 5, default 0.1)
-    //   - oneDPermeation: 1D permeation factor (0 to 5, default 0.1)
-    //   - darkMatterStrength: Dark matter influence (0 to 1, default 0.27)
-    //   - darkEnergyStrength: Dark energy influence (0 to 2, default 0.68)
-    //   - alpha: Exponential decay factor (0.1 to 10, default 2.0)
-    //   - beta: Permeation scaling factor (0 to 1, default 0.2)
-    //   - carrollFactor: Carroll rel limit (0=Schrödinger, 1=Carroll; default 0.0)
-    //   - meanFieldApprox: Many-body mean-field strength (0=exact, 1=full approx; default 0.5)
-    //   - asymCollapse: Asymmetric measurement term (0=standard, 1=MDPI-inspired; default 0.5)
-    //   - debug: Enable/disable debug logging (default false)
-    // Usage: Instantiate with desired parameters, e.g., UniversalEquation(4, 3, 1.0, ..., 0.0, 0.5, 0.5)
-    // Throws std::exception if initialization fails
-    // Vulkan Note: Ensure Vulkan instance and surface are created before rendering with
-    // DimensionalNavigator to avoid X errors (e.g., BadMatch)
-    UniversalEquation(int maxDimensions = 9, int mode = 1, double influence = 0.05,
-                      double weak = 0.01, double collapse = 0.1, double twoD = 0.0,
-                      double threeDInfluence = 0.1, double oneDPermeation = 0.1,
-                      double darkMatterStrength = 0.27, double darkEnergyStrength = 0.68,
-                      double alpha = 2.0, double beta = 0.2, double carrollFactor = 0.0,
-                      double meanFieldApprox = 0.5, double asymCollapse = 0.5, bool debug = false);
-
+// THESE ARE YOUR DIALS
+// Simulation parameters for n-dimensional quantum-like interactions
+// Constructor with defaults aligned to physical reality:
+// - maxDimensions: Max dimensions (1-20, default 11, M-theory)
+// - mode: Initial dimension (1-maxDimensions, default 3, observable universe)
+// - influence: Interaction strength (0-10, default 1.0, neutral)
+// - weak: Weak force modifier (0-1, default 0.01, ~1/30th electromagnetic)
+// - collapse: Quantum collapse factor (0-5, default 5.0, strong collapse)
+// - twoD: 2D interaction strength (0-5, default 0.0, minimal)
+// - threeDInfluence: 3D interaction strength (0-5, default 5.0, dominant)
+// - oneDPermeation: 1D permeation factor (0-5, default 0.0, minimal)
+// - darkMatterStrength: Dark matter influence (0-1, default 0.27, cosmic fraction)
+// - darkEnergyStrength: Dark energy influence (0-2, default 0.68, cosmic fraction)
+// - alpha: Decay factor (0.1-10, default 0.1, fine-structure inspired)
+// - beta: Permeation scaling (0-1, default 0.5, balanced)
+// - carrollFactor: Relativistic limit (0=Schrödinger, 1=Carroll, default 0.0)
+// - meanFieldApprox: Many-body approximation (0=exact, 1=full, default 0.5)
+// - asymCollapse: Asymmetric collapse term (0=standard, 1=MDPI 2025, default 0.5)
+// - debug: Debug logging (default false)
+// Usage: UniversalEquation(11, 3, 1.0, ...) for custom values
+// Throws: std::exception on initialization failure
+// Vulkan: Requires DimensionalNavigator with valid Vulkan instance/surface
+UniversalEquation(
+    int maxDimensions = 11,             // M-theory's 11 dimensions
+    int mode = 3,                      // 3D observable universe
+    double influence = 1.0,            // Neutral interaction strength
+    double weak = 0.01,                // Weak force (~1/30th electromagnetic)
+    double collapse = 5.0,             // Strong quantum collapse
+    double twoD = 0.0,                 // Minimal 2D influence
+    double threeDInfluence = 5.0,      // Strong 3D dominance
+    double oneDPermeation = 0.0,       // Minimal 1D effects
+    double darkMatterStrength = 0.27,  // ~27% cosmic energy density
+    double darkEnergyStrength = 0.68,  // ~68% cosmic energy density
+    double alpha = 0.1,                // Decay factor
+    double beta = 0.5,                 // Permeation modifier
+    double carrollFactor = 0.0,        // Non-relativistic limit
+    double meanFieldApprox = 0.5,      // Many-body approximation
+    double asymCollapse = 0.5,         // Asymmetric collapse (MDPI 2025)
+    bool debug = false                 // Debug logging
+);
     // Setters and Getters for all parameters (thread-safe via atomics)
     // Purpose: Allow modification and retrieval of simulation parameters
     // Usage: Use setters to adjust parameters, e.g., setInfluence(2.5), and getters to query, e.g., getInfluence()
