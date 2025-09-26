@@ -11,7 +11,7 @@ Modular design. Modify with your favorite AI coding program.
 This project uses an SDL3 backend for rendering (yay Vulkan), chosen from idiocy, ignorance, and patience.  
 If you want to skip SDL3 Vulkan setup, and get to coding, you can license below.  
 
-Software with free distribution can use the software without restriction.  
+Software with free distribution can use all of this software without restriction.  
 SDL3 and Vulkan AMOURANTH RTX engine for game or software development.  
 Built with Grok, Co-Pilot, and duck.ai  
 
