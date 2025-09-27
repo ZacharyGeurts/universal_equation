@@ -7,7 +7,7 @@
 #include <vulkan/vulkan.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
-void renderMode8(AMOURANTH* amouranth, uint32_t imageIndex, VkBuffer vertexBuffer, VkCommandBuffer commandBuffer,
+void renderMode8(AMOURANTH* amouranth, [[maybe_unused]] uint32_t imageIndex, VkBuffer vertexBuffer, VkCommandBuffer commandBuffer,
                  VkBuffer indexBuffer, float zoomLevel, int width, int height, float wavePhase,
                  const std::vector<DimensionData>& cache, VkPipelineLayout pipelineLayout) {
 
