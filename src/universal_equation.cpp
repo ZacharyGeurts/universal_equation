@@ -3,7 +3,7 @@
 // Simulates quantum-like interactions in n-dimensional hypercube lattices.
 // Addresses Schrödinger challenges:
 // - Carroll-Schrödinger ultra-relativistic limit via 'carrollFactor' (flat-space approximation).
-// - Asymmetric collapse term (MDPI 2025-inspired) for measurement problem.
+// - Asymmetric collapse term (MDPI 2025-inspired) for measurement problem, now deterministic.
 // - Mean-field approximation (arXiv 2025) to reduce many-body complexity.
 // - Perspective projection (Noll 1967) for 3D visualization of n-D vertices.
 // Thread-safe, parallelized with OpenMP for physics simulations and visualization.
@@ -11,7 +11,6 @@
 
 #include "universal_equation.hpp"
 #include <cmath>
-#include <random>
 #include <thread>
 
 // Constructor: Initializes simulation with clamped parameters
@@ -45,8 +44,7 @@ UniversalEquation::UniversalEquation(
       omega_(maxDimensions_ > 0 ? 2.0 * M_PI / (2 * maxDimensions_ - 1) : 1.0),
       invMaxDim_(maxDimensions_ > 0 ? 1.0 / maxDimensions_ : 1e-15),
       needsUpdate_(true),
-      navigator_(nullptr),
-      rng_(std::random_device{}()) {
+      navigator_(nullptr) {
     try {
         initializeWithRetry();
         if (debug_) {
@@ -251,7 +249,7 @@ double UniversalEquation::computeDarkEnergy(double distance) const {
     return result;
 }
 
-// Computes collapse factor with asymmetric term (MDPI 2025)
+// Computes collapse factor with deterministic asymmetric term (MDPI 2025)
 double UniversalEquation::computeCollapse() const {
     if (currentDimension_.load() == 1) return 0.0;
     double phase = static_cast<double>(currentDimension_.load()) / (2 * maxDimensions_);
@@ -263,7 +261,9 @@ double UniversalEquation::computeCollapse() const {
     }
     double osc = std::abs(cachedCos_[static_cast<size_t>(2.0 * M_PI * phase * cachedCos_.size()) % cachedCos_.size()]);
     double symCollapse = collapse_.load() * currentDimension_.load() * safeExp(-beta_.load() * (currentDimension_.load() - 1)) * (0.8 * osc + 0.2);
-    double asymTerm = asymCollapse_.load() * sin(M_PI * phase + osc) * safeExp(-alpha_.load() * phase);
+    // Deterministic asymmetric term: Use vertex count for variation
+    double vertexFactor = static_cast<double>(nCubeVertices_.size() % 10) / 10.0; // Normalize to [0,1]
+    double asymTerm = asymCollapse_.load() * sin(M_PI * phase + osc + vertexFactor) * safeExp(-alpha_.load() * phase);
     double result = std::max(0.0, symCollapse + asymTerm);
     if (debug_ && interactions_.size() <= 100) {
         std::lock_guard<std::mutex> lock(debugMutex_);

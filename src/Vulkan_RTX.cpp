@@ -303,7 +303,8 @@ void VulkanRTX::createShaderBindingTable(VkPhysicalDevice physicalDevice) {
     };
     VkPhysicalDeviceProperties2 properties = {
         VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2,
-        reinterpret_cast<VkBaseInStructure*>(&rtProperties)
+        reinterpret_cast<VkBaseInStructure*>(&rtProperties),
+		{}
     };
     vkGetPhysicalDeviceProperties2(physicalDevice, &properties);
 

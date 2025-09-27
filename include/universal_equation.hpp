@@ -14,7 +14,6 @@
 #include <omp.h>
 #include <sstream>
 #include <iomanip>
-#include <random>
 #include <glm/glm.hpp>
 
 // Forward declaration for Vulkan rendering
@@ -227,7 +226,6 @@ private:
     DimensionalNavigator* navigator_;
     mutable std::mutex mutex_;
     mutable std::mutex debugMutex_;
-    mutable std::mt19937 rng_;
 
     // Computes collapse factor
     double computeCollapse() const;
