@@ -30,6 +30,8 @@
 #include <omp.h>
 #include <sstream>
 #include <iomanip>
+#include <glm/glm.hpp>  // New: For projected vertices (vec3)
+#include <random>  // New: For jitter
 
 // Forward declaration of DimensionalNavigator to avoid circular dependency
 // Purpose: Allows integration with Vulkan-based rendering for visualizing simulation results
@@ -41,7 +43,7 @@ class DimensionalNavigator;
 // This class simulates emergent behaviors in n-dimensional hypercube lattices,
 // permeating probabilities through tunable parameters like influence, weak interactions,
 // collapse, and dark components. Now enhanced for cracks: carrollFactor for rel, asymCollapse
-// for measurement, meanFieldApprox for many-body. Thread-safe with atomic variables and mutexes.
+// for measurement, mean-field many-body approx. Designed for thread-safety with atomic variables and mutexes.
 // Designed for data scientists: Provides extensive getters for parameters and results,
 // with debug logging for traceability.
 // Vulkan Usage: Use with DimensionalNavigator to render simulation outputs (e.g., energy
@@ -104,6 +106,8 @@ public:
 // - carrollFactor: Relativistic limit (0=Schrödinger, 1=Carroll, default 0.0)
 // - meanFieldApprox: Many-body approximation (0=exact, 1=full, default 0.5)
 // - asymCollapse: Asymmetric collapse term (0=standard, 1=MDPI 2025, default 0.5)
+// - perspectiveTrans: Perspective translation (0-10, default 2.0)
+// - perspectiveFocal: Perspective focal length (1-20, default 4.0)
 // - debug: Debug logging (default false)
 // Usage: UniversalEquation(11, 3, 1.0, ...) for custom values
 // Throws: std::exception on initialization failure
@@ -124,6 +128,8 @@ UniversalEquation(
     double carrollFactor = 0.0,        // Non-relativistic limit
     double meanFieldApprox = 0.5,      // Many-body approximation
     double asymCollapse = 0.5,         // Asymmetric collapse (MDPI 2025)
+    double perspectiveTrans = 2.0,     // Perspective translation
+    double perspectiveFocal = 4.0,     // Perspective focal length
     bool debug = false                 // Debug logging
 );
     // Setters and Getters for all parameters (thread-safe via atomics)
@@ -183,6 +189,14 @@ UniversalEquation(
     void setAsymCollapse(double value);
     double getAsymCollapse() const;
 
+    // Sets perspective translation (clamped 0 to 10)
+    void setPerspectiveTrans(double value);
+    double getPerspectiveTrans() const;
+
+    // Sets perspective focal length (clamped 1 to 20)
+    void setPerspectiveFocal(double value);
+    double getPerspectiveFocal() const;
+
     // Sets debug logging state
     void setDebug(bool value);
     bool getDebug() const;
@@ -218,6 +232,12 @@ UniversalEquation(
 
     // Gets precomputed cosine values (thread-safe)
     const std::vector<double>& getCachedCos() const;
+
+    // New: Gets projected 3D vertices for rendering deformation
+    std::vector<glm::vec3> getProjectedVertices() const;
+
+    // New: Gets average projection scale for modulation
+    double getAvgProjScale() const;
 
     // Advances the simulation to the next dimension (cycles back to 1 if at max)
     // Usage: Iterate through dimensions, e.g., advanceCycle()
@@ -302,16 +322,22 @@ private:
     std::atomic<double> carrollFactor_; // Carroll rel limit (0 to 1)
     std::atomic<double> meanFieldApprox_; // Many-body mean-field strength (0 to 1)
     std::atomic<double> asymCollapse_; // Asymmetric measurement term (0 to 1)
+    std::atomic<double> perspectiveTrans_; // Perspective translation (0 to 10)
+    std::atomic<double> perspectiveFocal_; // Perspective focal length (1 to 20)
     std::atomic<bool> debug_;    // Debug output flag
     double omega_;               // Angular frequency for 2D oscillation (constant after init)
     double invMaxDim_;           // Inverse of max dimensions for scaling (constant after init)
     mutable std::vector<DimensionInteraction> interactions_; // Interaction data (protected by mutex_)
     std::vector<std::vector<double>> nCubeVertices_; // Vertex coordinates for n-cube (protected by mutex_)
+    mutable std::vector<glm::vec3> projectedVerts_; // New: Projected 3D verts (protected by projMutex_)
+    mutable double avgProjScale_; // New: Avg projection scale
+    mutable std::mutex projMutex_; // New: Protects projectedVerts_ and avgProjScale_
     mutable std::atomic<bool> needsUpdate_; // Dirty flag for interactions
     std::vector<double> cachedCos_; // Cached cosine values (protected by mutex_)
     DimensionalNavigator* navigator_; // Pointer to DimensionalNavigator (managed externally)
     mutable std::mutex mutex_; // Protects interactions_, nCubeVertices_, cachedCos_
     mutable std::mutex debugMutex_; // Protects debug output for thread-safe logging
+    mutable std::mt19937 rng_; // New: Jitter RNG
 
     // Private methods for internal computations
     // Computes the collapse factor based on dimension and parameters

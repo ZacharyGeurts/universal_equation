@@ -1,5 +1,5 @@
 // UniversalEquation.cpp implementation
-// 2025 Zachary Geurts (enhanced by Grok for foundational cracks)
+// 2025 Zachary Geurts (enhanced by Grok for foundational cracks and perspective dimensions)
 // This class now addresses key Schrödinger equation challenges:
 // - Non-Relativistic Bias: Added Carroll-Schrödinger ultra-rel limit via 'carrollFactor' param;
 //   modifies time evolution in compute() for flat-space high-speed approx (from Carroll-Schrödinger 2025 advances).
@@ -7,20 +7,27 @@
 //   (inspired by MDPI 2025 novel solution); adds stochastic-like asymmetry in computeCollapse().
 // - Many-Body Explosion: Integrated low-complexity least-squares ansatz approximation
 //   (from arXiv 2025); reduces effective Hilbert dim via 'meanFieldApprox' param in interactions.
+// - Perspective Dimensions: Incorporated projective geometry perspective projection (from Noll 1967 & projective space math);
+//   projects n-D hypercube vertices to 3D view plane using depth-based scaling, computing interactions via projected distances
+//   to simulate observer perspective in higher dimensions. Uses homogeneous-inspired scaling: scale = focal / depth.
 // Thread-safe, parallelized; for physics sims/viz of high-D systems.
 
 #include "universal_equation.hpp"
+#include <random>  // For jitter RNG
 
-// Constructor: Now includes new params for crack fixes
+// Constructor: Now includes new params for crack fixes and perspective
 // - carrollFactor: Ultra-rel Carroll limit (0=Schrödinger, 1=Carroll; default 0)
 // - meanFieldApprox: Many-body mean-field strength (0=exact, 1=full approx; default 0.5)
 // - asymCollapse: Asymmetric measurement term (0=standard, 1=MDPI-inspired; default 0.5)
+// - perspectiveTrans: Translation along depth axis for hypercube placement (default 2.0)
+// - perspectiveFocal: Focal length for projection scaling (default 4.0)
 UniversalEquation::UniversalEquation(int maxDimensions, int mode, double influence,
                                      double weak, double collapse, double twoD,
                                      double threeDInfluence, double oneDPermeation,
                                      double darkMatterStrength, double darkEnergyStrength,
                                      double alpha, double beta, double carrollFactor,
-                                     double meanFieldApprox, double asymCollapse, bool debug)
+                                     double meanFieldApprox, double asymCollapse, double perspectiveTrans,
+                                     double perspectiveFocal, bool debug)
     : maxDimensions_(std::max(1, std::min(maxDimensions == 0 ? 20 : maxDimensions, 20))),
       currentDimension_(std::clamp(mode, 1, maxDimensions_)),
       mode_(std::clamp(mode, 1, maxDimensions_)),
@@ -38,19 +45,25 @@ UniversalEquation::UniversalEquation(int maxDimensions, int mode, double influen
       carrollFactor_(std::clamp(carrollFactor, 0.0, 1.0)), // New: Rel fix
       meanFieldApprox_(std::clamp(meanFieldApprox, 0.0, 1.0)), // New: Many-body fix
       asymCollapse_(std::clamp(asymCollapse, 0.0, 1.0)), // New: Measurement fix
+      perspectiveTrans_(std::clamp(perspectiveTrans, 0.0, 10.0)), // New: Perspective translation
+      perspectiveFocal_(std::clamp(perspectiveFocal, 1.0, 20.0)), // New: Perspective focal length
       debug_(debug),
       omega_(maxDimensions_ > 0 ? 2.0 * M_PI / (2 * maxDimensions_ - 1) : 1.0),
       invMaxDim_(maxDimensions_ > 0 ? 1.0 / maxDimensions_ : 1e-15),
       interactions_(),
       nCubeVertices_(),
+      projectedVerts_(),  // New
+      avgProjScale_(1.0),  // New
       needsUpdate_(true),
-      navigator_(nullptr) {
+      navigator_(nullptr),
+      rng_(std::random_device{}()) {  // New: Jitter RNG
     try {
         initializeWithRetry();
         if (debug_.load()) {
             std::lock_guard<std::mutex> lock(debugMutex_);
             std::cout << "[DEBUG] Initialized with fixes: maxDimensions=" << maxDimensions_ << ", mode=" << mode_.load()
-                      << ", carroll=" << carrollFactor_ << ", meanField=" << meanFieldApprox_ << ", asymCollapse=" << asymCollapse_ << "\n";
+                      << ", carroll=" << carrollFactor_ << ", meanField=" << meanFieldApprox_ << ", asymCollapse=" << asymCollapse_
+                      << ", perspTrans=" << perspectiveTrans_ << ", perspFocal=" << perspectiveFocal_ << "\n";
         }
     } catch (const std::exception& e) {
         std::lock_guard<std::mutex> lock(debugMutex_);
@@ -58,6 +71,19 @@ UniversalEquation::UniversalEquation(int maxDimensions, int mode, double influen
         throw;
     }
 }
+
+// Setters/Getters for new perspective params (thread-safe)
+void UniversalEquation::setPerspectiveTrans(double value) {
+    perspectiveTrans_.store(std::clamp(value, 0.0, 10.0));
+    needsUpdate_.store(true);
+}
+double UniversalEquation::getPerspectiveTrans() const { return perspectiveTrans_.load(); }
+
+void UniversalEquation::setPerspectiveFocal(double value) {
+    perspectiveFocal_.store(std::clamp(value, 1.0, 20.0));
+    needsUpdate_.store(true);
+}
+double UniversalEquation::getPerspectiveFocal() const { return perspectiveFocal_.load(); }
 
 // Setters/Getters for new params (thread-safe)
 void UniversalEquation::setCarrollFactor(double value) {
@@ -164,7 +190,7 @@ void UniversalEquation::setCurrentDimension(int dimension) {
         initializeWithRetry();
         if (debug_.load()) {
             std::lock_guard<std::mutex> lock(debugMutex_);
-            std::cout << "[DEBUG] Dimension set to: " << currentDimension_.load() << ", mode: " << mode_.load() << "\n";
+            std::cout << "[DEBUG] Dimension set to: " << currentDimension_.load() << ", mode=" << mode_.load() << "\n";
         }
     }
 }
@@ -197,6 +223,7 @@ void UniversalEquation::advanceCycle() {
 }
 
 // Enhanced compute: Now incorporates rel (Carroll), asym collapse, mean-field approx
+// Perspective modulation: average projected scale factor for observable (fancy view-dependent energy)
 UniversalEquation::EnergyResult UniversalEquation::compute() const {
     if (debug_.load()) {
         std::lock_guard<std::mutex> lock(debugMutex_);
@@ -223,6 +250,26 @@ UniversalEquation::EnergyResult UniversalEquation::compute() const {
     // Rel fix: Carroll limit modulates time-like terms (flat time for ultra-rel)
     double carrollMod = 1.0 - carrollFactor_.load() * (1.0 - invMaxDim_ * currDim); // Carroll: c->inf, time contracts
     observable *= carrollMod;
+
+    // Fancy perspective modulation: average scale from interactions (view-dependent observable)
+    double avgScale = 1.0;
+    {
+        std::vector<DimensionInteraction> localInteractions;
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            localInteractions = interactions_;
+        }
+        if (!localInteractions.empty()) {
+            double sumScale = 0.0;
+            #pragma omp parallel for reduction(+:sumScale)
+            for (size_t i = 0; i < localInteractions.size(); ++i) {
+                // Approximate scale as 1 / (1 + dist) for perspective compression
+                sumScale += perspectiveFocal_.load() / (perspectiveFocal_.load() + localInteractions[i].distance);
+            }
+            avgScale = sumScale / localInteractions.size();
+        }
+        observable *= avgScale;  // Higher dims compress more via perspective
+    }
 
     double totalDarkMatter = 0.0, totalDarkEnergy = 0.0, interactionSum = 0.0;
     {
@@ -273,7 +320,7 @@ UniversalEquation::EnergyResult UniversalEquation::compute() const {
 
     if (debug_.load()) {
         std::lock_guard<std::mutex> lock(debugMutex_);
-        std::cout << "[DEBUG] Compute(D=" << currDim << "): " << result.toString() << " (carrollMod=" << carrollMod << ", mfScale=" << (1.0 - meanFieldApprox_.load()) << ")\n";
+        std::cout << "[DEBUG] Compute(D=" << currDim << "): " << result.toString() << " (carrollMod=" << carrollMod << ", mfScale=" << (1.0 - meanFieldApprox_.load()) << ", avgPerspScale=" << avgScale << ")\n";
     }
     return result;
 }
@@ -411,20 +458,44 @@ void UniversalEquation::initializeNCube() {
     }
 }
 
+// Enhanced updateInteractions: Compute projected distances in 3D perspective view plane
+// Uses real projective geometry: scale = focal / depth', depth' = x_d + trans (view along last dim)
+// Projects transverse coords (first min(3,d-1)) scaled by perspective factor
 void UniversalEquation::updateInteractions() const {
     std::lock_guard<std::mutex> lock(mutex_);
     interactions_.clear();
-    uint64_t numVertices = std::min(static_cast<uint64_t>(1ULL << currentDimension_.load()), maxVertices_);
+    int d = currentDimension_.load();
+    uint64_t numVertices = std::min(static_cast<uint64_t>(1ULL << d), maxVertices_);
+    // New: LOD for d>6: Subsample bits (e.g., every 2nd for 50% verts)
+    if (d > 6) {
+        uint64_t lodFactor = 1ULL << (d / 2);  // e.g., d=9 -> 512 verts max
+        numVertices = std::min(numVertices / lodFactor, static_cast<uint64_t>(1024ULL));
+        if (debug_.load()) {
+            std::lock_guard<std::mutex> lock(debugMutex_);
+            std::cout << "[OPT] LOD: Reduced verts from " << (1ULL<<d) << " to " << numVertices << " for d=" << d << "\n";
+        }
+    }
     interactions_.reserve(numVertices - 1);
     if (nCubeVertices_.empty()) {
         std::lock_guard<std::mutex> lock(debugMutex_);
         std::cerr << "[ERROR] nCubeVertices_ is empty in updateInteractions\n";
         throw std::runtime_error("nCubeVertices_ is empty");
     }
-    const auto& referenceVertex = nCubeVertices_[0];
+    const auto& referenceVertex = nCubeVertices_[0];  // All -1.0
+    double trans = perspectiveTrans_.load();
+    double focal = perspectiveFocal_.load();
+    int depthIdx = d - 1;  // Last coord as depth
+    double depthRef = referenceVertex[depthIdx] + trans;
+    if (depthRef <= 0.0) depthRef = 0.001;  // Avoid div-by-zero
+    double scaleRef = focal / depthRef;
+    double projRef[3] = {0.0f, 0.0f, 0.0f};
+    int projDim = std::min(3, d - 1);
+    for (int k = 0; k < projDim; ++k) {
+        projRef[k] = referenceVertex[k] * scaleRef;
+    }
     if (debug_.load()) {
         std::lock_guard<std::mutex> lock(debugMutex_);
-        std::cout << "[DEBUG] Updating interactions for " << numVertices - 1 << " vertices\n";
+        std::cout << "[DEBUG] Updating perspective interactions for " << numVertices - 1 << " vertices (d=" << d << ", trans=" << trans << ", focal=" << focal << ")\n";
     }
     if (numVertices > 1000) {
         #pragma omp parallel
@@ -433,14 +504,26 @@ void UniversalEquation::updateInteractions() const {
             localInteractions.reserve((numVertices - 1) / omp_get_num_threads() + 1);
             #pragma omp for
             for (uint64_t i = 1; i < numVertices; ++i) {
-                double distance = 0.0;
-                for (int j = 0; j < currentDimension_.load(); ++j) {
-                    double diff = nCubeVertices_[i][j] - referenceVertex[j];
-                    distance += diff * diff;
+                const auto& v = nCubeVertices_[i];
+                double depthI = v[depthIdx] + trans;
+                if (depthI <= 0.0) depthI = 0.001;
+                double scaleI = focal / depthI;
+                double projI[3] = {0.0f, 0.0f, 0.0f};
+                for (int k = 0; k < projDim; ++k) {
+                    projI[k] = v[k] * scaleI;
                 }
-                distance = std::sqrt(distance);
+                double distSq = 0.0;
+                for (int k = 0; k < 3; ++k) {  // Always 3D, padded with 0
+                    double diff = projI[k] - projRef[k];
+                    distSq += diff * diff;
+                }
+                double distance = std::sqrt(distSq);
+                // For d==1, fallback to standard 1D euclid (no transverse)
+                if (d == 1) {
+                    distance = std::fabs(v[0] - referenceVertex[0]);
+                }
                 double strength = computeInteraction(static_cast<int>(i), distance);
-                localInteractions.push_back(DimensionInteraction(static_cast<int>(i), distance, strength));
+                localInteractions.emplace_back(static_cast<int>(i), distance, strength);
             }
             #pragma omp critical
             {
@@ -449,39 +532,60 @@ void UniversalEquation::updateInteractions() const {
         }
     } else {
         for (uint64_t i = 1; i < numVertices; ++i) {
-            double distance = 0.0;
-            for (int j = 0; j < currentDimension_.load(); ++j) {
-                double diff = nCubeVertices_[i][j] - referenceVertex[j];
-                distance += diff * diff;
+            const auto& v = nCubeVertices_[i];
+            double depthI = v[depthIdx] + trans;
+            if (depthI <= 0.0) depthI = 0.001;
+            double scaleI = focal / depthI;
+            double projI[3] = {0.0f, 0.0f, 0.0f};
+            for (int k = 0; k < projDim; ++k) {
+                projI[k] = v[k] * scaleI;
             }
-            distance = std::sqrt(distance);
+            double distSq = 0.0;
+            for (int k = 0; k < 3; ++k) {
+                double diff = projI[k] - projRef[k];
+                distSq += diff * diff;
+            }
+            double distance = std::sqrt(distSq);
+            // For d==1, fallback to standard 1D euclid (no transverse)
+            if (d == 1) {
+                distance = std::fabs(v[0] - referenceVertex[0]);
+            }
             double strength = computeInteraction(static_cast<int>(i), distance);
-            interactions_.push_back(DimensionInteraction(static_cast<int>(i), distance, strength));
+            interactions_.emplace_back(static_cast<int>(i), distance, strength);
         }
     }
-    if (currentDimension_.load() == 3) {
+    if (d == 3) {
         for (int adj : {2, 4}) {
             size_t vertexIndex = static_cast<size_t>(adj - 1);
             if (vertexIndex < nCubeVertices_.size() &&
                 std::none_of(interactions_.begin(), interactions_.end(),
                              [adj](const auto& i) { return i.vertexIndex == adj; })) {
-                double distance = 0.0;
-                for (int j = 0; j < currentDimension_.load(); ++j) {
-                    double diff = nCubeVertices_[vertexIndex][j] - referenceVertex[j];
-                    distance += diff * diff;
+                // Compute projected distance for adj as above
+                const auto& v = nCubeVertices_[vertexIndex];
+                double depthI = v[depthIdx] + trans;
+                if (depthI <= 0.0) depthI = 0.001;
+                double scaleI = focal / depthI;
+                double projI[3] = {0.0f, 0.0f, 0.0f};
+                for (int k = 0; k < projDim; ++k) {
+                    projI[k] = v[k] * scaleI;
                 }
-                distance = std::sqrt(distance);
+                double distSq = 0.0;
+                for (int k = 0; k < 3; ++k) {
+                    double diff = projI[k] - projRef[k];
+                    distSq += diff * diff;
+                }
+                double distance = std::sqrt(distSq);
                 double strength = computeInteraction(static_cast<int>(vertexIndex), distance);
-                interactions_.push_back(DimensionInteraction(static_cast<int>(vertexIndex), distance, strength));
+                interactions_.emplace_back(static_cast<int>(vertexIndex), distance, strength);
             }
         }
     }
     needsUpdate_.store(false);
     if (debug_.load() && interactions_.size() <= 100) {
         std::lock_guard<std::mutex> lock(debugMutex_);
-        std::cout << "[DEBUG] Interactions(D=" << currentDimension_.load() << "): ";
+        std::cout << "[DEBUG] Perspective Interactions(D=" << d << "): ";
         for (const auto& i : interactions_) {
-            std::cout << "(vertex=" << i.vertexIndex << ", dist=" << i.distance << ", strength=" << i.strength << ") ";
+            std::cout << "(vertex=" << i.vertexIndex << ", projDist=" << i.distance << ", strength=" << i.strength << ") ";
         }
         std::cout << "\n";
     }
@@ -566,4 +670,32 @@ UniversalEquation::DimensionData UniversalEquation::updateCache() {
                   << ", darkMatter=" << data.darkMatter << ", darkEnergy=" << data.darkEnergy << "\n";
     }
     return data;
+}
+
+// New: Get projected vertices (caches under projMutex_)
+std::vector<glm::vec3> UniversalEquation::getProjectedVertices() const {
+    std::lock_guard<std::mutex> lock(projMutex_);
+    if (projectedVerts_.empty() && !nCubeVertices_.empty()) {
+        int d = currentDimension_.load();
+        uint64_t numVerts = std::min(static_cast<uint64_t>(1ULL << d), maxVertices_);
+        projectedVerts_.reserve(numVerts);
+        double trans = perspectiveTrans_.load();
+        double focal = perspectiveFocal_.load();
+        int depthIdx = d - 1;
+        int projDim = std::min(3, d);
+        #pragma omp parallel for
+        for (uint64_t i = 0; i < numVerts; ++i) {
+            const auto& v = nCubeVertices_[i];
+            double depth = v[depthIdx] + trans;
+            if (depth <= 0.0) depth = 0.001;
+            double scale = focal / depth;
+            glm::vec3 proj(0.0f);
+            for (int k = 0; k < projDim; ++k) {
+                proj[k] = static_cast<float>(v[k] * scale);
+            }
+            #pragma omp critical
+            projectedVerts_.emplace_back(proj);
+        }
+    }
+    return projectedVerts_;
 }

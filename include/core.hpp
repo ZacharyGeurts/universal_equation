@@ -42,16 +42,8 @@ struct DimensionData {
 
 // Push constants for passing transformation and simulation data to Vulkan shaders.
 struct PushConstants {
-    glm::mat4 viewProj;
-    glm::vec3 camPos;
-    float wavePhase;
-    float cycleProgress;
-    float zoomLevel;
-    float observable;
-    float darkMatter;
-    float darkEnergy;
-    glm::vec4 extraData;
-    float padding[3];
+    alignas(16) glm::mat4 model;       // 64 bytes: Per-object world transform
+    alignas(16) glm::mat4 view_proj;   // 64 bytes: Pre-computed view * projection (per-frame)
 };
 static_assert(sizeof(PushConstants) == 128, "PushConstants size must be 128 bytes for compatibility");
 

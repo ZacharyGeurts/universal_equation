@@ -86,16 +86,10 @@ public:
     // Push constants for ray tracing shaders (raygen, closest-hit, any-hit, callable).
     // Includes view-proj matrix, camera position, and custom parameters for dynamic effects.
     // Developer Note: Alignas(16) ensures proper GPU alignment; extend for additional uniforms if needed.
-    struct PushConstants {
-        alignas(16) glm::mat4 viewProj;
-        alignas(16) glm::vec3 camPos;
-        float wavePhase;
-        float cycleProgress;
-        float zoomFactor;
-        float interactionStrength;
-        float darkMatter;
-        float darkEnergy;
-    };
+struct PushConstants {
+    alignas(16) glm::mat4 model;       // 64 bytes: Per-object world transform
+    alignas(16) glm::mat4 view_proj;   // 64 bytes: Pre-computed view * projection (per-frame)
+};
 
     // Constructor: Initializes with device handle and loads ray tracing extension function pointers thread-safely.
     // Throws std::runtime_error if any required function fails to load.
