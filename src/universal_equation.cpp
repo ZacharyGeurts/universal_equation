@@ -457,18 +457,16 @@ void UniversalEquation::initializeNCube() {
     }
 }
 
-// Enhanced updateInteractions: Compute projected distances in 3D perspective view plane
-// Uses real projective geometry: scale = focal / depth', depth' = x_d + trans (view along last dim)
-// Projects transverse coords (first min(3,d-1)) scaled by perspective factor
 void UniversalEquation::updateInteractions() const {
     std::lock_guard<std::mutex> lock(mutex_);
     interactions_.clear();
     int d = currentDimension_.load();
     uint64_t numVertices = std::min(static_cast<uint64_t>(1ULL << d), maxVertices_);
-    // New: LOD for d>6: Subsample bits (e.g., every 2nd for 50% verts)
+    // LOD for d>6: Subsample bits (e.g., every 2nd for 50% verts)
     if (d > 6) {
         uint64_t lodFactor = 1ULL << (d / 2);  // e.g., d=9 -> 512 verts max
-        numVertices = std::min(numVertices / lodFactor, static_cast<uint64_t>(1024ULL));
+        if (lodFactor == 0) lodFactor = 1;     // Prevent division by zero
+        numVertices = std::min(numVertices / lodFactor, static_cast<uint64_t>(1024));
         if (debug_.load()) {
             std::lock_guard<std::mutex> lock(debugMutex_);
             std::cout << "[OPT] LOD: Reduced verts from " << (1ULL<<d) << " to " << numVertices << " for d=" << d << "\n";
@@ -559,7 +557,6 @@ void UniversalEquation::updateInteractions() const {
             if (vertexIndex < nCubeVertices_.size() &&
                 std::none_of(interactions_.begin(), interactions_.end(),
                              [adj](const auto& i) { return i.vertexIndex == adj; })) {
-                // Compute projected distance for adj as above
                 const auto& v = nCubeVertices_[vertexIndex];
                 double depthI = v[depthIdx] + trans;
                 if (depthI <= 0.0) depthI = 0.001;
