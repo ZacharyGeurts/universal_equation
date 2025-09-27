@@ -1,5 +1,6 @@
-// File: mode1.cpp (compile to mode1.o)
-// Mode 1: Basic rendering of a pulsating sphere for dimension 1, centered and zoomed out
+// File: mode1.cpp (updated to incorporate additional math from UniversalEquation)
+// Mode 1: Enhanced rendering of a pulsating sphere for dimension 1, now using potential, darkMatter in oscillation
+// and dynamic camera zoom based on darkEnergy for deeper integration with compute() terms.
 // Uses simplified 128-byte PushConstants { mat4 model; mat4 view_proj; }
 
 #include "core.hpp"
@@ -11,11 +12,13 @@ void renderMode1(AMOURANTH* amouranth, [[maybe_unused]] uint32_t imageIndex, VkB
                  VkBuffer indexBuffer, float zoomLevel, int width, int height, float wavePhase,
                  const std::vector<DimensionData>& cache, VkPipelineLayout pipelineLayout) {
 
-    // Local function to compute oscillation value based on cache entry
+    // Enhanced local function to compute oscillation value based on cache entry, incorporating potential and darkMatter
     auto makeOscValue = [](const DimensionData& cacheEntry, float wavePhase) -> float {
         const float deMod = static_cast<float>(cacheEntry.darkEnergy) * 0.65f;
-        const float osc = std::sin(wavePhase + deMod);
-        const float rawValue = static_cast<float>(cacheEntry.observable * osc);
+        const float dmMod = static_cast<float>(cacheEntry.darkMatter) * 0.45f;
+        const float oscSin = std::sin(wavePhase + deMod + dmMod);
+        const float oscCos = std::cos(wavePhase + dmMod);  // Additional cos term for potential modulation
+        const float rawValue = static_cast<float>(cacheEntry.observable * oscSin + cacheEntry.potential * oscCos);
         return rawValue;
     };
 
@@ -38,12 +41,14 @@ void renderMode1(AMOURANTH* amouranth, [[maybe_unused]] uint32_t imageIndex, VkB
     constexpr float kScaleBias = 0.5f;
     const float scaleFactor = 1.0f + std::abs(oscValue) * kScaleBias;
 
-    // Setup transformation matrices, centered with rotation for perspective
+    // Setup transformation matrices, centered with dynamic y-rotation incorporating wavePhase for pulsation
     glm::mat4 model = glm::mat4(1.0f);
-    model = glm::rotate(model, glm::radians(static_cast<float>(1) * 40.0f), glm::vec3(0.0f, 1.0f, 0.0f)); // y-rotation
+    const float rotY = glm::radians(static_cast<float>(1) * 40.0f + wavePhase * 0.5f);  // Dynamic rotation using wavePhase
+    model = glm::rotate(model, rotY, glm::vec3(0.0f, 1.0f, 0.0f));  // y-rotation
     model = glm::scale(model, glm::vec3(scaleFactor * zoomLevel));
 
-    glm::vec3 camPos = amouranth->isUserCamActive() ? amouranth->getUserCamPos() : glm::vec3(0.0f, 0.0f, -20.0f); // Zoomed out 100%
+    // Dynamic camera position incorporating darkEnergy for zoom variation (from computeDarkEnergy term)
+    glm::vec3 camPos = amouranth->isUserCamActive() ? amouranth->getUserCamPos() : glm::vec3(0.0f, 0.0f, -20.0f + static_cast<float>(dimData->darkEnergy) * -2.0f);
 
     glm::mat4 view = glm::lookAt(camPos, glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
 
