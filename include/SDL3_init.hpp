@@ -163,8 +163,6 @@ public:
         initSDL(title, w, h, flags, rt, fontPath, enableValidation, preferNvidia);
         logMessage("Initializing audio");
         initAudio({});
-        logMessage("Initializing input");
-        initInput();
     }
 
     void eventLoop(std::function<void()> render, ResizeCallback onResize = nullptr, bool exitOnClose = true,
@@ -172,10 +170,23 @@ public:
                    MouseWheelCallback mw = nullptr, TextInputCallback ti = nullptr, TouchCallback tc = nullptr,
                    GamepadButtonCallback gb = nullptr, GamepadAxisCallback ga = nullptr, GamepadConnectCallback gc = nullptr) {
         logMessage("Starting event loop");
-        if (ti) {
+        m_onResize = std::move(onResize);
+        m_kb = std::move(kb);
+        m_mb = std::move(mb);
+        m_mm = std::move(mm);
+        m_mw = std::move(mw);
+        m_ti = std::move(ti);
+        m_tc = std::move(tc);
+        m_gb = std::move(gb);
+        m_ga = std::move(ga);
+        m_gc = std::move(gc);
+
+        if (m_ti) {
             logMessage("Enabling text input");
             SDL_StartTextInput(m_window.get());
         }
+
+        initInput();
 
         if (render) {
             renderThread = std::thread([this, render]() {
@@ -210,52 +221,52 @@ public:
                         break;
                     case SDL_EVENT_WINDOW_RESIZED:
                         logMessage("Window resized to " + std::to_string(e.window.data1) + "x" + std::to_string(e.window.data2));
-                        if (onResize) onResize(e.window.data1, e.window.data2);
+                        if (m_onResize) m_onResize(e.window.data1, e.window.data2);
                         break;
                     case SDL_EVENT_KEY_DOWN:
                         logMessage("Key down event: " + std::string(SDL_GetKeyName(e.key.key)));
                         handleKeyboard(e.key);
-                        if (kb) kb(e.key);
+                        if (m_kb) m_kb(e.key);
                         break;
                     case SDL_EVENT_MOUSE_BUTTON_DOWN:
                     case SDL_EVENT_MOUSE_BUTTON_UP:
                         logMessage("Mouse button event: " + std::string(e.type == SDL_EVENT_MOUSE_BUTTON_DOWN ? "Down" : "Up"));
                         handleMouseButton(e.button);
-                        if (mb) mb(e.button);
+                        if (m_mb) m_mb(e.button);
                         break;
                     case SDL_EVENT_MOUSE_MOTION:
                         logMessage("Mouse motion event at (" + std::to_string(e.motion.x) + ", " + std::to_string(e.motion.y) + ")");
-                        if (mm) mm(e.motion);
+                        if (m_mm) m_mm(e.motion);
                         break;
                     case SDL_EVENT_MOUSE_WHEEL:
                         logMessage("Mouse wheel event");
-                        if (mw) mw(e.wheel);
+                        if (m_mw) m_mw(e.wheel);
                         break;
                     case SDL_EVENT_TEXT_INPUT:
                         logMessage("Text input event: " + std::string(e.text.text));
-                        if (ti) ti(e.text);
+                        if (m_ti) m_ti(e.text);
                         break;
                     case SDL_EVENT_FINGER_DOWN:
                     case SDL_EVENT_FINGER_UP:
                     case SDL_EVENT_FINGER_MOTION:
                         logMessage("Touch event: " + std::string(e.type == SDL_EVENT_FINGER_DOWN ? "Down" : e.type == SDL_EVENT_FINGER_UP ? "Up" : "Motion"));
                         handleTouch(e.tfinger);
-                        if (tc) tc(e.tfinger);
+                        if (m_tc) m_tc(e.tfinger);
                         break;
                     case SDL_EVENT_GAMEPAD_BUTTON_DOWN:
                     case SDL_EVENT_GAMEPAD_BUTTON_UP:
                         logMessage("Gamepad button event: " + std::string(e.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN ? "Down" : "Up"));
                         handleGamepadButton(e.gbutton);
-                        if (gb) {
+                        if (m_gb) {
                             SDL_GamepadButtonEvent eventCopy = e.gbutton;
-                            gamepadTasks.push_back([gb, eventCopy] { gb(eventCopy); });
+                            gamepadTasks.push_back([eventCopy, this] { m_gb(eventCopy); });
                         }
                         break;
                     case SDL_EVENT_GAMEPAD_AXIS_MOTION:
                         logMessage("Gamepad axis motion event");
-                        if (ga) {
+                        if (m_ga) {
                             SDL_GamepadAxisEvent eventCopy = e.gaxis;
-                            gamepadTasks.push_back([ga, eventCopy] { ga(eventCopy); });
+                            gamepadTasks.push_back([eventCopy, this] { m_ga(eventCopy); });
                         }
                         break;
                     case SDL_EVENT_GAMEPAD_ADDED:
@@ -265,7 +276,7 @@ public:
                             if (SDL_Gamepad* gp = SDL_OpenGamepad(e.gdevice.which)) {
                                 logMessage("Opened gamepad: ID " + std::to_string(e.gdevice.which));
                                 m_gamepads[e.gdevice.which] = gp;
-                                if (gc) gc(true, e.gdevice.which, gp);
+                                if (m_gc) m_gc(true, e.gdevice.which, gp);
                             }
                         }
                         break;
@@ -276,7 +287,7 @@ public:
                             if (auto it = m_gamepads.find(e.gdevice.which); it != m_gamepads.end()) {
                                 logMessage("Closing gamepad: ID " + std::to_string(e.gdevice.which));
                                 SDL_CloseGamepad(it->second);
-                                if (gc) gc(false, e.gdevice.which, nullptr);
+                                if (m_gc) m_gc(false, e.gdevice.which, nullptr);
                                 m_gamepads.erase(it);
                             }
                         }
@@ -304,7 +315,7 @@ public:
             renderCond.notify_one();
         }
 
-        if (ti) {
+        if (m_ti) {
             logMessage("Disabling text input");
             SDL_StopTextInput(m_window.get());
         }
@@ -335,6 +346,17 @@ public:
             logMessage("Closing audio device: ID " + std::to_string(m_audioDevice));
             SDL_CloseAudioDevice(m_audioDevice);
             m_audioDevice = 0;
+        }
+        if (m_fontFuture.valid()) {
+            try {
+                TTF_Font* pending = m_fontFuture.get();
+                if (pending) {
+                    TTF_CloseFont(pending);
+                    logMessage("Closed pending font in cleanup");
+                }
+            } catch (...) {
+                logMessage("Error closing pending font");
+            }
         }
         if (m_font) {
             logMessage("Closing TTF font");
@@ -390,10 +412,20 @@ public:
 
     const auto& getGamepads() const {
         logMessage("Getting gamepads");
+        std::lock_guard<std::mutex> lock(gamepadMutex);
         return m_gamepads;
     }
 
     TTF_Font* getFont() const {
+        if (m_font == nullptr && m_fontFuture.valid()) {
+            try {
+                m_font = m_fontFuture.get();
+                logMessage("Font loaded successfully");
+            } catch (const std::runtime_error& e) {
+                logMessage("Font loading failed: " + std::string(e.what()));
+                m_font = nullptr;
+            }
+        }
         logMessage("Getting TTF font");
         return m_font;
     }
@@ -430,8 +462,9 @@ private:
     SDL_AudioDeviceID m_audioDevice = 0;
     SDL_AudioStream* m_audioStream = nullptr;
     std::map<SDL_JoystickID, SDL_Gamepad*> m_gamepads;
-    std::mutex gamepadMutex;
-    TTF_Font* m_font = nullptr;
+    mutable std::mutex gamepadMutex;
+    mutable TTF_Font* m_font = nullptr;
+    mutable std::future<TTF_Font*> m_fontFuture;
     std::mutex renderMutex;
     std::condition_variable renderCond;
     std::atomic<bool> renderReady{false};
@@ -445,6 +478,16 @@ private:
     mutable std::ofstream logFile;
     mutable std::stringstream logStream;
     bool m_useVulkan;
+    ResizeCallback m_onResize;
+    KeyboardCallback m_kb;
+    MouseButtonCallback m_mb;
+    MouseMotionCallback m_mm;
+    MouseWheelCallback m_mw;
+    TextInputCallback m_ti;
+    TouchCallback m_tc;
+    GamepadButtonCallback m_gb;
+    GamepadAxisCallback m_ga;
+    GamepadConnectCallback m_gc;
 
     void logMessage(const std::string& message) const {
         std::string timestamp = "[" + std::to_string(SDL_GetTicks()) + "ms] " + message;
@@ -487,15 +530,6 @@ private:
 
         // Platform-specific audio driver selection
         const char* audioDriver = nullptr;
-        bool pulseAvailable = false;
-        int driverCount = SDL_GetNumAudioDrivers();
-        for (int i = 0; i < driverCount; ++i) {
-            const char* driver = SDL_GetAudioDriver(i);
-            if (driver && std::string(driver) == "pulse") {
-                pulseAvailable = true;
-                break;
-            }
-        }
         if (platform == "Windows") {
             audioDriver = "wasapi";
         } else if (platform == "Mac OS X") {
@@ -503,7 +537,7 @@ private:
         } else if (platform == "Android") {
             audioDriver = "aaudio";
         } else { // Linux
-            audioDriver = pulseAvailable ? "pulse" : "alsa";
+            audioDriver = "pulse";
         }
         logMessage("Selecting audio driver: " + std::string(audioDriver ? audioDriver : "default"));
         if (audioDriver) {
@@ -515,6 +549,9 @@ private:
             logMessage(error);
             throw std::runtime_error(error);
         }
+
+        const char* currentDriver = SDL_GetCurrentAudioDriver();
+        logMessage("Current audio driver: " + std::string(currentDriver ? currentDriver : "none"));
 
         logMessage("Initializing TTF");
         if (TTF_Init() == 0) {
@@ -582,6 +619,16 @@ private:
             } else if (platform == "Mac OS X" && strcmp(ext.extensionName, "VK_MVK_macos_surface") == 0) {
                 platformSurfaceExtensions.push_back(ext.extensionName);
                 logMessage("Platform surface extension found: " + std::string(ext.extensionName));
+            }
+        }
+
+        // Add platform surface extensions if missing
+        for (const std::string& extName : platformSurfaceExtensions) {
+            const char* cext = extName.c_str();
+            auto it = std::find(extensions.begin(), extensions.end(), cext);
+            if (it == extensions.end()) {
+                logMessage("Adding platform surface extension: " + extName);
+                extensions.push_back(cext);
             }
         }
 
@@ -692,8 +739,8 @@ private:
             resolvedFontPath = "assets/" + resolvedFontPath;
         }
 #endif
-        logMessage("Loading TTF font in background thread: " + resolvedFontPath);
-        std::future<TTF_Font*> fontFuture = std::async(std::launch::async, [resolvedFontPath] {
+        logMessage("Loading TTF font asynchronously: " + resolvedFontPath);
+        m_fontFuture = std::async(std::launch::async, [resolvedFontPath]() -> TTF_Font* {
             TTF_Font* font = TTF_OpenFont(resolvedFontPath.c_str(), 24);
             if (!font) {
                 std::string error = "TTF_OpenFont failed for " + resolvedFontPath + ": " + std::string(SDL_GetError());
@@ -702,9 +749,6 @@ private:
             }
             return font;
         });
-
-        m_font = fontFuture.get();
-        logMessage("Font loaded successfully");
     }
 
     void initAudio(const AudioConfig& c) {
@@ -758,26 +802,11 @@ private:
                 throw std::runtime_error(error);
             }
 
-            logMessage("Setting audio stream callback with parallel processing");
+            logMessage("Setting audio stream callback (single-threaded to avoid overhead)");
             SDL_SetAudioStreamPutCallback(m_audioStream, [](void* u, SDL_AudioStream* s, int n, int) {
                 auto* callback = static_cast<AudioCallback*>(u);
                 std::vector<Uint8> buf(n);
-                const int numThreads = std::min(4, static_cast<int>(std::thread::hardware_concurrency()));
-                const int chunkSize = n / numThreads;
-                std::vector<std::future<void>> futures;
-
-                for (int i = 0; i < numThreads; ++i) {
-                    int start = i * chunkSize;
-                    int size = (i == numThreads - 1) ? (n - start) : chunkSize;
-                    futures.push_back(std::async(std::launch::async, [callback, &buf, start, size]() {
-                        (*callback)(buf.data() + start, size);
-                    }));
-                }
-
-                for (auto& f : futures) {
-                    f.wait();
-                }
-
+                (*callback)(buf.data(), n);
                 SDL_PutAudioStreamData(s, buf.data(), n);
             }, &const_cast<AudioCallback&>(c.callback));
         }
@@ -800,6 +829,7 @@ private:
                     if (auto gp = SDL_OpenGamepad(joysticks[i])) {
                         logMessage("Opened gamepad: ID " + std::to_string(joysticks[i]));
                         m_gamepads[joysticks[i]] = gp;
+                        if (m_gc) m_gc(true, joysticks[i], gp);
                     }
                 }
             }
