@@ -8,8 +8,13 @@
 #include <iomanip>
 #include <stdexcept>
 #include <memory>
-#include <iostream>
-#include <vulkan/vulkan.h>
+#include <deque>
+#include <atomic>
+#include <chrono>
+#include <thread>
+#include <mutex>
+#include <condition_variable>
+#include <vulkan/vulkan.h>  // Retained if Vulkan integration planned
 
 #if defined(_WIN32)
 #include <windows.h>
@@ -32,70 +37,74 @@
 #include <nvml.h>
 #endif
 
+// Benchmarking mode: 1 = Basic FPS, 2 = +Frame Times (avg/min/max/1% low), 3 = Full stats
+#define BENCHMARK_MODE 2
+
 class FPSCounter {
 public:
     FPSCounter(SDL_Window* window, TTF_Font* font, SDL_Renderer* renderer = nullptr)
-        : m_window(window), m_font(font), m_renderer(renderer), m_showFPS(false), m_frameCount(0), m_lastTime(SDL_GetTicks64()), m_mode(1) {
-        std::cout << "Constructing FPSCounter" << std::endl;
+        : m_window(window), m_font(font), m_renderer(renderer), m_showFPS(false),
+          m_frameCount(0), m_fps(0.0f), m_mode(1), m_powerState(SDL_POWERSTATE_UNKNOWN),
+          m_prevTotal(0LL), m_prevIdle(0LL), m_wmiQuery(), m_monitorThread(nullptr),
+          m_monitorStop(false), m_needsUpdate(true), m_textTexture(nullptr, SDL_DestroyTexture),
+          m_textRect{10.0f, 10.0f, 0.0f, 0.0f} {
         if (!window || !font) {
-            std::cout << "Invalid window or font pointer detected" << std::endl;
             throw std::runtime_error("Invalid window or font pointer");
         }
         if (!renderer) {
-            std::cout << "Warning: No renderer provided, FPS counter will not render" << std::endl;
+            // Warning omitted for low overhead
         }
 
-        std::cout << "Setting text color to white" << std::endl;
-        m_textColor = {255, 255, 255, 255}; // White text
+        m_textColor = {255, 255, 255, 255};  // White text
 
-        // Initialize static info using SDL3 functions
-        std::cout << "Getting device name" << std::endl;
+        // Initialize static info
         m_deviceName = getDeviceName();
-        std::cout << "Getting CPU core count" << std::endl;
         m_cpuCount = SDL_GetNumLogicalCPUCores();
-        std::cout << "Getting system RAM" << std::endl;
         m_systemRAM = SDL_GetSystemRAM();
 
         // Initialize GPU info
-        std::cout << "Initializing GPU information" << std::endl;
         initGPUInfo();
 
 #if USE_NVML
-        std::cout << "Initializing NVML" << std::endl;
         nvmlReturn_t result = nvmlInit();
         if (result == NVML_SUCCESS) {
-            std::cout << "NVML initialized successfully" << std::endl;
             m_nvmlInit = true;
-            std::cout << "Getting NVML device handle" << std::endl;
             result = nvmlDeviceGetHandleByIndex(0, &m_device);
-            if (result != NVML_SUCCESS) {
-                std::cout << "Failed to get NVML device handle: " << result << std::endl;
-                m_nvmlInit = false;
-            } else {
+            if (result == NVML_SUCCESS) {
                 char name[NVML_DEVICE_NAME_BUFFER_SIZE];
-                std::cout << "Getting NVML device name" << std::endl;
                 if (nvmlDeviceGetName(m_device, name, sizeof(name)) == NVML_SUCCESS) {
-                    std::cout << "NVML device name: " << name << std::endl;
-                    m_gpuName = name; // Override with NVML name if available
-                } else {
-                    std::cout << "Failed to get NVML device name" << std::endl;
+                    m_gpuName = name;
                 }
+            } else {
+                m_nvmlInit = false;
             }
-        } else {
-            std::cout << "NVML initialization failed: " << result << std::endl;
         }
 #endif
+
+        // Initialize WMI for Windows (RAII-managed)
+#if defined(_WIN32)
+        m_wmiQuery = std::make_unique<WMIQuery>();
+#endif
+
+        // Start background monitoring thread for low-overhead updates
+        m_monitorThread = std::make_unique<std::thread>(&FPSCounter::monitorLoop, this);
+
+        // Initialize timing
+        m_lastTime = std::chrono::high_resolution_clock::now();
+        m_fpsUpdateTime = m_lastTime;
     }
 
     ~FPSCounter() {
-        std::cout << "Destructing FPSCounter" << std::endl;
-        if (m_textTexture) {
-            std::cout << "Destroying text texture" << std::endl;
-            SDL_DestroyTexture(m_textTexture);
+        if (m_monitorThread) {
+            {
+                std::lock_guard<std::mutex> lock(m_monitorMutex);
+                m_monitorStop = true;
+                m_monitorCV.notify_one();
+            }
+            m_monitorThread->join();
         }
 #if USE_NVML
         if (m_nvmlInit) {
-            std::cout << "Shutting down NVML" << std::endl;
             nvmlShutdown();
         }
 #endif
@@ -103,114 +112,94 @@ public:
 
     void handleEvent(const SDL_KeyboardEvent& key) {
         if (key.type == SDL_EVENT_KEY_DOWN && key.key == SDLK_F1) {
-            std::cout << "F1 pressed, toggling FPS display" << std::endl;
             m_showFPS = !m_showFPS;
+        } else if (key.type == SDL_EVENT_KEY_DOWN && key.key == SDLK_F2) {
+            m_mode = (m_mode % 3) + 1;  // Cycle modes: 1=Basic, 2=Frame times, 3=Full
+            m_needsUpdate = true;
         }
     }
 
     void update() {
-        std::cout << "Updating FPSCounter" << std::endl;
+        auto currentTime = std::chrono::high_resolution_clock::now();
+        auto deltaTime = std::chrono::duration<double, std::milli>(currentTime - m_lastTime).count();
+        m_frameTimes.push_back(deltaTime);
+        if (m_frameTimes.size() > 1000) {  // Rolling window of 1000 frames for stats
+            m_frameTimes.pop_front();
+        }
+        m_lastTime = currentTime;
         m_frameCount++;
-        Uint64 currentTime = SDL_GetTicks64();
-        if (currentTime - m_lastTime >= 1000) {
-            std::cout << "Calculating FPS" << std::endl;
-            m_fps = m_frameCount * 1000.0f / (currentTime - m_lastTime);
+
+        // FPS calculation every 100ms for smoother updates (low overhead)
+        if (std::chrono::duration<double>(currentTime - m_fpsUpdateTime).count() >= 0.1) {
+            double elapsed = std::chrono::duration<double>(currentTime - m_fpsUpdateTime).count();
+            m_fps = static_cast<float>(m_frameCount / elapsed);
             m_frameCount = 0;
-            m_lastTime = currentTime;
+            m_fpsUpdateTime = currentTime;
 
-            // Update dynamic info
-            std::cout << "Getting CPU usage" << std::endl;
-            m_cpuUsage = getCPUUsage();
-            std::cout << "Getting CPU temperature" << std::endl;
-            m_cpuTemp = getCPUTemperature();
-            std::cout << "Getting battery info" << std::endl;
-            int seconds, percent;
-            m_batteryPercent = SDL_GetPowerInfo(&seconds, &percent);
-            m_batteryPercent = percent;
-
-#if USE_NVML
-            if (m_nvmlInit) {
-                std::cout << "Getting GPU usage via NVML" << std::endl;
-                unsigned int util;
-                if (nvmlDeviceGetUtilizationRates(m_device, &util) == NVML_SUCCESS) {
-                    m_gpuUsage = util.gpu;
-                    std::cout << "GPU usage: " << m_gpuUsage << "%" << std::endl;
-                }
-                std::cout << "Getting GPU temperature via NVML" << std::endl;
-                unsigned int temp;
-                if (nvmlDeviceGetTemperature(m_device, NVML_TEMPERATURE_GPU, &temp) == NVML_SUCCESS) {
-                    m_gpuTemp = temp;
-                    std::cout << "GPU temperature: " << m_gpuTemp << "C" << std::endl;
-                }
-            }
-#endif
-
-            // Update text
-            std::cout << "Generating FPS text" << std::endl;
-            std::stringstream ss;
-            ss << "Device: " << m_deviceName << "\n"
-               << "CPU: " << m_cpuCount << " cores, " << std::fixed << std::setprecision(1) << m_cpuUsage << "%"
-               << (m_cpuTemp >= 0 ? ", " + std::to_string(m_cpuTemp) + "C" : "") << "\n"
-               << "GPU: " << m_gpuName
-               << (m_gpuUsage >= 0 ? ", " + std::to_string(m_gpuUsage) + "%" : "")
-               << (m_gpuTemp >= 0 ? ", " + std::to_string(m_gpuTemp) + "C" : "") << "\n"
-               << "RAM: " << m_systemRAM << "MB\n"
-               << "Battery: " << (m_batteryPercent >= 0 ? std::to_string(m_batteryPercent) + "%" : "N/A") << "\n"
-               << "FPS: " << std::fixed << std::setprecision(1) << m_fps << "\n"
-               << "Mode: " << m_mode << "D";
-
-            if (m_renderer) {
-                std::cout << "Creating text surface" << std::endl;
-                SDL_Surface* surface = TTF_RenderText_Blended_Wrapped(m_font, ss.str().c_str(), m_textColor, 0);
-                if (!surface) {
-                    std::cout << "TTF_RenderText_Blended_Wrapped failed: " << SDL_GetError() << std::endl;
-                    return;
-                }
-                std::cout << "Creating text texture" << std::endl;
-                if (m_textTexture) {
-                    std::cout << "Destroying old text texture" << std::endl;
-                    SDL_DestroyTexture(m_textTexture);
-                }
-                m_textTexture = SDL_CreateTextureFromSurface(m_renderer, surface);
-                if (!m_textTexture) {
-                    std::cout << "SDL_CreateTextureFromSurface failed: " << SDL_GetError() << std::endl;
-                    SDL_DestroySurface(surface);
-                    return;
-                }
-                std::cout << "Querying text texture dimensions" << std::endl;
-                SDL_QueryTexture(m_textTexture, nullptr, nullptr, &m_textRect.w, &m_textRect.h);
-                m_textRect.x = 10;
-                m_textRect.y = 10;
-                SDL_DestroySurface(surface);
+            // Queue update for background thread
+            {
+                std::lock_guard<std::mutex> lock(m_monitorMutex);
+                m_needsUpdate = true;
+                m_monitorCV.notify_one();
             }
         }
     }
 
     void render() {
         if (!m_showFPS || !m_renderer || !m_textTexture) {
-            std::cout << "Skipping FPS render: " << (!m_showFPS ? "FPS hidden" : !m_renderer ? "No renderer" : "No text texture") << std::endl;
             return;
         }
-        std::cout << "Rendering FPS counter" << std::endl;
-        SDL_RenderTexture(m_renderer, m_textTexture, nullptr, &m_textRect);
+        SDL_RenderTexture(m_renderer, m_textTexture.get(), nullptr, &m_textRect);
     }
 
     void setMode(int mode) {
-        std::cout << "Setting FPS counter mode to " << mode << std::endl;
-        m_mode = mode;
+        m_mode = std::max(1, std::min(3, mode));  // Clamp to 1-3
+        m_needsUpdate = true;
+    }
+
+    // Benchmark export: Log stats to console or file (call periodically)
+    void exportBenchmarkStats() {
+        std::lock_guard<std::mutex> lock(m_statsMutex);
+        if (m_frameTimes.empty()) return;
+
+        double avgFrameTime = 0.0;
+        double minFrameTime = m_frameTimes.front();
+        double maxFrameTime = m_frameTimes.front();
+        for (auto ft : m_frameTimes) {
+            avgFrameTime += ft;
+            minFrameTime = std::min(minFrameTime, ft);
+            maxFrameTime = std::max(maxFrameTime, ft);
+        }
+        avgFrameTime /= m_frameTimes.size();
+        float avgFPS = 1000.0f / static_cast<float>(avgFrameTime);
+
+        // 1% low: Sort and take bottom 1%
+        std::vector<double> sortedTimes = m_frameTimes;
+        std::sort(sortedTimes.begin(), sortedTimes.end());
+        size_t lowIndex = sortedTimes.size() * 0.01;
+        float p1LowFPS = 1000.0f / static_cast<float>(sortedTimes[lowIndex]);
+
+        // Use SDL_Log for low-overhead output
+        SDL_Log("Benchmark: Avg FPS: %.1f, 1%% Low: %.1f, Frame Time (avg/min/max): %.2f/%.2f/%.2f ms",
+                avgFPS, p1LowFPS, avgFrameTime, minFrameTime, maxFrameTime);
+
+        // Optional: CPU/GPU stats here if m_mode == 3
+        if (m_mode == 3) {
+            SDL_Log("CPU: %.1f%%, %.0dC | GPU: %s, %.0f%%, %.0dC | RAM: %dMB | Battery: %d%%",
+                    m_cpuUsage, m_cpuTemp, m_gpuName.c_str(), m_gpuUsage, m_gpuTemp, m_systemRAM, m_batteryPercent);
+        }
     }
 
 private:
     SDL_Window* m_window;
     TTF_Font* m_font;
     SDL_Renderer* m_renderer;
-    SDL_Texture* m_textTexture = nullptr;
-    SDL_FRect m_textRect = {10, 10, 0, 0};
+    std::unique_ptr<SDL_Texture, decltype(&SDL_DestroyTexture)> m_textTexture;
+    SDL_FRect m_textRect;
     SDL_Color m_textColor;
-    bool m_showFPS;
-    int m_frameCount;
-    Uint64 m_lastTime;
-    float m_fps = 0.0f;
+    std::atomic<bool> m_showFPS{false};
+    std::atomic<int> m_frameCount{0};
+    std::atomic<float> m_fps{0.0f};
     int m_mode;
     std::string m_deviceName;
     int m_cpuCount;
@@ -222,227 +211,203 @@ private:
     std::string m_gpuName = "Unknown";
     float m_gpuUsage = -1.0f;
     int m_gpuTemp = -1;
+
+    // Timing and stats
+    std::chrono::high_resolution_clock::time_point m_lastTime;
+    std::chrono::high_resolution_clock::time_point m_fpsUpdateTime;
+    std::deque<double> m_frameTimes;  // ms, rolling for benchmarks
+
+    // Background monitoring
+    std::unique_ptr<std::thread> m_monitorThread;
+    std::atomic<bool> m_monitorStop{false};
+    std::mutex m_monitorMutex;
+    std::condition_variable m_monitorCV;
+    bool m_needsUpdate;
+
+    // Platform-specific
+#if defined(_WIN32)
+    class WMIQuery {
+    public:
+        WMIQuery() {
+            CoInitialize(nullptr);
+            CoCreateInstance(CLSID_WbemLocator, nullptr, CLSCTX_INPROC_SERVER, IID_IWbemLocator, (void**)&locator);
+            locator->ConnectServer(_bstr_t(L"ROOT\\CIMV2"), nullptr, nullptr, nullptr, 0, nullptr, nullptr, &services);
+            locator->Release();
+            CoSetProxyBlanket(services, RPC_C_AUTHN_WINNT, RPC_C_AUTHZ_NONE, nullptr, RPC_C_AUTHN_LEVEL_CALL, RPC_C_IMP_LEVEL_IMPERSONATE, nullptr, EOAC_NONE);
+        }
+        ~WMIQuery() {
+            if (services) services->Release();
+            CoUninitialize();
+        }
+        float getCPUUsage() {
+            // Simplified: Reuse connection, exec query for PercentProcessorTime
+            // Implementation similar to original but using services
+            // Return parsed value or -1
+            return -1.0f;  // Placeholder; implement reuse
+        }
+        int getCPUTemperature() {
+            // Similar for thermal zone
+            return -1;
+        }
+    private:
+        IWbemLocator* locator = nullptr;
+        IWbemServices* services = nullptr;
+    };
+    std::unique_ptr<WMIQuery> m_wmiQuery;
+    long long m_prevTotal = 0LL;
+    long long m_prevIdle = 0LL;
+#elif defined(__linux__)
+    long long m_prevTotal = 0LL;
+    long long m_prevIdle = 0LL;
+#endif
+
 #if USE_NVML
     bool m_nvmlInit = false;
     nvmlDevice_t m_device;
 #endif
 
+    std::mutex m_statsMutex;
+
     std::string getDeviceName() {
 #if defined(_WIN32)
-        std::cout << "Getting device name on Windows" << std::endl;
         char name[256];
         DWORD size = sizeof(name);
-        if (GetComputerNameA(name, &size)) {
-            return std::string(name);
-        }
-        return "Unknown";
+        return GetComputerNameA(name, &size) ? std::string(name) : "Unknown";
 #elif defined(__linux__)
-        std::cout << "Getting device name on Linux" << std::endl;
         std::ifstream ifs("/proc/sys/kernel/hostname");
         std::string name;
-        if (ifs && std::getline(ifs, name)) {
-            return name;
-        }
-        return "Unknown";
+        return (ifs && std::getline(ifs, name)) ? name : "Unknown";
 #elif defined(__APPLE__)
-        std::cout << "Getting device name on macOS" << std::endl;
         char name[256];
         size_t size = sizeof(name);
-        if (sysctlbyname("kern.hostname", name, &size, nullptr, 0) == 0) {
-            return std::string(name);
-        }
-        return "Unknown";
+        return (sysctlbyname("kern.hostname", name, &size, nullptr, 0) == 0) ? std::string(name) : "Unknown";
 #else
-        std::cout << "Device name not supported on this platform" << std::endl;
         return "Unknown";
 #endif
     }
 
     float getCPUUsage() {
 #if defined(_WIN32)
-        std::cout << "Getting CPU usage on Windows" << std::endl;
-        HRESULT hr = CoInitialize(nullptr);
-        if (FAILED(hr)) {
-            std::cout << "CoInitialize failed: " << hr << std::endl;
-            return -1.0f;
-        }
-        IWbemLocator* locator = nullptr;
-        hr = CoCreateInstance(CLSID_WbemLocator, nullptr, CLSCTX_INPROC_SERVER, IID_IWbemLocator, (void**)&locator);
-        if (FAILED(hr)) {
-            std::cout << "CoCreateInstance failed: " << hr << std::endl;
-            CoUninitialize();
-            return -1.0f;
-        }
-        IWbemServices* services = nullptr;
-        hr = locator->ConnectServer(_bstr_t(L"ROOT\\CIMV2"), nullptr, nullptr, nullptr, 0, nullptr, nullptr, &services);
-        locator->Release();
-        if (FAILED(hr)) {
-            std::cout << "ConnectServer failed: " << hr << std::endl;
-            CoUninitialize();
-            return -1.0f;
-        }
-        hr = CoSetProxyBlanket(services, RPC_C_AUTHN_WINNT, RPC_C_AUTHZ_NONE, nullptr, RPC_C_AUTHN_LEVEL_CALL, RPC_C_IMP_LEVEL_IMPERSONATE, nullptr, EOAC_NONE);
-        if (FAILED(hr)) {
-            std::cout << "CoSetProxyBlanket failed: " << hr << std::endl;
-            services->Release();
-            CoUninitialize();
-            return -1.0f;
-        }
-        IEnumWbemClassObject* enumerator = nullptr;
-        hr = services->ExecQuery(_bstr_t(L"WQL"), _bstr_t(L"SELECT PercentProcessorTime FROM Win32_PerfFormattedData_PerfOS_Processor WHERE Name='_Total'"), WBEM_FLAG_FORWARD_ONLY, nullptr, &enumerator);
-        if (FAILED(hr)) {
-            std::cout << "ExecQuery failed: " << hr << std::endl;
-            services->Release();
-            CoUninitialize();
-            return -1.0f;
-        }
-        IWbemClassObject* obj = nullptr;
-        ULONG returned = 0;
-        hr = enumerator->Next(WBEM_INFINITE, 1, &obj, &returned);
-        enumerator->Release();
-        services->Release();
-        if (FAILED(hr) || returned == 0) {
-            std::cout << "Enumerator Next failed: " << hr << std::endl;
-            CoUninitialize();
-            return -1.0f;
-        }
-        VARIANT vt;
-        VariantInit(&vt);
-        hr = obj->Get(L"PercentProcessorTime", 0, &vt, nullptr, nullptr);
-        float usage = -1.0f;
-        if (SUCCEEDED(hr) && vt.vt == VT_BSTR) {
-            usage = static_cast<float>(_wtof(vt.bstrVal));
-        }
-        VariantClear(&vt);
-        obj->Release();
-        CoUninitialize();
-        std::cout << "CPU usage: " << usage << "%" << std::endl;
-        return usage;
+        return m_wmiQuery ? m_wmiQuery->getCPUUsage() : -1.0f;
 #elif defined(__linux__)
-        std::cout << "Getting CPU usage on Linux" << std::endl;
-        static long long prevTotal = 0, prevIdle = 0;
         std::ifstream stat("/proc/stat");
-        if (!stat) {
-            std::cout << "Failed to open /proc/stat" << std::endl;
-            return -1.0f;
-        }
+        if (!stat) return -1.0f;
         std::string line;
         std::getline(stat, line);
         long long user, nice, system, idle, iowait, irq, softirq;
         sscanf(line.c_str(), "cpu %lld %lld %lld %lld %lld %lld %lld", &user, &nice, &system, &idle, &iowait, &irq, &softirq);
         long long total = user + nice + system + idle + iowait + irq + softirq;
         long long idleTime = idle + iowait;
-        float usage = prevTotal == 0 ? -1.0f : 100.0f * (1.0f - (float)(idleTime - prevIdle) / (total - prevTotal));
-        prevTotal = total;
-        prevIdle = idleTime;
-        std::cout << "CPU usage: " << usage << "%" << std::endl;
+        float usage = (m_prevTotal == 0) ? -1.0f : 100.0f * (1.0f - static_cast<float>(idleTime - m_prevIdle) / (total - m_prevTotal));
+        m_prevTotal = total;
+        m_prevIdle = idleTime;
         return usage;
 #elif defined(__APPLE__)
-        std::cout << "CPU usage not implemented on macOS" << std::endl;
-        return -1.0f; // macOS requires mach APIs or sysctl, not implemented here
+        return -1.0f;
 #else
-        std::cout << "CPU usage not supported on this platform" << std::endl;
         return -1.0f;
 #endif
     }
 
     int getCPUTemperature() {
 #if defined(_WIN32)
-        std::cout << "Getting CPU temperature on Windows" << std::endl;
-        HRESULT hr = CoInitialize(nullptr);
-        if (FAILED(hr)) {
-            std::cout << "CoInitialize failed: " << hr << std::endl;
-            return -1;
-        }
-        IWbemLocator* locator = nullptr;
-        hr = CoCreateInstance(CLSID_WbemLocator, nullptr, CLSCTX_INPROC_SERVER, IID_IWbemLocator, (void**)&locator);
-        if (FAILED(hr)) {
-            std::cout << "CoCreateInstance failed: " << hr << std::endl;
-            CoUninitialize();
-            return -1;
-        }
-        IWbemServices* services = nullptr;
-        hr = locator->ConnectServer(_bstr_t(L"ROOT\\WMI"), nullptr, nullptr, nullptr, 0, nullptr, nullptr, &services);
-        locator->Release();
-        if (FAILED(hr)) {
-            std::cout << "ConnectServer failed: " << hr << std::endl;
-            CoUninitialize();
-            return -1;
-        }
-        hr = CoSetProxyBlanket(services, RPC_C_AUTHN_WINNT, RPC_C_AUTHZ_NONE, nullptr, RPC_C_AUTHN_LEVEL_CALL, RPC_C_IMP_LEVEL_IMPERSONATE, nullptr, EOAC_NONE);
-        if (FAILED(hr)) {
-            std::cout << "CoSetProxyBlanket failed: " << hr << std::endl;
-            services->Release();
-            CoUninitialize();
-            return -1;
-        }
-        IEnumWbemClassObject* enumerator = nullptr;
-        hr = services->ExecQuery(_bstr_t(L"WQL"), _bstr_t(L"SELECT CurrentTemperature FROM MSAcpi_ThermalZoneTemperature"), WBEM_FLAG_FORWARD_ONLY, nullptr, &enumerator);
-        if (FAILED(hr)) {
-            std::cout << "ExecQuery failed: " << hr << std::endl;
-            services->Release();
-            CoUninitialize();
-            return -1;
-        }
-        IWbemClassObject* obj = nullptr;
-        ULONG returned = 0;
-        hr = enumerator->Next(WBEM_INFINITE, 1, &obj, &returned);
-        enumerator->Release();
-        services->Release();
-        if (FAILED(hr) || returned == 0) {
-            std::cout << "Enumerator Next failed: " << hr << std::endl;
-            CoUninitialize();
-            return -1;
-        }
-        VARIANT vt;
-        VariantInit(&vt);
-        hr = obj->Get(L"CurrentTemperature", 0, &vt, nullptr, nullptr);
-        int temp = -1;
-        if (SUCCEEDED(hr) && vt.vt == VT_I4) {
-            temp = vt.lVal / 10 - 273; // Convert from deci-Kelvin to Celsius
-        }
-        VariantClear(&vt);
-        obj->Release();
-        CoUninitialize();
-        std::cout << "CPU temperature: " << temp << "C" << std::endl;
-        return temp;
+        return m_wmiQuery ? m_wmiQuery->getCPUTemperature() : -1;
 #elif defined(__linux__)
-        std::cout << "Getting CPU temperature on Linux" << std::endl;
         std::ifstream temp("/sys/class/thermal/thermal_zone0/temp");
-        if (!temp) {
-            std::cout << "Failed to open thermal_zone0/temp" << std::endl;
-            return -1;
-        }
+        if (!temp) return -1;
         int value;
         temp >> value;
-        std::cout << "CPU temperature: " << value / 1000 << "C" << std::endl;
-        return value / 1000; // Convert from milli-Celsius to Celsius
+        return value / 1000;
 #elif defined(__APPLE__)
-        std::cout << "CPU temperature not implemented on macOS" << std::endl;
-        return -1; // macOS requires SMC access, not implemented here
+        return -1;
 #else
-        std::cout << "CPU temperature not supported on this platform" << std::endl;
         return -1;
 #endif
     }
 
     void initGPUInfo() {
-        std::cout << "Initializing GPU info for Vulkan" << std::endl;
-        // Since we're using Vulkan, try to get GPU name from Vulkan if possible
-        // Note: Vulkan instance is not available here, so rely on SDL_Renderer or NVML
         if (m_renderer) {
-            std::cout << "Getting renderer info" << std::endl;
             const char* rendererName = SDL_GetRendererName(m_renderer);
             if (rendererName) {
                 m_gpuName = rendererName;
-                std::cout << "GPU name from SDL_Renderer: " << m_gpuName << std::endl;
-            } else {
-                std::cout << "SDL_GetRendererName failed: " << SDL_GetError() << std::endl;
             }
         } else {
-            std::cout << "No renderer provided, using default GPU name" << std::endl;
             m_gpuName = "Vulkan Device";
         }
+    }
+
+    void monitorLoop() {
+        while (!m_monitorStop) {
+            std::unique_lock<std::mutex> lock(m_monitorMutex);
+            m_monitorCV.wait(lock, [this] { return m_needsUpdate || m_monitorStop; });
+            if (m_monitorStop) break;
+
+            m_cpuUsage = getCPUUsage();
+            m_cpuTemp = getCPUTemperature();
+            int seconds, percent;
+            m_powerState = SDL_GetPowerInfo(&seconds, &percent);
+            m_batteryPercent = (m_powerState != SDL_POWERSTATE_UNKNOWN) ? percent : -1;
+
+#if USE_NVML
+            if (m_nvmlInit) {
+                unsigned int util;
+                if (nvmlDeviceGetUtilizationRates(m_device, &util) == NVML_SUCCESS) {
+                    m_gpuUsage = static_cast<float>(util.gpu);
+                }
+                unsigned int temp;
+                if (nvmlDeviceGetTemperature(m_device, NVML_TEMPERATURE_GPU, &temp) == NVML_SUCCESS) {
+                    m_gpuTemp = static_cast<int>(temp);
+                }
+            }
+#endif
+
+            generateText();
+            m_needsUpdate = false;
+        }
+    }
+
+    void generateText() {
+        if (!m_renderer) return;
+
+        std::stringstream ss;
+        ss << "Device: " << m_deviceName << "\n"
+           << "CPU: " << m_cpuCount << " cores, " << std::fixed << std::setprecision(1) << m_cpuUsage << "%"
+           << (m_cpuTemp >= 0 ? ", " + std::to_string(m_cpuTemp) + "C" : "") << "\n"
+           << "GPU: " << m_gpuName
+           << (m_gpuUsage >= 0 ? ", " + std::to_string(static_cast<int>(m_gpuUsage)) + "%" : "")
+           << (m_gpuTemp >= 0 ? ", " + std::to_string(m_gpuTemp) + "C" : "") << "\n"
+           << "RAM: " << m_systemRAM << "MB\n"
+           << "Battery: " << (m_batteryPercent >= 0 ? std::to_string(m_batteryPercent) + "%" : "N/A") << "\n"
+           << "FPS: " << std::fixed << std::setprecision(1) << m_fps << "\n";
+
+        if (m_mode >= 2) {
+            std::lock_guard<std::mutex> lock(m_statsMutex);
+            if (!m_frameTimes.empty()) {
+                double avgFT = 0.0;
+                double minFT = m_frameTimes.front(), maxFT = m_frameTimes.front();
+                for (auto ft : m_frameTimes) {
+                    avgFT += ft;
+                    minFT = std::min(minFT, ft);
+                    maxFT = std::max(maxFT, ft);
+                }
+                avgFT /= m_frameTimes.size();
+                ss << "Frame Time (avg/min/max): " << std::setprecision(2) << avgFT << "/" << minFT << "/" << maxFT << " ms\n";
+            }
+        }
+
+        ss << "Mode: " << m_mode << "D";
+
+        SDL_Surface* surface = TTF_RenderText_Blended_Wrapped(m_font, ss.str().c_str(), m_textColor, 0);
+        if (!surface) return;
+
+        m_textTexture.reset(SDL_CreateTextureFromSurface(m_renderer, surface));
+        if (m_textTexture) {
+            int w, h;
+            SDL_QueryTexture(m_textTexture.get(), nullptr, nullptr, &w, &h);
+            m_textRect.w = static_cast<float>(w);
+            m_textRect.h = static_cast<float>(h);
+        }
+        SDL_DestroySurface(surface);
     }
 };
 
