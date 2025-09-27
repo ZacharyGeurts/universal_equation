@@ -13,7 +13,6 @@
 // Thread-safe, parallelized; for physics sims/viz of high-D systems.
 
 #include "universal_equation.hpp"
-#include <random>  // For jitter RNG
 
 // Constructor: Now includes new params for crack fixes and perspective
 // - carrollFactor: Ultra-rel Carroll limit (0=Schrödinger, 1=Carroll; default 0)
