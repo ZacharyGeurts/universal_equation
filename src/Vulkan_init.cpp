@@ -1,9 +1,7 @@
 #include "Vulkan_init.hpp"
 
-// Vulkan AMOURANTH RTX engine September, 2025 - Implementation for Vulkan initialization.
-// Provides high-level initialization and cleanup functions for Vulkan resources.
-// Delegates resource creation to VulkanInitializer in Vulkan_func.cpp.
-// Multi-platform support: Relies on SDL_Vulkan_GetInstanceExtensions for platform-specific surface extensions (Windows, macOS/MoltenVK, Android, Linux).
+// AMOURANTH RTX September, 2025 - Initialization and cleanup.
+// High-level setup using SDL3 for instance/surface, delegates to VulkanInitializer.
 // Zachary Geurts 2025
 
 #include <stdexcept>
@@ -13,7 +11,7 @@
 
 namespace VulkanInit {
     void initInstanceAndSurface(SDL_Window* window, VkInstance& instance, VkSurfaceKHR& surface, [[maybe_unused]] bool preferNvidia) {
-        // Get SDL Vulkan extensions (includes VK_KHR_surface and platform-specific surface extension automatically)
+        // Get SDL Vulkan extensions
         uint32_t sdlExtensionCount = 0;
         if (!SDL_Vulkan_GetInstanceExtensions(&sdlExtensionCount)) {
             throw std::runtime_error("Failed to get SDL Vulkan extension count: " + std::string(SDL_GetError()));
@@ -23,13 +21,13 @@ namespace VulkanInit {
             throw std::runtime_error("Failed to get SDL Vulkan extensions: " + std::string(SDL_GetError()));
         }
 
-        // Optional: Add validation layers for debugging (only in non-release builds)
+        // Optional validation layers
         std::vector<const char*> layers;
 #ifndef NDEBUG
         layers = {"VK_LAYER_KHRONOS_validation"};
 #endif
 
-        // Create Vulkan instance
+        // Create instance
         VkApplicationInfo appInfo{};
         appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
         appInfo.pApplicationName = "Dimensional Navigator";
@@ -50,7 +48,7 @@ namespace VulkanInit {
             throw std::runtime_error("Failed to create Vulkan instance");
         }
 
-        // Create Vulkan surface
+        // Create surface
         if (!SDL_Vulkan_CreateSurface(window, instance, nullptr, &surface)) {
             vkDestroyInstance(instance, nullptr);
             throw std::runtime_error("Failed to create Vulkan surface: " + std::string(SDL_GetError()));
@@ -63,11 +61,11 @@ namespace VulkanInit {
         VkSwapchainKHR& swapchain, std::vector<VkImage>& swapchainImages, std::vector<VkImageView>& swapchainImageViews,
         VkRenderPass& renderPass, VkPipeline& pipeline, VkPipelineLayout& pipelineLayout, VkDescriptorSetLayout& descriptorSetLayout,
         std::vector<VkFramebuffer>& swapchainFramebuffers, VkCommandPool& commandPool,
-        std::vector<VkCommandBuffer>& commandBuffers, VkSemaphore& imageAvailableSemaphore,
-        VkSemaphore& renderFinishedSemaphore, VkFence& inFlightFence, VkBuffer& vertexBuffer,
+        std::vector<VkCommandBuffer>& commandBuffers, std::vector<VkSemaphore>& imageAvailableSemaphores,
+        std::vector<VkSemaphore>& renderFinishedSemaphores, std::vector<VkFence>& inFlightFences, VkBuffer& vertexBuffer,
         VkDeviceMemory& vertexBufferMemory, VkBuffer& indexBuffer, VkDeviceMemory& indexBufferMemory,
         const std::vector<glm::vec3>& sphereVertices, const std::vector<uint32_t>& sphereIndices, int width, int height) {
-        // Local variables for internal resources not exposed as outputs
+        // Local resources
         VkDescriptorPool descriptorPool = VK_NULL_HANDLE;
         VkDescriptorSet descriptorSet = VK_NULL_HANDLE;
         VkSampler sampler = VK_NULL_HANDLE;
@@ -106,8 +104,8 @@ namespace VulkanInit {
         // Step 11: Allocate command buffers
         VulkanInitializer::createCommandBuffers(device, commandPool, commandBuffers, swapchainFramebuffers);
 
-        // Step 12: Create synchronization objects
-        VulkanInitializer::createSyncObjects(device, imageAvailableSemaphore, renderFinishedSemaphore, inFlightFence);
+        // Step 12: Create synchronization objects (per-frame)
+        VulkanInitializer::createSyncObjects(device, imageAvailableSemaphores, renderFinishedSemaphores, inFlightFences);
 
         // Step 13: Create vertex and index buffers for sphere
         VulkanInitializer::createVertexBuffer(device, physicalDevice, commandPool, graphicsQueue, vertexBuffer, vertexBufferMemory, sphereVertices);
@@ -139,8 +137,8 @@ namespace VulkanInit {
         VkInstance /*instance*/, VkDevice& device, VkSurfaceKHR /*surface*/, VkSwapchainKHR& swapchain,
         std::vector<VkImageView>& swapchainImageViews, std::vector<VkFramebuffer>& swapchainFramebuffers,
         VkPipeline& pipeline, VkPipelineLayout& pipelineLayout, VkRenderPass& renderPass, VkCommandPool& commandPool,
-        std::vector<VkCommandBuffer>& commandBuffers, VkSemaphore& imageAvailableSemaphore,
-        VkSemaphore& renderFinishedSemaphore, VkFence& inFlightFence, VkBuffer& vertexBuffer,
+        std::vector<VkCommandBuffer>& commandBuffers, std::vector<VkSemaphore>& imageAvailableSemaphores,
+        std::vector<VkSemaphore>& renderFinishedSemaphores, std::vector<VkFence>& inFlightFences, VkBuffer& vertexBuffer,
         VkDeviceMemory& vertexBufferMemory, VkBuffer& indexBuffer, VkDeviceMemory& indexBufferMemory,
         VkBuffer& quadVertexBuffer, VkDeviceMemory& quadVertexBufferMemory, VkBuffer& quadIndexBuffer,
         VkDeviceMemory& quadIndexBufferMemory, VkDescriptorSetLayout& descriptorSetLayout) {
@@ -171,18 +169,27 @@ namespace VulkanInit {
         destroyBuffer(indexBuffer, indexBufferMemory);
 
         // Destroy synchronization objects
-        if (imageAvailableSemaphore != VK_NULL_HANDLE) {
-            vkDestroySemaphore(device, imageAvailableSemaphore, nullptr);
-            imageAvailableSemaphore = VK_NULL_HANDLE;
+        for (auto& sem : imageAvailableSemaphores) {
+            if (sem != VK_NULL_HANDLE) {
+                vkDestroySemaphore(device, sem, nullptr);
+                sem = VK_NULL_HANDLE;
+            }
         }
-        if (renderFinishedSemaphore != VK_NULL_HANDLE) {
-            vkDestroySemaphore(device, renderFinishedSemaphore, nullptr);
-            renderFinishedSemaphore = VK_NULL_HANDLE;
+        imageAvailableSemaphores.clear();
+        for (auto& sem : renderFinishedSemaphores) {
+            if (sem != VK_NULL_HANDLE) {
+                vkDestroySemaphore(device, sem, nullptr);
+                sem = VK_NULL_HANDLE;
+            }
         }
-        if (inFlightFence != VK_NULL_HANDLE) {
-            vkDestroyFence(device, inFlightFence, nullptr);
-            inFlightFence = VK_NULL_HANDLE;
+        renderFinishedSemaphores.clear();
+        for (auto& fence : inFlightFences) {
+            if (fence != VK_NULL_HANDLE) {
+                vkDestroyFence(device, fence, nullptr);
+                fence = VK_NULL_HANDLE;
+            }
         }
+        inFlightFences.clear();
 
         // Free command buffers and destroy pool
         if (!commandBuffers.empty()) {

@@ -1,8 +1,9 @@
 #include "Vulkan_func.hpp"
 
-// Vulkan AMOURANTH RTX engine September, 2025 - Implementation for Vulkan utility functions.
-// Provides methods for creating and managing specific Vulkan resources, used by VulkanInitializer.
-// Zachary Geurts 2025, updated for robust NVIDIA GPU selection, surface handling, and device fallback
+// AMOURANTH RTX Engine - September 2025
+// Utility functions for Vulkan resource creation and management.
+// Used by VulkanInitializer for device selection, swapchain, pipelines, etc.
+// Author: Zachary Geurts, 2025
 
 #include <stdexcept>
 #include <fstream>
@@ -11,54 +12,78 @@
 #include <cstring>
 #include <limits>
 #include <iostream>
+#include <glm/glm.hpp>
 
 void VulkanInitializer::createPhysicalDevice(VkInstance instance, VkPhysicalDevice& physicalDevice, uint32_t& graphicsFamily, uint32_t& presentFamily, VkSurfaceKHR surface, bool preferNvidia, std::function<void(const std::string&)> logMessage) {
     uint32_t deviceCount = 0;
-    vkEnumeratePhysicalDevices(instance, &deviceCount, nullptr);
-    if (deviceCount == 0) {
-        logMessage("No Vulkan-compatible devices found.");
-        throw std::runtime_error("No Vulkan-compatible devices found.");
+    VkResult result = vkEnumeratePhysicalDevices(instance, &deviceCount, nullptr);
+    if (result != VK_SUCCESS || deviceCount == 0) {
+        const std::string msg = "No Vulkan-compatible devices found.";
+        if (logMessage) logMessage(msg);
+        throw std::runtime_error(msg);
     }
 
     std::vector<VkPhysicalDevice> devices(deviceCount);
-    vkEnumeratePhysicalDevices(instance, &deviceCount, devices.data());
-    logMessage("Found " + std::to_string(deviceCount) + " Vulkan devices.");
+    result = vkEnumeratePhysicalDevices(instance, &deviceCount, devices.data());
+    if (result != VK_SUCCESS) {
+        const std::string msg = "Failed to enumerate physical devices.";
+        if (logMessage) logMessage(msg);
+        throw std::runtime_error(msg);
+    }
+    if (logMessage) {
+        logMessage("Found " + std::to_string(deviceCount) + " Vulkan devices.");
+    }
 
-    // Check instance extensions for surface support
+    // Verify instance surface extension
     uint32_t instanceExtCount = 0;
-    vkEnumerateInstanceExtensionProperties(nullptr, &instanceExtCount, nullptr);
+    result = vkEnumerateInstanceExtensionProperties(nullptr, &instanceExtCount, nullptr);
+    if (result != VK_SUCCESS) {
+        const std::string msg = "Failed to enumerate instance extensions.";
+        if (logMessage) logMessage(msg);
+        throw std::runtime_error(msg);
+    }
     std::vector<VkExtensionProperties> instanceExtensions(instanceExtCount);
-    vkEnumerateInstanceExtensionProperties(nullptr, &instanceExtCount, instanceExtensions.data());
+    result = vkEnumerateInstanceExtensionProperties(nullptr, &instanceExtCount, instanceExtensions.data());
+    if (result != VK_SUCCESS) {
+        const std::string msg = "Failed to retrieve instance extensions.";
+        if (logMessage) logMessage(msg);
+        throw std::runtime_error(msg);
+    }
     bool hasSurfaceExtension = false;
     for (const auto& ext : instanceExtensions) {
         if (strcmp(ext.extensionName, VK_KHR_SURFACE_EXTENSION_NAME) == 0) {
             hasSurfaceExtension = true;
-            logMessage("VK_KHR_surface extension supported by Vulkan instance.");
+            if (logMessage) logMessage("VK_KHR_surface extension supported by Vulkan instance.");
             break;
         }
     }
     if (!hasSurfaceExtension) {
-        logMessage("VK_KHR_surface extension not supported by Vulkan instance.");
-        throw std::runtime_error("VK_KHR_surface extension not supported by Vulkan instance.");
+        const std::string msg = "VK_KHR_surface extension not supported by Vulkan instance.";
+        if (logMessage) logMessage(msg);
+        throw std::runtime_error(msg);
     }
 
-    auto rateDevice = [preferNvidia, surface, &logMessage](VkPhysicalDevice dev, QueueFamilyIndices& indices, const DeviceRequirements& reqs) -> std::pair<int, std::string> {
+    // Capture 'result' by reference in the lambda
+    auto rateDevice = [preferNvidia, surface, &logMessage, &result](VkPhysicalDevice dev, QueueFamilyIndices& indices, const DeviceRequirements& reqs) -> std::pair<int, std::string> {
         VkPhysicalDeviceProperties props;
         vkGetPhysicalDeviceProperties(dev, &props);
-        logMessage("Evaluating device: " + std::string(props.deviceName));
+        const std::string deviceName = props.deviceName;
+        if (logMessage) {
+            logMessage("Evaluating device: " + deviceName);
+        }
 
         int score = 0;
         if (props.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU) {
             score += 1000;
-            if (preferNvidia && props.vendorID == 0x10DE) { // NVIDIA vendor ID
-                score += 500; // Prioritize NVIDIA GPUs
-                logMessage("Device " + std::string(props.deviceName) + " is NVIDIA; score increased.");
+            if (preferNvidia && props.vendorID == 0x10DE) {
+                score += 500;
+                if (logMessage) logMessage("Device " + deviceName + " is NVIDIA; score increased.");
             }
         } else if (props.deviceType == VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU) {
             score += 100;
-            logMessage("Device " + std::string(props.deviceName) + " is integrated GPU.");
+            if (logMessage) logMessage("Device " + deviceName + " is integrated GPU.");
         } else {
-            logMessage("Device " + std::string(props.deviceName) + " is neither discrete nor integrated GPU; score: " + std::to_string(score));
+            if (logMessage) logMessage("Device " + deviceName + " is neither discrete nor integrated GPU; score: " + std::to_string(score));
             return {0, "Unsupported device type"};
         }
 
@@ -75,9 +100,9 @@ void VulkanInitializer::createPhysicalDevice(VkInstance instance, VkPhysicalDevi
                 indices.graphicsFamily = i;
             }
             VkBool32 presentSupport = VK_FALSE;
-            VkResult result = vkGetPhysicalDeviceSurfaceSupportKHR(dev, i, surface, &presentSupport);
+            result = vkGetPhysicalDeviceSurfaceSupportKHR(dev, i, surface, &presentSupport);
             if (result != VK_SUCCESS) {
-                logMessage("Device " + std::string(props.deviceName) + " failed to query surface support: " + std::to_string(result));
+                if (logMessage) logMessage("Device " + deviceName + " failed to query surface support: " + std::to_string(result));
                 return {0, "Failed to query surface support"};
             }
             if (presentSupport) {
@@ -86,19 +111,27 @@ void VulkanInitializer::createPhysicalDevice(VkInstance instance, VkPhysicalDevi
             }
         }
         if (!indices.isComplete()) {
-            logMessage("Device " + std::string(props.deviceName) + " lacks required queue families (graphics or present).");
+            if (logMessage) logMessage("Device " + deviceName + " lacks required queue families (graphics or present).");
             return {0, "Lacks required queue families"};
         }
         if (!presentSupportFound) {
-            logMessage("Device " + std::string(props.deviceName) + " does not support presentation to the provided surface.");
+            if (logMessage) logMessage("Device " + deviceName + " does not support presentation to the provided surface.");
             return {0, "No presentation support"};
         }
 
         // Check device extensions
         uint32_t extCount = 0;
-        vkEnumerateDeviceExtensionProperties(dev, nullptr, &extCount, nullptr);
+        result = vkEnumerateDeviceExtensionProperties(dev, nullptr, &extCount, nullptr);
+        if (result != VK_SUCCESS) {
+            if (logMessage) logMessage("Device " + deviceName + " failed to enumerate extensions: " + std::to_string(result));
+            return {0, "Failed to enumerate extensions"};
+        }
         std::vector<VkExtensionProperties> availableExts(extCount);
-        vkEnumerateDeviceExtensionProperties(dev, nullptr, &extCount, availableExts.data());
+        result = vkEnumerateDeviceExtensionProperties(dev, nullptr, &extCount, availableExts.data());
+        if (result != VK_SUCCESS) {
+            if (logMessage) logMessage("Device " + deviceName + " failed to retrieve extensions: " + std::to_string(result));
+            return {0, "Failed to retrieve extensions"};
+        }
 
         std::set<std::string> requiredExts(reqs.extensions.begin(), reqs.extensions.end());
         for (const auto& ext : availableExts) {
@@ -109,8 +142,8 @@ void VulkanInitializer::createPhysicalDevice(VkInstance instance, VkPhysicalDevi
             for (const auto& ext : requiredExts) {
                 missing += ext + ", ";
             }
-            logMessage("Device " + std::string(props.deviceName) + " missing required extensions: " + missing);
-            return {0, "Missing required extensions: " + missing};
+            if (logMessage) logMessage("Device " + deviceName + " missing required extensions: " + missing);
+            return {0, "Missing required extensions: " + missing.substr(0, missing.size() - 2)};
         }
 
         // Check features
@@ -128,11 +161,11 @@ void VulkanInitializer::createPhysicalDevice(VkInstance instance, VkPhysicalDevi
 
         if (!features2.features.samplerAnisotropy || !maint4.maintenance4 || !rt.rayTracingPipeline ||
             !accel.accelerationStructure || !bufAddr.bufferDeviceAddress) {
-            logMessage("Device " + std::string(props.deviceName) + " lacks required features (samplerAnisotropy, maintenance4, rayTracingPipeline, accelerationStructure, or bufferDeviceAddress).");
+            if (logMessage) logMessage("Device " + deviceName + " lacks required features (samplerAnisotropy, maintenance4, rayTracingPipeline, accelerationStructure, or bufferDeviceAddress).");
             return {0, "Lacks required features"};
         }
 
-        logMessage("Device " + std::string(props.deviceName) + " is suitable with score: " + std::to_string(score));
+        if (logMessage) logMessage("Device " + deviceName + " is suitable with score: " + std::to_string(score));
         return {score, ""};
     };
 
@@ -150,44 +183,43 @@ void VulkanInitializer::createPhysicalDevice(VkInstance instance, VkPhysicalDevi
             maxScore = score;
             physicalDevice = dev;
             selectedIndices = indices;
-            logMessage("Selected device with score: " + std::to_string(score));
+            if (logMessage) logMessage("Selected device with score: " + std::to_string(score));
         }
         if (score > 0) {
             VkPhysicalDeviceProperties props;
             vkGetPhysicalDeviceProperties(dev, &props);
             fallbackDevices.emplace_back(dev, indices);
             fallbackProps.push_back(props);
-            logMessage("Stored fallback device: " + std::string(props.deviceName) + " with score: " + std::to_string(score));
+            if (logMessage) logMessage("Stored fallback device: " + std::string(props.deviceName) + " with score: " + std::to_string(score));
         } else {
             VkPhysicalDeviceProperties props;
             vkGetPhysicalDeviceProperties(dev, &props);
-            logMessage("Rejected device: " + std::string(props.deviceName) + " (reason: " + reason + ")");
+            if (logMessage) logMessage("Rejected device: " + std::string(props.deviceName) + " (reason: " + reason + ")");
         }
     }
 
-    // If no device was selected, try fallbacks
     if (physicalDevice == VK_NULL_HANDLE && !fallbackDevices.empty()) {
-        logMessage("No preferred device found; trying fallback devices");
+        if (logMessage) logMessage("No preferred device found; trying fallback devices");
         for (size_t i = 0; i < fallbackDevices.size(); ++i) {
             physicalDevice = fallbackDevices[i].first;
             selectedIndices = fallbackDevices[i].second;
-            logMessage("Falling back to device: " + std::string(fallbackProps[i].deviceName));
-            // Verify surface support again
+            if (logMessage) logMessage("Falling back to device: " + std::string(fallbackProps[i].deviceName));
             VkBool32 presentSupport = VK_FALSE;
-            VkResult result = vkGetPhysicalDeviceSurfaceSupportKHR(physicalDevice, selectedIndices.presentFamily.value(), surface, &presentSupport);
+            result = vkGetPhysicalDeviceSurfaceSupportKHR(physicalDevice, selectedIndices.presentFamily.value(), surface, &presentSupport);
             if (result == VK_SUCCESS && presentSupport) {
-                logMessage("Fallback device " + std::string(fallbackProps[i].deviceName) + " supports surface; selected");
+                if (logMessage) logMessage("Fallback device " + std::string(fallbackProps[i].deviceName) + " supports surface; selected");
                 break;
             } else {
-                logMessage("Fallback device " + std::string(fallbackProps[i].deviceName) + " failed surface support check: " + std::to_string(result));
+                if (logMessage) logMessage("Fallback device " + std::string(fallbackProps[i].deviceName) + " failed surface support check: " + std::to_string(result));
                 physicalDevice = VK_NULL_HANDLE;
             }
         }
     }
 
     if (physicalDevice == VK_NULL_HANDLE) {
-        logMessage("No suitable Vulkan device found with required features and surface support.");
-        throw std::runtime_error("No suitable Vulkan device found with required features and surface support.");
+        const std::string msg = "No suitable Vulkan device found with required features and surface support.";
+        if (logMessage) logMessage(msg);
+        throw std::runtime_error(msg);
     }
 
     graphicsFamily = selectedIndices.graphicsFamily.value();
@@ -195,7 +227,7 @@ void VulkanInitializer::createPhysicalDevice(VkInstance instance, VkPhysicalDevi
 
     VkPhysicalDeviceProperties props;
     vkGetPhysicalDeviceProperties(physicalDevice, &props);
-    logMessage("Final selected device: " + std::string(props.deviceName));
+    if (logMessage) logMessage("Final selected device: " + std::string(props.deviceName));
 }
 
 void VulkanInitializer::createLogicalDevice(VkPhysicalDevice physicalDevice, VkDevice& device, VkQueue& graphicsQueue, VkQueue& presentQueue, uint32_t graphicsFamily, uint32_t presentFamily) {
@@ -203,8 +235,8 @@ void VulkanInitializer::createLogicalDevice(VkPhysicalDevice physicalDevice, VkD
     std::vector<VkDeviceQueueCreateInfo> queueCreateInfos;
     std::set<uint32_t> uniqueQueueFamilies = {graphicsFamily, presentFamily};
 
-    float queuePriority = 1.0f;
-    for (uint32_t queueFamily : uniqueQueueFamilies) {
+    const float queuePriority = 1.0f;
+    for (const uint32_t queueFamily : uniqueQueueFamilies) {
         VkDeviceQueueCreateInfo queueCreateInfo{};
         queueCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
         queueCreateInfo.queueFamilyIndex = queueFamily;
@@ -229,8 +261,9 @@ void VulkanInitializer::createLogicalDevice(VkPhysicalDevice physicalDevice, VkD
     createInfo.enabledExtensionCount = static_cast<uint32_t>(reqs.extensions.size());
     createInfo.ppEnabledExtensionNames = reqs.extensions.data();
 
-    if (vkCreateDevice(physicalDevice, &createInfo, nullptr, &device) != VK_SUCCESS) {
-        throw std::runtime_error("Failed to create logical Vulkan device.");
+    VkResult result = vkCreateDevice(physicalDevice, &createInfo, nullptr, &device);
+    if (result != VK_SUCCESS) {
+        throw std::runtime_error("Failed to create logical Vulkan device: " + std::to_string(result));
     }
 
     vkGetDeviceQueue(device, graphicsFamily, 0, &graphicsQueue);
@@ -246,10 +279,10 @@ void VulkanInitializer::createSwapchain(VkPhysicalDevice physicalDevice, VkDevic
         throw std::runtime_error("Failed to get surface capabilities: " + std::to_string(result));
     }
 
-    uint32_t formatCount;
+    uint32_t formatCount = 0;
     result = vkGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice, surface, &formatCount, nullptr);
     if (result != VK_SUCCESS || formatCount == 0) {
-        throw std::runtime_error("Failed to get surface formats or no formats available.");
+        throw std::runtime_error("Failed to get surface formats or no formats available: " + std::to_string(result));
     }
 
     std::vector<VkSurfaceFormatKHR> formats(formatCount);
@@ -282,10 +315,10 @@ void VulkanInitializer::createSwapchain(VkPhysicalDevice physicalDevice, VkDevic
         throw std::runtime_error("Selected swapchain format not supported for color attachment: " + std::to_string(result));
     }
 
-    uint32_t presentModeCount;
+    uint32_t presentModeCount = 0;
     result = vkGetPhysicalDeviceSurfacePresentModesKHR(physicalDevice, surface, &presentModeCount, nullptr);
     if (result != VK_SUCCESS || presentModeCount == 0) {
-        throw std::runtime_error("Failed to get present modes or no modes available.");
+        throw std::runtime_error("Failed to get present modes or no modes available: " + std::to_string(result));
     }
 
     std::vector<VkPresentModeKHR> presentModes(presentModeCount);
@@ -420,8 +453,9 @@ void VulkanInitializer::createRenderPass(VkDevice device, VkRenderPass& renderPa
     renderPassInfo.dependencyCount = 1;
     renderPassInfo.pDependencies = &dependency;
 
-    if (vkCreateRenderPass(device, &renderPassInfo, nullptr, &renderPass) != VK_SUCCESS) {
-        throw std::runtime_error("Failed to create Vulkan render pass.");
+    VkResult result = vkCreateRenderPass(device, &renderPassInfo, nullptr, &renderPass);
+    if (result != VK_SUCCESS) {
+        throw std::runtime_error("Failed to create Vulkan render pass: " + std::to_string(result));
     }
 }
 
@@ -443,8 +477,9 @@ VkShaderModule VulkanInitializer::createShaderModule(VkDevice device, const std:
     createInfo.pCode = reinterpret_cast<const uint32_t*>(buffer.data());
 
     VkShaderModule shaderModule;
-    if (vkCreateShaderModule(device, &createInfo, nullptr, &shaderModule) != VK_SUCCESS) {
-        throw std::runtime_error("Failed to create shader module from: " + filename);
+    VkResult result = vkCreateShaderModule(device, &createInfo, nullptr, &shaderModule);
+    if (result != VK_SUCCESS) {
+        throw std::runtime_error("Failed to create shader module from: " + filename + ", error: " + std::to_string(result));
     }
 
     return shaderModule;
@@ -463,12 +498,13 @@ void VulkanInitializer::createDescriptorSetLayout(VkDevice device, VkDescriptorS
     layoutInfo.bindingCount = 1;
     layoutInfo.pBindings = &samplerBinding;
 
-    if (vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &descriptorSetLayout) != VK_SUCCESS) {
-        throw std::runtime_error("Failed to create descriptor set layout for sampler.");
+    VkResult result = vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &descriptorSetLayout);
+    if (result != VK_SUCCESS) {
+        throw std::runtime_error("Failed to create descriptor set layout for sampler: " + std::to_string(result));
     }
 }
 
-void VulkanInitializer::createDescriptorPoolAndSet(VkDevice device, VkDescriptorSetLayout descriptorSetLayout, VkDescriptorPool& descriptorPool, VkDescriptorSet& descriptorSet, [[maybe_unused]] VkSampler sampler) {
+void VulkanInitializer::createDescriptorPoolAndSet(VkDevice device, VkDescriptorSetLayout descriptorSetLayout, VkDescriptorPool& descriptorPool, VkDescriptorSet& descriptorSet, VkSampler /*sampler*/) {
     VkDescriptorPoolSize poolSize{};
     poolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     poolSize.descriptorCount = 1;
@@ -480,8 +516,9 @@ void VulkanInitializer::createDescriptorPoolAndSet(VkDevice device, VkDescriptor
     poolInfo.pPoolSizes = &poolSize;
     poolInfo.maxSets = 1;
 
-    if (vkCreateDescriptorPool(device, &poolInfo, nullptr, &descriptorPool) != VK_SUCCESS) {
-        throw std::runtime_error("Failed to create descriptor pool for image sampler.");
+    VkResult result = vkCreateDescriptorPool(device, &poolInfo, nullptr, &descriptorPool);
+    if (result != VK_SUCCESS) {
+        throw std::runtime_error("Failed to create descriptor pool for image sampler: " + std::to_string(result));
     }
 
     VkDescriptorSetAllocateInfo allocInfo{};
@@ -490,9 +527,10 @@ void VulkanInitializer::createDescriptorPoolAndSet(VkDevice device, VkDescriptor
     allocInfo.descriptorSetCount = 1;
     allocInfo.pSetLayouts = &descriptorSetLayout;
 
-    if (vkAllocateDescriptorSets(device, &allocInfo, &descriptorSet) != VK_SUCCESS) {
+    result = vkAllocateDescriptorSets(device, &allocInfo, &descriptorSet);
+    if (result != VK_SUCCESS) {
         vkDestroyDescriptorPool(device, descriptorPool, nullptr);
-        throw std::runtime_error("Failed to allocate descriptor set.");
+        throw std::runtime_error("Failed to allocate descriptor set: " + std::to_string(result));
     }
 }
 
@@ -518,8 +556,9 @@ void VulkanInitializer::createSampler(VkDevice device, VkPhysicalDevice physical
     samplerInfo.minLod = 0.0f;
     samplerInfo.maxLod = 0.0f;
 
-    if (vkCreateSampler(device, &samplerInfo, nullptr, &sampler) != VK_SUCCESS) {
-        throw std::runtime_error("Failed to create Vulkan sampler.");
+    VkResult result = vkCreateSampler(device, &samplerInfo, nullptr, &sampler);
+    if (result != VK_SUCCESS) {
+        throw std::runtime_error("Failed to create Vulkan sampler: " + std::to_string(result));
     }
 }
 
@@ -549,6 +588,7 @@ void VulkanInitializer::createGraphicsPipeline(VkDevice device, VkRenderPass ren
         glm::vec4 bitangent;
         glm::vec4 color;
     };
+    static_assert(sizeof(Vertex) % 16 == 0, "Vertex size must be 16-byte aligned for optimal performance");
 
     VkVertexInputBindingDescription bindingDescription{};
     bindingDescription.binding = 0;
@@ -652,16 +692,8 @@ void VulkanInitializer::createGraphicsPipeline(VkDevice device, VkRenderPass ren
     colorBlending.pAttachments = &colorBlendAttachment;
 
     struct PushConstants {
-        glm::mat4 viewProj;
-        glm::vec3 camPos;
-        float wavePhase;
-        float cycleProgress;
-        float zoomLevel;
-        float observable;
-        float darkMatter;
-        float darkEnergy;
-        glm::vec4 extraData;
-        float padding[3];
+        alignas(16) glm::mat4 model;       // 64 bytes: Per-object world transform
+        alignas(16) glm::mat4 view_proj;   // 64 bytes: Pre-computed view * projection (per-frame)
     };
     static_assert(sizeof(PushConstants) == 128, "PushConstants size must be 128 bytes for compatibility");
 
@@ -677,10 +709,11 @@ void VulkanInitializer::createGraphicsPipeline(VkDevice device, VkRenderPass ren
     pipelineLayoutInfo.pushConstantRangeCount = 1;
     pipelineLayoutInfo.pPushConstantRanges = &pushConstantRange;
 
-    if (vkCreatePipelineLayout(device, &pipelineLayoutInfo, nullptr, &pipelineLayout) != VK_SUCCESS) {
+    VkResult result = vkCreatePipelineLayout(device, &pipelineLayoutInfo, nullptr, &pipelineLayout);
+    if (result != VK_SUCCESS) {
         vkDestroyShaderModule(device, fragShaderModule, nullptr);
         vkDestroyShaderModule(device, vertShaderModule, nullptr);
-        throw std::runtime_error("Failed to create pipeline layout.");
+        throw std::runtime_error("Failed to create pipeline layout: " + std::to_string(result));
     }
 
     VkGraphicsPipelineCreateInfo pipelineInfo{};
@@ -698,11 +731,12 @@ void VulkanInitializer::createGraphicsPipeline(VkDevice device, VkRenderPass ren
     pipelineInfo.renderPass = renderPass;
     pipelineInfo.subpass = 0;
 
-    if (vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &pipeline) != VK_SUCCESS) {
+    result = vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &pipeline);
+    if (result != VK_SUCCESS) {
         vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
         vkDestroyShaderModule(device, fragShaderModule, nullptr);
         vkDestroyShaderModule(device, vertShaderModule, nullptr);
-        throw std::runtime_error("Failed to create graphics pipeline.");
+        throw std::runtime_error("Failed to create graphics pipeline: " + std::to_string(result));
     }
 
     vkDestroyShaderModule(device, fragShaderModule, nullptr);
@@ -724,8 +758,9 @@ void VulkanInitializer::createFramebuffers(VkDevice device, VkRenderPass renderP
         framebufferInfo.height = static_cast<uint32_t>(height);
         framebufferInfo.layers = 1;
 
-        if (vkCreateFramebuffer(device, &framebufferInfo, nullptr, &swapchainFramebuffers[i]) != VK_SUCCESS) {
-            throw std::runtime_error("Failed to create framebuffer for swapchain image " + std::to_string(i));
+        VkResult result = vkCreateFramebuffer(device, &framebufferInfo, nullptr, &swapchainFramebuffers[i]);
+        if (result != VK_SUCCESS) {
+            throw std::runtime_error("Failed to create framebuffer for swapchain image " + std::to_string(i) + ": " + std::to_string(result));
         }
     }
 }
@@ -736,8 +771,9 @@ void VulkanInitializer::createCommandPool(VkDevice device, VkCommandPool& comman
     poolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
     poolInfo.queueFamilyIndex = graphicsFamily;
 
-    if (vkCreateCommandPool(device, &poolInfo, nullptr, &commandPool) != VK_SUCCESS) {
-        throw std::runtime_error("Failed to create command pool for graphics family.");
+    VkResult result = vkCreateCommandPool(device, &poolInfo, nullptr, &commandPool);
+    if (result != VK_SUCCESS) {
+        throw std::runtime_error("Failed to create command pool for graphics family: " + std::to_string(result));
     }
 }
 
@@ -750,12 +786,17 @@ void VulkanInitializer::createCommandBuffers(VkDevice device, VkCommandPool comm
     allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
     allocInfo.commandBufferCount = static_cast<uint32_t>(commandBuffers.size());
 
-    if (vkAllocateCommandBuffers(device, &allocInfo, commandBuffers.data()) != VK_SUCCESS) {
-        throw std::runtime_error("Failed to allocate command buffers.");
+    VkResult result = vkAllocateCommandBuffers(device, &allocInfo, commandBuffers.data());
+    if (result != VK_SUCCESS) {
+        throw std::runtime_error("Failed to allocate command buffers: " + std::to_string(result));
     }
 }
 
-void VulkanInitializer::createSyncObjects(VkDevice device, VkSemaphore& imageAvailableSemaphore, VkSemaphore& renderFinishedSemaphore, VkFence& inFlightFence) {
+void VulkanInitializer::createSyncObjects(VkDevice device, std::vector<VkSemaphore>& imageAvailableSemaphores, std::vector<VkSemaphore>& renderFinishedSemaphores, std::vector<VkFence>& inFlightFences, uint32_t maxFramesInFlight) {
+    imageAvailableSemaphores.resize(maxFramesInFlight);
+    renderFinishedSemaphores.resize(maxFramesInFlight);
+    inFlightFences.resize(maxFramesInFlight);
+
     VkSemaphoreCreateInfo semaphoreInfo{};
     semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
 
@@ -763,22 +804,40 @@ void VulkanInitializer::createSyncObjects(VkDevice device, VkSemaphore& imageAva
     fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
     fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
 
-    if (vkCreateSemaphore(device, &semaphoreInfo, nullptr, &imageAvailableSemaphore) != VK_SUCCESS ||
-        vkCreateSemaphore(device, &semaphoreInfo, nullptr, &renderFinishedSemaphore) != VK_SUCCESS ||
-        vkCreateFence(device, &fenceInfo, nullptr, &inFlightFence) != VK_SUCCESS) {
-        throw std::runtime_error("Failed to create frame synchronization objects.");
+    for (uint32_t i = 0; i < maxFramesInFlight; ++i) {
+        VkResult result;
+        result = vkCreateSemaphore(device, &semaphoreInfo, nullptr, &imageAvailableSemaphores[i]);
+        if (result != VK_SUCCESS) {
+            throw std::runtime_error("Failed to create image available semaphore: " + std::to_string(result));
+        }
+        result = vkCreateSemaphore(device, &semaphoreInfo, nullptr, &renderFinishedSemaphores[i]);
+        if (result != VK_SUCCESS) {
+            vkDestroySemaphore(device, imageAvailableSemaphores[i], nullptr);
+            throw std::runtime_error("Failed to create render finished semaphore: " + std::to_string(result));
+        }
+        result = vkCreateFence(device, &fenceInfo, nullptr, &inFlightFences[i]);
+        if (result != VK_SUCCESS) {
+            vkDestroySemaphore(device, imageAvailableSemaphores[i], nullptr);
+            vkDestroySemaphore(device, renderFinishedSemaphores[i], nullptr);
+            throw std::runtime_error("Failed to create in-flight fence: " + std::to_string(result));
+        }
     }
 }
 
 void VulkanInitializer::createBuffer(VkDevice device, VkPhysicalDevice physicalDevice, VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags props, VkBuffer& buffer, VkDeviceMemory& memory) {
+    if (size == 0) {
+        throw std::runtime_error("Buffer size must be greater than zero.");
+    }
+
     VkBufferCreateInfo bufferInfo{};
     bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
     bufferInfo.size = size;
     bufferInfo.usage = usage;
     bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
-    if (vkCreateBuffer(device, &bufferInfo, nullptr, &buffer) != VK_SUCCESS) {
-        throw std::runtime_error("Failed to create Vulkan buffer.");
+    VkResult result = vkCreateBuffer(device, &bufferInfo, nullptr, &buffer);
+    if (result != VK_SUCCESS) {
+        throw std::runtime_error("Failed to create Vulkan buffer: " + std::to_string(result));
     }
 
     VkMemoryRequirements memRequirements;
@@ -803,7 +862,7 @@ void VulkanInitializer::createBuffer(VkDevice device, VkPhysicalDevice physicalD
 
     VkMemoryAllocateFlagsInfo allocFlagsInfo{};
     allocFlagsInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_FLAGS_INFO;
-    allocFlagsInfo.flags = (usage & VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT) ? VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT_KHR : 0;
+    allocFlagsInfo.flags = (usage & VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT) ? VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT : 0;
 
     VkMemoryAllocateInfo allocInfo{};
     allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
@@ -811,15 +870,17 @@ void VulkanInitializer::createBuffer(VkDevice device, VkPhysicalDevice physicalD
     allocInfo.allocationSize = memRequirements.size;
     allocInfo.memoryTypeIndex = memoryTypeIndex;
 
-    if (vkAllocateMemory(device, &allocInfo, nullptr, &memory) != VK_SUCCESS) {
+    result = vkAllocateMemory(device, &allocInfo, nullptr, &memory);
+    if (result != VK_SUCCESS) {
         vkDestroyBuffer(device, buffer, nullptr);
-        throw std::runtime_error("Failed to allocate buffer memory.");
+        throw std::runtime_error("Failed to allocate buffer memory: " + std::to_string(result));
     }
 
-    if (vkBindBufferMemory(device, buffer, memory, 0) != VK_SUCCESS) {
+    result = vkBindBufferMemory(device, buffer, memory, 0);
+    if (result != VK_SUCCESS) {
         vkDestroyBuffer(device, buffer, nullptr);
         vkFreeMemory(device, memory, nullptr);
-        throw std::runtime_error("Failed to bind buffer memory.");
+        throw std::runtime_error("Failed to bind buffer memory: " + std::to_string(result));
     }
 }
 
@@ -831,13 +892,20 @@ void VulkanInitializer::copyBuffer(VkDevice device, VkCommandPool commandPool, V
     allocInfo.commandBufferCount = 1;
 
     VkCommandBuffer commandBuffer;
-    vkAllocateCommandBuffers(device, &allocInfo, &commandBuffer);
+    VkResult result = vkAllocateCommandBuffers(device, &allocInfo, &commandBuffer);
+    if (result != VK_SUCCESS) {
+        throw std::runtime_error("Failed to allocate command buffer for buffer copy: " + std::to_string(result));
+    }
 
     VkCommandBufferBeginInfo beginInfo{};
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
     beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
 
-    vkBeginCommandBuffer(commandBuffer, &beginInfo);
+    result = vkBeginCommandBuffer(commandBuffer, &beginInfo);
+    if (result != VK_SUCCESS) {
+        vkFreeCommandBuffers(device, commandPool, 1, &commandBuffer);
+        throw std::runtime_error("Failed to begin command buffer: " + std::to_string(result));
+    }
 
     VkBufferCopy copyRegion{};
     copyRegion.srcOffset = 0;
@@ -845,15 +913,28 @@ void VulkanInitializer::copyBuffer(VkDevice device, VkCommandPool commandPool, V
     copyRegion.size = size;
     vkCmdCopyBuffer(commandBuffer, src, dst, 1, &copyRegion);
 
-    vkEndCommandBuffer(commandBuffer);
+    result = vkEndCommandBuffer(commandBuffer);
+    if (result != VK_SUCCESS) {
+        vkFreeCommandBuffers(device, commandPool, 1, &commandBuffer);
+        throw std::runtime_error("Failed to end command buffer: " + std::to_string(result));
+    }
 
     VkSubmitInfo submitInfo{};
     submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
     submitInfo.commandBufferCount = 1;
     submitInfo.pCommandBuffers = &commandBuffer;
 
-    vkQueueSubmit(graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE);
-    vkQueueWaitIdle(graphicsQueue);
+    result = vkQueueSubmit(graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE);
+    if (result != VK_SUCCESS) {
+        vkFreeCommandBuffers(device, commandPool, 1, &commandBuffer);
+        throw std::runtime_error("Failed to submit buffer copy to queue: " + std::to_string(result));
+    }
+
+    result = vkQueueWaitIdle(graphicsQueue);
+    if (result != VK_SUCCESS) {
+        vkFreeCommandBuffers(device, commandPool, 1, &commandBuffer);
+        throw std::runtime_error("Failed to wait for queue idle: " + std::to_string(result));
+    }
 
     vkFreeCommandBuffers(device, commandPool, 1, &commandBuffer);
 }
@@ -872,6 +953,7 @@ void VulkanInitializer::createVertexBuffer(VkDevice device, VkPhysicalDevice phy
         glm::vec4 bitangent;
         glm::vec4 color;
     };
+
     std::vector<Vertex> fullVertices(vertices.size());
     for (size_t i = 0; i < vertices.size(); ++i) {
         fullVertices[i].position = vertices[i];
@@ -882,7 +964,7 @@ void VulkanInitializer::createVertexBuffer(VkDevice device, VkPhysicalDevice phy
         fullVertices[i].color = glm::vec4(1.0f);
     }
 
-    VkDeviceSize bufferSize = sizeof(Vertex) * fullVertices.size();
+    const VkDeviceSize bufferSize = sizeof(Vertex) * fullVertices.size();
 
     VkBuffer stagingBuffer;
     VkDeviceMemory stagingBufferMemory;
@@ -892,8 +974,13 @@ void VulkanInitializer::createVertexBuffer(VkDevice device, VkPhysicalDevice phy
                  stagingBuffer, stagingBufferMemory);
 
     void* data;
-    vkMapMemory(device, stagingBufferMemory, 0, bufferSize, 0, &data);
-    memcpy(data, fullVertices.data(), static_cast<size_t>(bufferSize));
+    VkResult result = vkMapMemory(device, stagingBufferMemory, 0, bufferSize, 0, &data);
+    if (result != VK_SUCCESS) {
+        vkDestroyBuffer(device, stagingBuffer, nullptr);
+        vkFreeMemory(device, stagingBufferMemory, nullptr);
+        throw std::runtime_error("Failed to map staging buffer memory: " + std::to_string(result));
+    }
+    std::memcpy(data, fullVertices.data(), static_cast<size_t>(bufferSize));
     vkUnmapMemory(device, stagingBufferMemory);
 
     createBuffer(device, physicalDevice, bufferSize,
@@ -915,7 +1002,7 @@ void VulkanInitializer::createIndexBuffer(VkDevice device, VkPhysicalDevice phys
         throw std::runtime_error("Cannot create index buffer: empty indices vector.");
     }
 
-    VkDeviceSize bufferSize = sizeof(indices[0]) * indices.size();
+    const VkDeviceSize bufferSize = sizeof(indices[0]) * indices.size();
 
     VkBuffer stagingBuffer;
     VkDeviceMemory stagingBufferMemory;
@@ -925,8 +1012,13 @@ void VulkanInitializer::createIndexBuffer(VkDevice device, VkPhysicalDevice phys
                  stagingBuffer, stagingBufferMemory);
 
     void* data;
-    vkMapMemory(device, stagingBufferMemory, 0, bufferSize, 0, &data);
-    memcpy(data, indices.data(), static_cast<size_t>(bufferSize));
+    VkResult result = vkMapMemory(device, stagingBufferMemory, 0, bufferSize, 0, &data);
+    if (result != VK_SUCCESS) {
+        vkDestroyBuffer(device, stagingBuffer, nullptr);
+        vkFreeMemory(device, stagingBufferMemory, nullptr);
+        throw std::runtime_error("Failed to map staging buffer memory: " + std::to_string(result));
+    }
+    std::memcpy(data, indices.data(), static_cast<size_t>(bufferSize));
     vkUnmapMemory(device, stagingBufferMemory);
 
     createBuffer(device, physicalDevice, bufferSize,

@@ -267,10 +267,10 @@ inline void AMOURANTH::handleInput(const SDL_KeyboardEvent& key) {
             case SDLK_MINUS: case SDLK_KP_MINUS: updateZoom(false); break;
             case SDLK_I: adjustInfluence(0.1); break;
             case SDLK_O: adjustInfluence(-0.1); break;
-            case SDLK_M: adjustDarkMatter(0.1); break;
-            case SDLK_N: adjustDarkMatter(-0.1); break;
-            case SDLK_J: adjustDarkEnergy(0.1); break;
-            case SDLK_K: adjustDarkEnergy(-0.1); break;
+            case SDLK_J: adjustDarkMatter(0.1); break;
+            case SDLK_K: adjustDarkMatter(-0.1); break;
+            case SDLK_N: adjustDarkEnergy(0.1); break;
+            case SDLK_M: adjustDarkEnergy(-0.1); break;
             case SDLK_P: isPaused_ = !isPaused_; break;
             case SDLK_C: isUserCamActive_ = !isUserCamActive_; break;
             case SDLK_W: if (isUserCamActive_) userCamPos_.z -= 0.1f; break;
@@ -311,7 +311,7 @@ inline void AMOURANTH::setMode(int mode) {
 
 inline void AMOURANTH::initializeSphereGeometry() {
     float radius = 1.0f;
-    uint32_t sectors = 32, rings = 16;
+    uint32_t sectors = 320, rings = 200;
     for (uint32_t i = 0; i <= rings; ++i) {
         float theta = i * M_PI / rings;
         float sinTheta = sin(theta), cosTheta = cos(theta);

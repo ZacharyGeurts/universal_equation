@@ -184,7 +184,7 @@ public:
                     renderCond.wait(lock, [this] { return renderReady || stopRender; });
                     if (stopRender && !renderReady) break;
                     if (renderReady) {
-                        logMessage("Render thread executing render callback");
+                        //logMessage("Render thread executing render callback");
                         render();
                         renderReady = false;
                         lock.unlock();

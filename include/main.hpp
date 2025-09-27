@@ -41,6 +41,7 @@
 #include <stdexcept>                // For std::runtime_error in error handling.
 #include <iostream>                 // For logging errors to stderr.
 #include <omp.h>                    // OpenMP for CPU parallelism (e.g., simulator updates or buffer uploads).
+#include <vector>  // For Vulkan sync object vectors.
 
 // Custom engine includes for initialization and core logic.
 #include "SDL3_init.hpp"    // SDL3Initializer: Window, Vulkan instance, and surface setup.
@@ -93,9 +94,9 @@ public:
           pipelineLayout_(VK_NULL_HANDLE),        // Initialize pipeline layout to null handle.
           renderPass_(VK_NULL_HANDLE),            // Initialize render pass to null handle.
           commandPool_(VK_NULL_HANDLE),           // Initialize command pool to null handle.
-          imageAvailableSemaphore_(VK_NULL_HANDLE), // Initialize image available semaphore to null handle.
-          renderFinishedSemaphore_(VK_NULL_HANDLE), // Initialize render finished semaphore to null handle.
-          inFlightFence_(VK_NULL_HANDLE),         // Initialize in-flight fence to null handle.
+          imageAvailableSemaphores_(), // Initialize image available semaphores vector (empty).
+          renderFinishedSemaphores_(), // Initialize render finished semaphores vector (empty).
+          inFlightFences_(), // Initialize in-flight fences vector (empty).
           vertexBuffer_(VK_NULL_HANDLE),          // Initialize sphere vertex buffer to null handle.
           vertexBufferMemory_(VK_NULL_HANDLE),    // Initialize sphere vertex buffer memory to null handle.
           indexBuffer_(VK_NULL_HANDLE),           // Initialize sphere index buffer to null handle.
@@ -215,9 +216,9 @@ private:
     VkPipelineLayout pipelineLayout_; // Pipeline layout with push constants for dynamic data.
     VkRenderPass renderPass_;         // Render pass defining color attachment and subpass.
     VkCommandPool commandPool_;       // Command pool for allocating command buffers.
-    VkSemaphore imageAvailableSemaphore_;  // Signals when swapchain image is ready.
-    VkSemaphore renderFinishedSemaphore_;  // Signals when rendering is complete.
-    VkFence inFlightFence_;           // Tracks in-flight frames to prevent overruns.
+    std::vector<VkSemaphore> imageAvailableSemaphores_;  // Per-frame semaphores signaling image availability.
+    std::vector<VkSemaphore> renderFinishedSemaphores_;  // Per-frame semaphores signaling render completion.
+    std::vector<VkFence> inFlightFences_;  // Per-frame fences tracking in-flight operations.
     VkBuffer vertexBuffer_;           // Vertex buffer for sphere geometry (main object).
     VkDeviceMemory vertexBufferMemory_;  // Allocated memory for sphere vertex buffer.
     VkBuffer indexBuffer_;            // Index buffer for sphere geometry.
@@ -240,8 +241,8 @@ private:
             graphicsQueue_, presentQueue_, graphicsFamily_, presentFamily_,
             swapchain_, swapchainImages_, swapchainImageViews_, renderPass_,
             pipeline_, pipelineLayout_, descriptorSetLayout_, swapchainFramebuffers_, commandPool_,
-            commandBuffers_, imageAvailableSemaphore_, renderFinishedSemaphore_,
-            inFlightFence_, vertexBuffer_, vertexBufferMemory_, indexBuffer_,
+            commandBuffers_, imageAvailableSemaphores_, renderFinishedSemaphores_,
+            inFlightFences_, vertexBuffer_, vertexBufferMemory_, indexBuffer_,
             indexBufferMemory_, amouranth_->getSphereVertices(), amouranth_->getSphereIndices(),
             width_, height_);
 
@@ -275,8 +276,8 @@ private:
         VulkanInit::cleanupVulkan(
             vulkanInstance_, vulkanDevice_, surface_, swapchain_, swapchainImageViews_,
             swapchainFramebuffers_, pipeline_, pipelineLayout_, renderPass_,
-            commandPool_, commandBuffers_, imageAvailableSemaphore_, renderFinishedSemaphore_,
-            inFlightFence_, vertexBuffer_, vertexBufferMemory_, indexBuffer_, indexBufferMemory_,
+            commandPool_, commandBuffers_, imageAvailableSemaphores_, renderFinishedSemaphores_,
+            inFlightFences_, vertexBuffer_, vertexBufferMemory_, indexBuffer_, indexBufferMemory_,
             quadVertexBuffer_, quadVertexBufferMemory_, quadIndexBuffer_, quadIndexBufferMemory_,
             descriptorSetLayout_);
 
@@ -291,9 +292,9 @@ private:
         renderPass_ = VK_NULL_HANDLE;
         commandPool_ = VK_NULL_HANDLE;
         commandBuffers_.clear();
-        imageAvailableSemaphore_ = VK_NULL_HANDLE;
-        renderFinishedSemaphore_ = VK_NULL_HANDLE;
-        inFlightFence_ = VK_NULL_HANDLE;
+        imageAvailableSemaphores_.clear();
+        renderFinishedSemaphores_.clear();
+        inFlightFences_.clear();
         vertexBuffer_ = VK_NULL_HANDLE;
         vertexBufferMemory_ = VK_NULL_HANDLE;
         indexBuffer_ = VK_NULL_HANDLE;
@@ -345,8 +346,8 @@ private:
         VulkanInit::cleanupVulkan(
             vulkanInstance_, vulkanDevice_, surface_, swapchain_, swapchainImageViews_,
             swapchainFramebuffers_, pipeline_, pipelineLayout_, renderPass_,
-            commandPool_, commandBuffers_, imageAvailableSemaphore_, renderFinishedSemaphore_,
-            inFlightFence_, vertexBuffer_, vertexBufferMemory_, indexBuffer_, indexBufferMemory_,
+            commandPool_, commandBuffers_, imageAvailableSemaphores_, renderFinishedSemaphores_,
+            inFlightFences_, vertexBuffer_, vertexBufferMemory_, indexBuffer_, indexBufferMemory_,
             quadVertexBuffer_, quadVertexBufferMemory_, quadIndexBuffer_, quadIndexBufferMemory_,
             descriptorSetLayout_);
 
@@ -364,6 +365,9 @@ private:
         vulkanInstance_ = VK_NULL_HANDLE;
         surface_ = VK_NULL_HANDLE;
         descriptorSetLayout_ = VK_NULL_HANDLE;
+        imageAvailableSemaphores_.clear();
+        renderFinishedSemaphores_.clear();
+        inFlightFences_.clear();
     }
 
     // Renders a single frame (called by SDL3 event loop).
@@ -390,12 +394,12 @@ private:
         amouranth_->update(0.016f);
 
         // Wait for previous frame to complete (single-frame-in-flight).
-        vkWaitForFences(vulkanDevice_, 1, &inFlightFence_, VK_TRUE, UINT64_MAX);
-        vkResetFences(vulkanDevice_, 1, &inFlightFence_);
+        vkWaitForFences(vulkanDevice_, 1, &inFlightFences_[0], VK_TRUE, UINT64_MAX);  // Use index 0 for single-frame.
+        vkResetFences(vulkanDevice_, 1, &inFlightFences_[0]);  // Use index 0 for single-frame.
 
         // Acquire next swapchain image for rendering.
         uint32_t imageIndex;
-        VkResult result = vkAcquireNextImageKHR(vulkanDevice_, swapchain_, UINT64_MAX, imageAvailableSemaphore_, VK_NULL_HANDLE, &imageIndex);
+        VkResult result = vkAcquireNextImageKHR(vulkanDevice_, swapchain_, UINT64_MAX, imageAvailableSemaphores_[0], VK_NULL_HANDLE, &imageIndex);  // Use index 0 for single-frame.
         if (result == VK_ERROR_OUT_OF_DATE_KHR) {
             // Swapchain outdated (e.g., window resized); recreate and skip frame.
             recreateSwapchain();
@@ -445,14 +449,14 @@ private:
             VK_STRUCTURE_TYPE_SUBMIT_INFO,
             nullptr,
             1,
-            &imageAvailableSemaphore_,
+            &imageAvailableSemaphores_[0],  // Use index 0 for single-frame.
             waitStages,
             1,
             &commandBuffers_[imageIndex],
             1,
-            &renderFinishedSemaphore_
+            &renderFinishedSemaphores_[0]  // Use index 0 for single-frame.
         };
-        if (vkQueueSubmit(graphicsQueue_, 1, &submitInfo, inFlightFence_) != VK_SUCCESS) {
+        if (vkQueueSubmit(graphicsQueue_, 1, &submitInfo, inFlightFences_[0]) != VK_SUCCESS) {  // Use index 0 for single-frame.
             throw std::runtime_error("Failed to submit queue");
         }
 
@@ -461,7 +465,7 @@ private:
             VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
             nullptr,
             1,
-            &renderFinishedSemaphore_,
+            &renderFinishedSemaphores_[0],  // Use index 0 for single-frame.
             1,
             &swapchain_,
             &imageIndex,
