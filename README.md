@@ -4,8 +4,8 @@ https://x.com/i/grok?conversation=1970860339336999387
 https://x.com/i/status/1970892773109776716  
 Welcome friends. God Bless.  
 Stay tuned for version 2.0. Starting line.  
-I will hold at 1.9 until I can present 20 dimensions.
-My take? There are infinite and there is no bottom or top to existance.
+I will hold at 1.9 until I can present 20 dimensions.  
+My take? There are infinite and there is no bottom or top to existance.  
 
 **Platform**: Currently Linux-only  
 If you have a problem or need assistance please open an issue.  
