@@ -154,7 +154,7 @@ The `UniversalEquation` class defines dimensional interactions:
 ## Vulkan SDK  
 Get the tarball from [LunarG](https://vulkan.lunarg.com/)  
 Run `sudo ./vulkansdk`  
-**Make sure file permission is set to executable**  
+**Make sure file permission is set to executable `chmod +x vulkansdk`**  
 
 ## Build Instructions
 ```bash
