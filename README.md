@@ -13,8 +13,6 @@ This project uses an SDL3 backend for rendering (yay Vulkan), chosen from idiocy
 
 Software with free distribution can use all of this software without any restrictions or terms.  
 Commercial SDL3 and Vulkan development requires AMOURANTH RTX engine license.  
-Terms are generally 3% of sales after release.  
-Built with Grok, Co-Pilot, and duck.ai  
 
 ![gif](https://github.com/user-attachments/assets/f68fd0ba-742d-4c44-bdbb-a692c664ea4d)  
 **If you do not intend to modify the code, watch the gif and you may have found God.**  
