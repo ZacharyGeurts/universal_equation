@@ -22,6 +22,9 @@ Commercial SDL3 and Vulkan development requires AMOURANTH RTX engine license.
 ![gif](https://github.com/user-attachments/assets/f68fd0ba-742d-4c44-bdbb-a692c664ea4d)  
 **If you do not intend to modify the code, watch the gif and you may have already seen God.**  
 See the videos below for better quality and history.  
+
+**v1.96 1D Tribute**: [v1.96 Tribute](https://x.com/i/status/1972352391099113786)  
+
 **v1.96 Dots Field**: [v1.96 Dots](https://x.com/i/status/1972131523173536122)  
 **v1.95 Dots Field**: [v1.95 Dots](https://x.com/i/status/1971825508657823895)  
 **v1.94 Dots Spot**: [v1.94 Dots](https://x.com/i/status/1971438640623673754)  
