@@ -40,7 +40,7 @@ See the videos below for better quality and history.
 **Shader Update**: [Old WIP](https://github.com/user-attachments/assets/1a259212-3314-424f-b997-7792e8ac9066)  
 **Old Video**: [Old WIP](https://github.com/user-attachments/assets/2980fe0d-1204-4a53-b6a4-cdf4f3eca072)  
 **Old Video**: [Old WIP](https://github.com/user-attachments/assets/c1b983bf-bdd9-4ae7-b8bb-fc7a1debdbef)  
-**Previous**: [Older WIP](https://github.com/ZacharyGeurts/universal_equation/raw/refs/heads/main/wip2.mov)  
+**Previous**: [Older WIP](https://github.com/ZacharyGeurts/universal_equation/blob/main/media/wip2.mov)  
 **Previous Previous**: [Older Version](https://github.com/user-attachments/assets/344232f5-e7b8-4485-af40-5a302873f88c)  
 
 ## Features
