@@ -187,10 +187,8 @@ cd ../..
 git clone https://github.com/ZacharyGeurts/universal_equation
 cd universal_equation
 make -j4
-cd bin
-dir or ls
-cd your OS
-Navigator or ./Navigator
+cd bin/Linux
+./Navigator
 ```
 
 # UniversalEquation Class Overview
