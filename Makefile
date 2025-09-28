@@ -18,7 +18,7 @@ ifeq ($(OS),Windows_NT)
 	# Windows (MinGW)
 	UNAME_S := Windows
 	CXX ?= x86_64-w64-mingw32-g++
-	CXXFLAGS ?= -O3 -std=c++17 -Wall -Wextra -g -fopenmp -Iinclude
+	CXXFLAGS ?= -O3 -std=c++17 -Wall -Wextra -g -fopenmp -Iinclude -Iinclude/engine
 	LDFLAGS ?= -lSDL3 -lvulkan -lSDL3_ttf -fopenmp -static-libgcc -static-libstdc++
 	EXE_SUFFIX ?= .exe
 	MKDIR ?= mkdir
@@ -31,7 +31,7 @@ else
 	ifeq ($(UNAME_S),Linux)
 	    # Linux
 	    CXX ?= g++
-	    CXXFLAGS ?= -O3 -std=c++17 -Wall -Wextra -g -fopenmp -Iinclude
+	    CXXFLAGS ?= -O3 -std=c++17 -Wall -Wextra -g -fopenmp -Iinclude -Iinclude/engine
 	    LDFLAGS ?= -lSDL3 -lvulkan -lSDL3_ttf -lX11 -lxcb -fopenmp
 	    EXE_SUFFIX ?=
 	    MKDIR ?= mkdir -p
@@ -43,7 +43,7 @@ else
 	ifeq ($(UNAME_S),Darwin)
 	    # macOS
 	    CXX ?= clang++
-	    CXXFLAGS ?= -O3 -std=c++17 -Wall -Wextra -g -Xclang -fopenmp -Iinclude -I/usr/local/include
+	    CXXFLAGS ?= -O3 -std=c++17 -Wall -Wextra -g -Xclang -fopenmp -Iinclude -Iinclude/engine -I/usr/local/include
 	    LDFLAGS ?= -lSDL3 -lvulkan -lSDL3_ttf -lomp
 	    EXE_SUFFIX ?=
 	    MKDIR ?= mkdir -p
@@ -59,7 +59,7 @@ ifdef TARGET_OS
 	ifeq ($(TARGET_OS),Windows)
 	    UNAME_S := Windows
 	    CXX ?= x86_64-w64-mingw32-g++
-	    CXXFLAGS ?= -O3 -std=c++17 -Wall -Wextra -g -fopenmp -Iinclude
+	    CXXFLAGS ?= -O3 -std=c++17 -Wall -Wextra -g -fopenmp -Iinclude -Iinclude/engine
 	    LDFLAGS ?= -lSDL3 -lvulkan -lSDL3_ttf -fopenmp -static-libgcc -static-libstdc++
 	    EXE_SUFFIX ?= .exe
 	    MKDIR ?= mkdir -p
@@ -71,7 +71,7 @@ ifdef TARGET_OS
 	ifeq ($(TARGET_OS),macOS)
 	    UNAME_S := Darwin
 	    CXX ?= clang++
-	    CXXFLAGS ?= -O3 -std=c++17 -Wall -Wextra -g -Xclang -fopenmp -Iinclude -I/usr/local/include
+	    CXXFLAGS ?= -O3 -std=c++17 -Wall -Wextra -g -Xclang -fopenmp -Iinclude -Iinclude/engine -I/usr/local/include
 	    LDFLAGS ?= -lSDL3 -lvulkan -lSDL3_ttf -lomp
 	    EXE_SUFFIX ?=
 	    MKDIR ?= mkdir -p
@@ -83,7 +83,7 @@ ifdef TARGET_OS
 	ifeq ($(TARGET_OS),Linux)
 	    UNAME_S := Linux
 	    CXX ?= g++
-	    CXXFLAGS ?= -O3 -std=c++17 -Wall -Wextra -g -fopenmp -Iinclude
+	    CXXFLAGS ?= -O3 -std=c++17 -Wall -Wextra -g -fopenmp -Iinclude -Iinclude/engine
 	    LDFLAGS ?= -lSDL3 -lvulkan -lSDL3_ttf -lX11 -lxcb -fopenmp
 	    EXE_SUFFIX ?=
 	    MKDIR ?= mkdir -p
@@ -92,7 +92,7 @@ ifdef TARGET_OS
 	    RMDIR ?= rm -rf
 	    PATH_SEP ?= /
 	endif
-	# New: Android cross-compilation
+	# Android cross-compilation
 	ifeq ($(TARGET_OS),Android)
 	    UNAME_S := Android
 	    # Android NDK settings
@@ -105,7 +105,7 @@ ifdef TARGET_OS
 	    API_LEVEL ?= 33
 	    TOOLCHAIN = $(NDK_HOME)/toolchains/llvm/prebuilt/$(shell uname -s | tr A-Z a-z)-x86_64
 	    CXX = $(TOOLCHAIN)/bin/$(ARCH)-$(API_LEVEL)-clang++
-	    CXXFLAGS ?= -O3 -std=c++17 -Wall -Wextra -g -Iinclude -I$(NDK_HOME)/sysroot/usr/include -I$(NDK_HOME)/sysroot/usr/include/aarch64-linux-android
+	    CXXFLAGS ?= -O3 -std=c++17 -Wall -Wextra -g -Iinclude -Iinclude/engine -I$(NDK_HOME)/sysroot/usr/include -I$(NDK_HOME)/sysroot/usr/include/aarch64-linux-android
 	    LDFLAGS ?= -L$(NDK_HOME)/sysroot/usr/lib/aarch64-linux-android/$(API_LEVEL) -lSDL3 -lvulkan -lSDL3_ttf -llog
 	    EXE_SUFFIX ?=
 	    MKDIR ?= mkdir -p
@@ -113,7 +113,7 @@ ifdef TARGET_OS
 	    RM ?= rm -f
 	    RMDIR ?= rm -rf
 	    PATH_SEP ?= /
-	    # Android-specific output (shared library instead of executable)
+	    # Android-specific output (shared library)
 	    EXECUTABLE = $(BIN_DIR)/libNavigator.so
 	endif
 endif
@@ -123,19 +123,25 @@ GLSLC ?= glslc
 
 # Directories
 SRC_DIR = src
+ENGINE_SRC_DIR = src/engine
+MODES_SRC_DIR = src/modes
 INCLUDE_DIR = include
+ENGINE_INCLUDE_DIR = include/engine
 SHADER_DIR = shaders
 FONT_DIR = fonts
 BUILD_DIR = build$(PATH_SEP)$(UNAME_S)
+ENGINE_BUILD_DIR = $(BUILD_DIR)/engine
+MODES_BUILD_DIR = $(BUILD_DIR)/modes
 BIN_DIR = bin$(PATH_SEP)$(UNAME_S)
 ASSET_DIR = $(BIN_DIR)$(PATH_SEP)assets
 SHADER_OUT_DIR = $(ASSET_DIR)$(PATH_SEP)shaders
 FONT_OUT_DIR = $(ASSET_DIR)$(PATH_SEP)fonts
 
 # Files
-SOURCES = $(wildcard $(SRC_DIR)/*.cpp)
-OBJECTS = $(patsubst $(SRC_DIR)/%.cpp,$(BUILD_DIR)/%.o,$(SOURCES))
-# Modified: Use shared library for Android
+SOURCES = $(wildcard $(SRC_DIR)/*.cpp) $(wildcard $(ENGINE_SRC_DIR)/*.cpp) $(wildcard $(MODES_SRC_DIR)/*.cpp)
+OBJECTS = $(patsubst $(SRC_DIR)/%.cpp,$(BUILD_DIR)/%.o,$(wildcard $(SRC_DIR)/*.cpp)) \
+	      $(patsubst $(ENGINE_SRC_DIR)/%.cpp,$(ENGINE_BUILD_DIR)/%.o,$(wildcard $(ENGINE_SRC_DIR)/*.cpp)) \
+	      $(patsubst $(MODES_SRC_DIR)/%.cpp,$(MODES_BUILD_DIR)/%.o,$(wildcard $(MODES_SRC_DIR)/*.cpp))
 EXECUTABLE ?= $(BIN_DIR)/Navigator$(EXE_SUFFIX)
 
 # Shader source files by type
@@ -177,8 +183,10 @@ all:
 
 # Create directories
 directories:
-	@echo "Creating directories: $(BUILD_DIR), $(BIN_DIR), $(SHADER_OUT_DIR), $(FONT_OUT_DIR)"
+	@echo "Creating directories: $(BUILD_DIR), $(ENGINE_BUILD_DIR), $(MODES_BUILD_DIR), $(BIN_DIR), $(SHADER_OUT_DIR), $(FONT_OUT_DIR)"
 	@$(MKDIR) $(BUILD_DIR)
+	@$(MKDIR) $(ENGINE_BUILD_DIR)
+	@$(MKDIR) $(MODES_BUILD_DIR)
 	@$(MKDIR) $(BIN_DIR)
 	@$(MKDIR) $(SHADER_OUT_DIR)
 	@$(MKDIR) $(FONT_OUT_DIR)
@@ -202,11 +210,16 @@ copy-assets: copy-shaders copy-fonts
 # Link object files to create executable or shared library
 $(EXECUTABLE): $(OBJECTS) $(SHADER_OBJECTS)
 	@echo "Linking system kernel: $@"
-	# Modified: Add -shared flag for Android
 	$(CXX) $(OBJECTS) -o $@ $(LDFLAGS) $(if $(filter Android,$(UNAME_S)),-shared,)
 
 # Compile source files to object files
 $(BUILD_DIR)/%.o: $(SRC_DIR)/%.cpp
+	$(CXX) $(CXXFLAGS) -c $< -o $@ $(if $(filter Android,$(UNAME_S)),-fPIC,)
+
+$(ENGINE_BUILD_DIR)/%.o: $(ENGINE_SRC_DIR)/%.cpp
+	$(CXX) $(CXXFLAGS) -c $< -o $@ $(if $(filter Android,$(UNAME_S)),-fPIC,)
+
+$(MODES_BUILD_DIR)/%.o: $(MODES_SRC_DIR)/%.cpp
 	$(CXX) $(CXXFLAGS) -c $< -o $@ $(if $(filter Android,$(UNAME_S)),-fPIC,)
 
 # Compile shader files to SPIR-V (Vulkan 1.3 for ray tracing support)
