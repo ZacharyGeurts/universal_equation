@@ -181,3 +181,42 @@ dir or ls
 cd your OS
 Navigator or ./Navigator
 ```
+
+# UniversalEquation Class Overview
+
+The `UniversalEquation` class is a C++ implementation designed to simulate quantum-like interactions within n-dimensional hypercube lattices, addressing fundamental challenges in quantum mechanics and theoretical physics. It incorporates advanced features such as the Carroll-Schrödinger ultra-relativistic limit, deterministic asymmetric collapse for the measurement problem, mean-field approximations for many-body systems, and perspective projection for visualization of high-dimensional structures. The class is thread-safe, parallelized with OpenMP, and optimized for integration with Vulkan-based rendering via a `DimensionalNavigator` for visualizing energy distributions and vertices.
+
+## Key Features
+
+### 1. **Simulation of N-Dimensional Quantum-Like Interactions**
+- Models interactions in hypercube lattices with dimensions from 1 to 20.
+- Uses a vertex-based approach to represent n-dimensional hypercubes, with each vertex having coordinates of ±1.
+- Computes energy components: observable energy, potential energy, dark matter-like effects, and dark energy-like effects.
+
+### 2. **Addressing Schrödinger Challenges**
+- **Carroll-Schrödinger Ultra-Relativistic Limit**: Implements a `carrollFactor` to modulate time-like terms in a flat-space approximation, addressing ultra-relativistic behavior inspired by recent theoretical work.
+- **Deterministic Asymmetric Collapse**: Introduces an asymmetric collapse term (`asymCollapse`) inspired by 2025 MDPI research, providing a deterministic approach to the quantum measurement problem.
+- **Mean-Field Approximation**: Reduces computational complexity of many-body interactions using a `meanFieldApprox` parameter, based on 2025 arXiv advancements.
+- **Perspective Projection**: Projects n-dimensional vertices into 3D for visualization using techniques from Noll (1967), controlled by `perspectiveTrans` and `perspectiveFocal`.
+
+### 3. **Thread-Safe and Parallelized**
+- Utilizes `std::atomic` for thread-safe parameter updates and `std::mutex` for protecting shared resources.
+- Leverages OpenMP for parallel computation of vertex interactions, energy calculations, and initialization, optimizing performance for high-dimensional simulations.
+
+### 4. **Vulkan Integration**
+- Designed to work with a `DimensionalNavigator` class for real-time rendering of energy distributions and projected vertices using Vulkan shaders.
+- Outputs energy results and projected vertices as uniforms or buffers for visualization.
+
+### 5. **Robust Parameter Management**
+- Parameters are clamped to physically meaningful ranges to ensure numerical stability.
+- Includes retry logic for memory allocation failures, automatically reducing dimensionality if resources are insufficient.
+
+## Core Components
+
+### Constructor
+```cpp
+UniversalEquation(int maxDimensions, int mode, double influence, double weak, double collapse,
+                 double twoD, double threeDInfluence, double oneDPermeation, double darkMatterStrength,
+                 double darkEnergyStrength, double alpha, double beta, double carrollFactor,
+                 double meanFieldApprox, double asymCollapse, double perspectiveTrans,
+                 double perspectiveFocal, bool debug);
