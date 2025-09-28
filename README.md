@@ -211,8 +211,6 @@ The `UniversalEquation` class is a C++ implementation designed to simulate quant
 - Parameters are clamped to physically meaningful ranges to ensure numerical stability.
 - Includes retry logic for memory allocation failures, automatically reducing dimensionality if resources are insufficient.
 
-## Core Components
-
 ### Constructor
 ```cpp
 UniversalEquation(int maxDimensions, int mode, double influence, double weak, double collapse,
