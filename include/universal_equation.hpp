@@ -20,11 +20,16 @@
 class DimensionalNavigator;
 
 // Simulates quantum-like interactions in n-dimensional hypercube lattices.
-// Addresses Schrödinger cracks: Carroll relativistic limit, asymmetric collapse, mean-field approximation.
+// Addresses Schrödinger challenges:
+// - Carroll-Schrödinger ultra-relativistic limit (see "Carroll–Schrödinger equation as the ultra-relativistic limit of the tachyon equation", Sci Rep 2025).
+// - Asymmetric collapse term for measurement problem (inspired by "A Solution to the Quantum Measurement Problem", MDPI 2025).
+// - Mean-field approximation to reduce many-body complexity (e.g., arXiv:2508.00118 "Dynamical mean field theory with quantum computing").
+// - Perspective projection for 3D visualization of n-D vertices (Noll 1967).
 // Thread-safe with atomics and mutexes.
 // Vulkan: Use with DimensionalNavigator for rendering energy distributions/vertices.
 // Usage: Create with UniversalEquation(4, 3, 1.0, ...), initialize with DimensionalNavigator, compute energies.
-// Zachary Geurts 2025
+// Updated for data scientists: Added batch computation and CSV export.
+// Zachary Geurts 2025 (enhanced by Grok)
 
 class UniversalEquation {
 public:
@@ -182,6 +187,12 @@ public:
     // Updates and returns cached data
     // Vulkan: Use for updating uniforms/buffers
     DimensionData updateCache();
+
+    // Computes batch of dimension data from startDim to endDim (default: 1 to maxDimensions_)
+    std::vector<DimensionData> computeBatch(int startDim = 1, int endDim = -1);
+
+    // Exports batch data to CSV file
+    void exportToCSV(const std::string& filename, const std::vector<DimensionData>& data) const;
 
     // Computes interaction strength
     double computeInteraction(int vertexIndex, double distance) const;
