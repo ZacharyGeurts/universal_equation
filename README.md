@@ -211,7 +211,49 @@ The `UniversalEquation` class is a C++ implementation designed to simulate quant
 - Parameters are clamped to physically meaningful ranges to ensure numerical stability.
 - Includes retry logic for memory allocation failures, automatically reducing dimensionality if resources are insufficient.
 
+## Core Components
+
 ### Constructor
+- Initializes the simulation with parameters controlling dimensionality, interaction strengths, and physical effects.
+- Clamps inputs to safe ranges (e.g., `maxDimensions` between 1 and 20, `influence` between 0 and 10).
+- Initializes n-cube vertices and precomputes trigonometric values for efficiency.
+
+### Key Methods
+- **advanceCycle()**: Advances the simulation to the next dimension, cycling back to 1 when reaching `maxDimensions`.
+- **compute()**: Calculates energy components (`EnergyResult` struct) including observable, potential, dark matter, and dark energy contributions, incorporating Carroll limit, asymmetric collapse, and perspective modulation.
+- **initializeCalculator(DimensionalNavigator*)**: Links the simulation to a Vulkan-based renderer for visualization.
+- **updateCache()**: Updates and returns cached simulation data (`DimensionData` struct) for rendering or analysis.
+- **computeInteraction(int, double)**, **computePermeation(int)**, **computeDarkEnergy(double)**, **computeCollapse()**: Helper methods for computing interaction strengths, permeation factors, dark energy contributions, and collapse terms.
+
+### Data Structures
+- **EnergyResult**: Stores computed energies (`observable`, `potential`, `darkMatter`, `darkEnergy`) with a `toString()` method for debugging.
+- **DimensionInteraction**: Represents vertex interactions with `vertexIndex`, `distance`, and `strength`.
+- **DimensionData**: Caches simulation state for rendering or analysis, including dimension and energy components.
+
+## Applications
+- **Quantum Physics Simulation**: Models quantum-like interactions in high-dimensional spaces, useful for theoretical physics research.
+- **Data Visualization**: Projects n-dimensional data into 3D for visualization, aiding data scientists in understanding complex systems.
+- **Theoretical Modeling**: Tests hypotheses related to dark matter, dark energy, and quantum measurement in a controlled simulation environment.
+- **High-Performance Computing**: Leverages parallelization for large-scale simulations, suitable for cluster or GPU-based computations.
+
+## Limitations
+- High-dimensional simulations (d > 10) may require significant memory due to exponential vertex growth (2^d vertices).
+- Level-of-Detail (LOD) reduction is applied for d > 6 to manage performance, which may reduce precision.
+- Requires a `DimensionalNavigator` for full Vulkan rendering capabilities, which is not included in the provided code.
+
+## Future Enhancements
+- Integrate with machine learning frameworks for parameter optimization.
+- Add support for dynamic dimension transitions during rendering.
+- Optimize memory usage for ultra-high dimensions using sparse data structures.
+
+## Notes
+- The class is designed for researchers and data scientists interested in quantum mechanics, high-dimensional geometry, and computational physics.
+- Debug mode provides detailed logging for diagnostics, but may impact performance in large simulations.
+- For pricing or API access to xAI's services, visit [xAI API](https://x.ai/api).
+
+This implementation provides a robust, flexible framework for exploring complex physical systems in n-dimensional spaces, with practical applications in both theoretical research and visualization.
+
+
 ```cpp
 UniversalEquation(int maxDimensions, int mode, double influence, double weak, double collapse,
                  double twoD, double threeDInfluence, double oneDPermeation, double darkMatterStrength,
