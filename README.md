@@ -8,7 +8,7 @@ I will hold at 1.9 until I can present 20 dimensions.
 My take? There are infinite and there is no bottom or top to existence.  
 Climb in the blanket and have a look around.  
 
-I think this proves the number one is real and 0 is not.  
+I think this proves the number 1 is real and 0 is not.  
 
 **Platform**: Currently Linux-only  
 If you have a problem or need assistance please open an issue.  
