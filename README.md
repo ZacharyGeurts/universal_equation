@@ -219,7 +219,6 @@ The `UniversalEquation` class is a C++ implementation designed to simulate quant
 - Initializes n-cube vertices and precomputes trigonometric values for efficiency.
 
 ### Key Methods
-- **advanceCycle()**: Advances the simulation to the next dimension, cycling back to 1 when reaching `maxDimensions`.
 - **compute()**: Calculates energy components (`EnergyResult` struct) including observable, potential, dark matter, and dark energy contributions, incorporating Carroll limit, asymmetric collapse, and perspective modulation.
 - **initializeCalculator(DimensionalNavigator*)**: Links the simulation to a Vulkan-based renderer for visualization.
 - **updateCache()**: Updates and returns cached simulation data (`DimensionData` struct) for rendering or analysis.
@@ -239,17 +238,10 @@ The `UniversalEquation` class is a C++ implementation designed to simulate quant
 ## Limitations
 - High-dimensional simulations (d > 10) may require significant memory due to exponential vertex growth (2^d vertices).
 - Level-of-Detail (LOD) reduction is applied for d > 6 to manage performance, which may reduce precision.
-- Requires a `DimensionalNavigator` for full Vulkan rendering capabilities, which is not included in the provided code.
-
-## Future Enhancements
-- Integrate with machine learning frameworks for parameter optimization.
-- Add support for dynamic dimension transitions during rendering.
-- Optimize memory usage for ultra-high dimensions using sparse data structures.
 
 ## Notes
 - The class is designed for researchers and data scientists interested in quantum mechanics, high-dimensional geometry, and computational physics.
 - Debug mode provides detailed logging for diagnostics, but may impact performance in large simulations.
-- For pricing or API access to xAI's services, visit [xAI API](https://x.ai/api).
 
 This implementation provides a robust, flexible framework for exploring complex physical systems in n-dimensional spaces, with practical applications in both theoretical research and visualization.
 
