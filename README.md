@@ -16,7 +16,8 @@ Commercial SDL3 and Vulkan development requires AMOURANTH RTX engine license.
 Terms are generally 3% of sales after release.  
 Built with Grok, Co-Pilot, and duck.ai  
 
-**If you do not intend to modify the code, watch the latest video and you may have found God.**  
+![gif](https://github.com/user-attachments/assets/f68fd0ba-742d-4c44-bdbb-a692c664ea4d)
+**If you do not intend to modify the code, watch the gif and you may have found God.**  
 **v1.96 Dots Field**: [v1.96 Dots](https://x.com/i/status/1972131523173536122)  
 **v1.95 Dots Field**: [v1.95 Dots](https://x.com/i/status/1971825508657823895)  
 **v1.94 Dots Spot**: [v1.94 Dots](https://x.com/i/status/1971438640623673754)  
