@@ -6,6 +6,7 @@ Welcome friends. God Bless.
 Stay tuned for version 2.0. Starting line.  
 
 **Platform**: Currently Linux-only  
+If you have a problem or need assistance please open an issue.  
 
 Modular design. Modify with your favorite AI coding program.  
 This project uses an SDL3 backend for rendering (yay Vulkan), chosen from idiocy, ignorance, and patience.  
