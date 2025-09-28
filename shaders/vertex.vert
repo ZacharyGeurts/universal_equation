@@ -1,19 +1,16 @@
-// Updated shader.vert: Pass dimension and scales to frag
 #version 450
 
-layout(location = 0) in vec3 inPosition;
-
-layout(location = 0) out vec3 fragPos;  // Pass pos for ray
+layout(location = 0) in vec3 inPosition; // Matches sphere geometry (vec3 from AMOURANTH::initializeSphereGeometry)
 
 layout(push_constant) uniform PushConstants {
-    mat4 model;
-    mat4 view_proj;
-    float avgProjScale;  // New
-    float jitterAlpha;   // New
-    int dimension;       // New
-} push;
+    mat4 model;      // Object-to-world transform
+    mat4 view_proj;  // View * projection transform
+} pc;
+
+layout(location = 0) out vec3 outWorldPos; // Pass world-space position to fragment shader
 
 void main() {
-    fragPos = inPosition;
-    gl_Position = push.view_proj * push.model * vec4(inPosition, 1.0);
+    vec4 worldPos = pc.model * vec4(inPosition, 1.0);
+    outWorldPos = worldPos.xyz;
+    gl_Position = pc.view_proj * worldPos;
 }

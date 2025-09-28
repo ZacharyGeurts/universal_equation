@@ -1,76 +1,54 @@
-// File: mode1.cpp (updated to incorporate additional math from UniversalEquation)
-// Mode 1: Enhanced rendering of a pulsating sphere for dimension 1, now using potential, darkMatter in oscillation
-// and dynamic camera zoom based on darkEnergy for deeper integration with compute() terms.
-// Uses simplified 128-byte PushConstants { mat4 model; mat4 view_proj; }
+// renderMode1.cpp
+// AMOURANTH RTX Engine - Render Mode 1 - September 2025
+// Renders a sphere modulated by UniversalEquation::EnergyResult for mode 1.
+// Uses observable for scale, darkEnergy for position, and energy values for color.
+// Fixed: Zoomed out 200% by tripling the view translation distance to -9.0f.
+// Compatible with existing Vulkan pipeline layout and extended PushConstants.
+// Zachary Geurts, 2025
 
 #include "core.hpp"
-#include <iostream>
-#include <vulkan/vulkan.hpp>
+#include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
 void renderMode1(AMOURANTH* amouranth, [[maybe_unused]] uint32_t imageIndex, VkBuffer vertexBuffer, VkCommandBuffer commandBuffer,
                  VkBuffer indexBuffer, float zoomLevel, int width, int height, float wavePhase,
                  const std::vector<DimensionData>& cache, VkPipelineLayout pipelineLayout) {
-
-    // Enhanced local function to compute oscillation value based on cache entry, incorporating potential and darkMatter
-    auto makeOscValue = [](const DimensionData& cacheEntry, float wavePhase) -> float {
-        const float deMod = static_cast<float>(cacheEntry.darkEnergy) * 0.65f;
-        const float dmMod = static_cast<float>(cacheEntry.darkMatter) * 0.45f;
-        const float oscSin = std::sin(wavePhase + deMod + dmMod);
-        const float oscCos = std::cos(wavePhase + dmMod);  // Additional cos term for potential modulation
-        const float rawValue = static_cast<float>(cacheEntry.observable * oscSin + cacheEntry.potential * oscCos);
-        return rawValue;
-    };
-
-    // Find the entry for dimension 1
-    const DimensionData* dimData = nullptr;
-    for (const auto& entry : cache) {
-        if (entry.dimension == 1) {
-            dimData = &entry;
-            break;
-        }
-    }
-
-    if (!dimData) {
-        std::cerr << "Warning: No data found for dimension 1 in cache.\n";
-        return;
-    }
-
-    const auto oscValue = makeOscValue(*dimData, wavePhase);
-
-    constexpr float kScaleBias = 0.5f;
-    const float scaleFactor = 1.0f + std::abs(oscValue) * kScaleBias;
-
-    // Setup transformation matrices, centered with dynamic y-rotation incorporating wavePhase for pulsation
-    glm::mat4 model = glm::mat4(1.0f);
-    const float rotY = glm::radians(static_cast<float>(1) * 40.0f + wavePhase * 0.5f);  // Dynamic rotation using wavePhase
-    model = glm::rotate(model, rotY, glm::vec3(0.0f, 1.0f, 0.0f));  // y-rotation
-    model = glm::scale(model, glm::vec3(scaleFactor * zoomLevel));
-
-    // Dynamic camera position incorporating darkEnergy for zoom variation (from computeDarkEnergy term)
-    glm::vec3 camPos = amouranth->isUserCamActive() ? amouranth->getUserCamPos() : glm::vec3(0.0f, 0.0f, -20.0f + static_cast<float>(dimData->darkEnergy) * -2.0f);
-
-    glm::mat4 view = glm::lookAt(camPos, glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
-
-    glm::mat4 proj = glm::perspective(glm::radians(45.0f), static_cast<float>(width) / static_cast<float>(height), 0.1f, 100.0f);
-
-    proj[1][1] *= -1; // Vulkan clip space adjustment
-
-    glm::mat4 viewProj = proj * view;
-
-    // Prepare simplified push constants
-    PushConstants pc{};
-    pc.model = model;
-    pc.view_proj = viewProj;
-
-    // Bind buffers
-    VkDeviceSize offsets = 0;
-    vkCmdBindVertexBuffers(commandBuffer, 0, 1, &vertexBuffer, &offsets);
+    VkDeviceSize offsets[] = {0};
+    vkCmdBindVertexBuffers(commandBuffer, 0, 1, &vertexBuffer, offsets);
     vkCmdBindIndexBuffer(commandBuffer, indexBuffer, 0, VK_INDEX_TYPE_UINT32);
 
-    // Push constants to shader
-    vkCmdPushConstants(commandBuffer, pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(PushConstants), &pc);
+    // Use the latest cache entry for mode 1
+    DimensionData energyData = cache.empty() ? DimensionData{1, 0.0, 0.0, 0.0, 0.0} : cache.back();
 
-    // Draw the sphere for dimension 1
-    vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(amouranth->getSphereIndices().size()), 1, 0, 0, 0);
+    // PushConstants with energy values
+    struct PushConstants {
+        glm::mat4 model;
+        glm::mat4 view_proj;
+        glm::vec4 energy; // observable, potential, darkMatter, darkEnergy
+    } pushConstants;
+
+    // Model matrix: scale based on observable, translate based on darkEnergy
+    pushConstants.model = glm::mat4(1.0f);
+    float scale = 1.0f + 0.1f * sin(wavePhase) + 0.5f * static_cast<float>(energyData.observable);
+    pushConstants.model = glm::scale(pushConstants.model, glm::vec3(scale));
+    pushConstants.model = glm::translate(pushConstants.model, glm::vec3(0.0f, 0.0f, 0.5f * static_cast<float>(energyData.darkEnergy)));
+
+    // View-projection matrix: zoomed out 200% by tripling z-translation
+    pushConstants.view_proj = glm::perspective(glm::radians(45.0f), static_cast<float>(width) / height, 0.1f, 100.0f);
+    pushConstants.view_proj = glm::translate(pushConstants.view_proj, glm::vec3(0.0f, 0.0f, -9.0f * zoomLevel)); // Tripled from -3.0f
+
+    // Pass energy values to fragment shader for color modulation
+    pushConstants.energy = glm::vec4(
+        static_cast<float>(energyData.observable),
+        static_cast<float>(energyData.potential),
+        static_cast<float>(energyData.darkMatter),
+        static_cast<float>(energyData.darkEnergy)
+    );
+
+    // Push constants to both vertex and fragment shaders
+    vkCmdPushConstants(commandBuffer, pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 
+                       0, sizeof(PushConstants), &pushConstants);
+
+    uint32_t indexCount = amouranth->getSphereIndices().size();
+    vkCmdDrawIndexed(commandBuffer, indexCount, 1, 0, 0, 0);
 }

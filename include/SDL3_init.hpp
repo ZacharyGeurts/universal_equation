@@ -455,6 +455,10 @@ public:
         }
     }
 
+    bool isConsoleOpen() const {
+        return m_consoleOpen;
+    }
+
 private:
     std::unique_ptr<SDL_Window, SDLWindowDeleter> m_window;
     std::unique_ptr<std::remove_pointer_t<VkInstance>, VulkanInstanceDeleter> m_instance;
@@ -488,6 +492,7 @@ private:
     GamepadButtonCallback m_gb;
     GamepadAxisCallback m_ga;
     GamepadConnectCallback m_gc;
+    bool m_consoleOpen = false;
 
     void logMessage(const std::string& message) const {
         std::string timestamp = "[" + std::to_string(SDL_GetTicks()) + "ms] " + message;
@@ -876,6 +881,10 @@ private:
                     SDL_SetAudioDeviceGain(m_audioDevice, gain == 0.0f ? 1.0f : 0.0f);
                     logMessage("Audio " + std::string(gain == 0.0f ? "unmuted" : "muted"));
                 }
+                break;
+            case SDLK_GRAVE:
+                logMessage("Toggling console");
+                m_consoleOpen = !m_consoleOpen;
                 break;
         }
     }

@@ -67,22 +67,17 @@ public:
      * @brief Constructs an FPSCounter for performance monitoring.
      * @param window SDL3 window for rendering.
      * @param font SDL_ttf font for text rendering.
-     * @param renderer SDL3 renderer (optional, defaults to nullptr).
      * @param config Configuration for text position, color, and logging.
      * @throws std::runtime_error if window or font is null.
      */
-    FPSCounter(SDL_Window* window, TTF_Font* font, SDL_Renderer* renderer = nullptr,
+    FPSCounter(SDL_Window* window, TTF_Font* font,
                const FPSCounterConfig& config = FPSCounterConfig())
-        : m_window(window), m_font(font), m_renderer(renderer), m_config(config),
-          m_textTexture(nullptr, SDL_DestroyTexture), m_textRect(config.textPosition),
-          m_textColor(config.textColor), m_showFPS(false), m_frameCount(0), m_fps(0.0f),
+        : m_window(window), m_font(font), m_config(config),
+          m_textColor(config.textColor), m_frameCount(0), m_fps(0.0f),
           m_mode(BENCHMARK_MODE), m_powerState(SDL_POWERSTATE_UNKNOWN),
           m_monitorThread(nullptr), m_monitorStop(false), m_needsUpdate(true) {
         if (!window || !font) {
             throw std::runtime_error("Invalid window or font pointer");
-        }
-        if (!renderer) {
-            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Renderer is null; text rendering disabled");
         }
 
         // Initialize static info
@@ -145,14 +140,11 @@ public:
     }
 
     /**
-     * @brief Handles keyboard events to toggle FPS display or change modes.
+     * @brief Handles keyboard events to change modes.
      * @param key SDL keyboard event.
      */
     void handleEvent(const SDL_KeyboardEvent& key) {
-        if (key.type == SDL_EVENT_KEY_DOWN && key.key == SDLK_F1) {
-            m_showFPS = !m_showFPS;
-            m_needsUpdate = true;
-        } else if (key.type == SDL_EVENT_KEY_DOWN && key.key == SDLK_F2) {
+        if (key.type == SDL_EVENT_KEY_DOWN && key.key == SDLK_F2) {
             m_mode = (m_mode % 3) + 1;  // Cycle modes: 1=Basic, 2=Frame times, 3=Full
             m_needsUpdate = true;
         }
@@ -188,13 +180,39 @@ public:
     }
 
     /**
-     * @brief Renders the FPS and system stats overlay.
+     * @brief Gets the stats string for display.
+     * @return Formatted stats string.
      */
-    void render() {
-        if (!m_showFPS || !m_renderer || !m_textTexture) {
-            return;
+    std::string getStatsString() const {
+        std::lock_guard<std::mutex> lock(m_statsMutex);
+        std::stringstream ss;
+        ss << "Device: " << m_deviceName << "\n"
+           << "CPU: " << m_cpuCount << " cores, " << std::fixed << std::setprecision(1) << m_cpuUsage.load() << "%"
+           << (m_cpuTemp >= 0 ? ", " + std::to_string(m_cpuTemp.load()) + "C" : "") << "\n"
+           << "GPU: " << m_gpuName
+           << (m_gpuUsage >= 0 ? ", " + std::to_string(static_cast<int>(m_gpuUsage.load())) + "%" : "")
+           << (m_gpuTemp >= 0 ? ", " + std::to_string(m_gpuTemp.load()) + "C" : "") << "\n"
+           << "RAM: " << m_systemRAM << "MB\n"
+           << "Battery: " << (m_batteryPercent >= 0 ? std::to_string(m_batteryPercent.load()) + "%" : "N/A") << "\n"
+           << "FPS: " << std::fixed << std::setprecision(1) << m_fps.load() << "\n";
+
+        if (m_mode >= 2) {
+            if (!m_frameTimes.empty()) {
+                double avgFT = 0.0;
+                double minFT = m_frameTimes.front(), maxFT = m_frameTimes.front();
+                for (auto ft : m_frameTimes) {
+                    avgFT += ft;
+                    minFT = std::min(minFT, ft);
+                    maxFT = std::max(maxFT, ft);
+                }
+                avgFT /= m_frameTimes.size();
+                ss << "Frame Time (avg/min/max): " << std::setprecision(2) << avgFT << "/" << minFT << "/" << maxFT << " ms\n";
+            }
         }
-        SDL_RenderTexture(m_renderer, m_textTexture.get(), nullptr, &m_textRect);
+
+        ss << "Mode: " << m_mode << "D";
+
+        return ss.str();
     }
 
     /**
@@ -204,6 +222,10 @@ public:
     void setMode(int mode) {
         m_mode = std::max(1, std::min(3, mode));
         m_needsUpdate = true;
+    }
+
+    int getMode() const {
+        return m_mode;
     }
 
     /**
@@ -266,12 +288,8 @@ public:
 private:
     SDL_Window* m_window;
     TTF_Font* m_font;
-    SDL_Renderer* m_renderer;
     FPSCounterConfig m_config;
-    std::unique_ptr<SDL_Texture, decltype(&SDL_DestroyTexture)> m_textTexture;
-    SDL_FRect m_textRect;
     SDL_Color m_textColor;
-    std::atomic<bool> m_showFPS;
     std::atomic<int> m_frameCount;
     std::atomic<float> m_fps;
     int m_mode;
@@ -290,7 +308,7 @@ private:
     std::chrono::high_resolution_clock::time_point m_lastTime;
     std::chrono::high_resolution_clock::time_point m_fpsUpdateTime;
     std::deque<double> m_frameTimes;  // ms, rolling window for benchmarks
-    std::mutex m_statsMutex;
+    mutable std::mutex m_statsMutex;
 
     // Background monitoring
     std::unique_ptr<std::thread> m_monitorThread;
@@ -508,14 +526,7 @@ private:
      * @brief Initializes GPU information.
      */
     void initGPUInfo() {
-        if (m_renderer) {
-            const char* rendererName = SDL_GetRendererName(m_renderer);
-            if (rendererName) {
-                m_gpuName = rendererName;
-            }
-        } else {
-            m_gpuName = "Unknown Device";
-        }
+        m_gpuName = "Unknown Device";
     }
 
     /**
@@ -546,61 +557,8 @@ private:
             }
 #endif
 
-            generateText();
             m_needsUpdate = false;
         }
-    }
-
-    /**
-     * @brief Generates text texture for rendering system stats.
-     */
-    void generateText() {
-        if (!m_renderer) return;
-
-        std::stringstream ss;
-        ss << "Device: " << m_deviceName << "\n"
-           << "CPU: " << m_cpuCount << " cores, " << std::fixed << std::setprecision(1) << m_cpuUsage.load() << "%"
-           << (m_cpuTemp >= 0 ? ", " + std::to_string(m_cpuTemp.load()) + "C" : "") << "\n"
-           << "GPU: " << m_gpuName
-           << (m_gpuUsage >= 0 ? ", " + std::to_string(static_cast<int>(m_gpuUsage.load())) + "%" : "")
-           << (m_gpuTemp >= 0 ? ", " + std::to_string(m_gpuTemp.load()) + "C" : "") << "\n"
-           << "RAM: " << m_systemRAM << "MB\n"
-           << "Battery: " << (m_batteryPercent >= 0 ? std::to_string(m_batteryPercent.load()) + "%" : "N/A") << "\n"
-           << "FPS: " << std::fixed << std::setprecision(1) << m_fps.load() << "\n";
-
-        if (m_mode >= 2) {
-            std::lock_guard<std::mutex> lock(m_statsMutex);
-            if (!m_frameTimes.empty()) {
-                double avgFT = 0.0;
-                double minFT = m_frameTimes.front(), maxFT = m_frameTimes.front();
-                for (auto ft : m_frameTimes) {
-                    avgFT += ft;
-                    minFT = std::min(minFT, ft);
-                    maxFT = std::max(maxFT, ft);
-                }
-                avgFT /= m_frameTimes.size();
-                ss << "Frame Time (avg/min/max): " << std::setprecision(2) << avgFT << "/" << minFT << "/" << maxFT << " ms\n";
-            }
-        }
-
-        ss << "Mode: " << m_mode << "D";
-
-        SDL_Surface* surface = TTF_RenderText_Blended_Wrapped(m_font, ss.str().c_str(), m_textColor, 0);
-        if (!surface) {
-            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Failed to create text surface: %s", SDL_GetError());
-            return;
-        }
-
-        m_textTexture.reset(SDL_CreateTextureFromSurface(m_renderer, surface));
-        if (!m_textTexture) {
-            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Failed to create text texture: %s", SDL_GetError());
-        } else {
-            int w, h;
-            SDL_QueryTexture(m_textTexture.get(), nullptr, nullptr, &w, &h);
-            m_textRect.w = static_cast<float>(w);
-            m_textRect.h = static_cast<float>(h);
-        }
-        SDL_DestroySurface(surface);
     }
 };
 

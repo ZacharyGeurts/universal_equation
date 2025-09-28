@@ -20,6 +20,13 @@
 #include <algorithm>
 #include "universal_equation.hpp"
 
+// PushConstants for shader data
+struct PushConstants {
+    alignas(16) glm::mat4 model;       // 64 bytes
+    alignas(16) glm::mat4 view_proj;   // 64 bytes
+};
+static_assert(sizeof(PushConstants) == 128, "PushConstants size must be 128 bytes");
+
 // Platform-specific font path
 #ifdef __ANDROID__
 #define FONT_PATH "fonts/sf-plasmatica-open.ttf"
@@ -39,13 +46,6 @@ struct DimensionData {
     double darkMatter;       // Dark matter influence
     double darkEnergy;       // Dark energy influence
 };
-
-// Push constants for passing transformation and simulation data to Vulkan shaders.
-struct PushConstants {
-    alignas(16) glm::mat4 model;       // 64 bytes: Per-object world transform
-    alignas(16) glm::mat4 view_proj;   // 64 bytes: Pre-computed view * projection (per-frame)
-};
-static_assert(sizeof(PushConstants) == 128, "PushConstants size must be 128 bytes for compatibility");
 
 // Structure for storing font glyph data for text rendering with SDL_ttf.
 struct Glyph {
@@ -215,7 +215,7 @@ void renderMode9(AMOURANTH* amouranth, uint32_t imageIndex, VkBuffer vertexBuffe
                  VkBuffer indexBuffer, float zoomLevel, int width, int height, float wavePhase,
                  const std::vector<DimensionData>& cache, VkPipelineLayout pipelineLayout);
 
-// Inline implementations for AMOURANTH methods
+// Inline implementations
 inline AMOURANTH::AMOURANTH(DimensionalNavigator* navigator) {
     if (!navigator) {
         throw std::runtime_error("AMOURANTH: Null DimensionalNavigator provided.");

@@ -207,7 +207,6 @@ $(EXECUTABLE): $(OBJECTS) $(SHADER_OBJECTS)
 
 # Compile source files to object files
 $(BUILD_DIR)/%.o: $(SRC_DIR)/%.cpp
-	@echo "Loading module: $<"
 	$(CXX) $(CXXFLAGS) -c $< -o $@ $(if $(filter Android,$(UNAME_S)),-fPIC,)
 
 # Compile shader files to SPIR-V (Vulkan 1.3 for ray tracing support)
