@@ -2,16 +2,18 @@
 // Zachary Geurts 2025 (enhanced by Grok for foundational cracks and perspective dimensions)
 // Simulates quantum-like interactions in n-dimensional hypercube lattices.
 // Addresses Schrödinger challenges:
-// - Carroll-Schrödinger ultra-relativistic limit via 'carrollFactor' (flat-space approximation).
-// - Asymmetric collapse term (MDPI 2025-inspired) for measurement problem, now deterministic.
-// - Mean-field approximation (arXiv 2025) to reduce many-body complexity.
-// - Perspective projection (Noll 1967) for 3D visualization of n-D vertices.
+// - Carroll-Schrödinger ultra-relativistic limit via 'carrollFactor' (see "Carroll–Schrödinger equation as the ultra-relativistic limit of the tachyon equation", Sci Rep 2025).
+// - Asymmetric collapse term for measurement problem, now deterministic (inspired by "A Solution to the Quantum Measurement Problem", MDPI 2025).
+// - Mean-field approximation to reduce many-body complexity (e.g., arXiv:2508.00118 "Dynamical mean field theory with quantum computing").
+// - Perspective projection for 3D visualization of n-D vertices (Noll 1967).
 // Thread-safe, parallelized with OpenMP for physics simulations and visualization.
 // Vulkan: Use with DimensionalNavigator for rendering energy distributions/vertices.
+// Updated for data scientists: Fixed projection storage, added batch compute and CSV export.
 
 #include "universal_equation.hpp"
 #include <cmath>
 #include <thread>
+#include <fstream>
 
 // Constructor: Initializes simulation with clamped parameters
 // Includes fixes for relativity, measurement, many-body, and perspective projection
@@ -44,7 +46,8 @@ UniversalEquation::UniversalEquation(
       omega_(maxDimensions_ > 0 ? 2.0 * M_PI / (2 * maxDimensions_ - 1) : 1.0),
       invMaxDim_(maxDimensions_ > 0 ? 1.0 / maxDimensions_ : 1e-15),
       needsUpdate_(true),
-      navigator_(nullptr) {
+      navigator_(nullptr),
+      avgProjScale_(1.0) {
     try {
         initializeWithRetry();
         if (debug_) {
@@ -120,6 +123,10 @@ UniversalEquation::EnergyResult UniversalEquation::compute() const {
             avgScale = sumScale / localInteractions.size();
         }
         observable *= avgScale;
+        {
+            std::lock_guard<std::mutex> lock(projMutex_);
+            avgProjScale_ = avgScale;
+        }
     }
 
     double totalDarkMatter = 0.0, totalDarkEnergy = 0.0, interactionSum = 0.0;
@@ -249,7 +256,7 @@ double UniversalEquation::computeDarkEnergy(double distance) const {
     return result;
 }
 
-// Computes collapse factor with deterministic asymmetric term (MDPI 2025)
+// Computes collapse factor with deterministic asymmetric term
 double UniversalEquation::computeCollapse() const {
     if (currentDimension_.load() == 1) return 0.0;
     double phase = static_cast<double>(currentDimension_.load()) / (2 * maxDimensions_);
@@ -319,6 +326,7 @@ void UniversalEquation::initializeNCube() {
 void UniversalEquation::updateInteractions() const {
     std::lock_guard<std::mutex> lock(mutex_);
     interactions_.clear();
+    projectedVerts_.clear();
     int d = currentDimension_.load();
     uint64_t numVertices = std::min(static_cast<uint64_t>(1ULL << d), maxVertices_);
     if (d > 6) {
@@ -331,6 +339,10 @@ void UniversalEquation::updateInteractions() const {
         }
     }
     interactions_.reserve(numVertices - 1);
+    {
+        std::lock_guard<std::mutex> lock(projMutex_);
+        projectedVerts_.reserve(numVertices);
+    }
     if (nCubeVertices_.empty()) {
         std::lock_guard<std::mutex> lock(debugMutex_);
         std::cerr << "[ERROR] nCubeVertices_ is empty\n";
@@ -343,10 +355,15 @@ void UniversalEquation::updateInteractions() const {
     double depthRef = referenceVertex[depthIdx] + trans;
     if (depthRef <= 0.0) depthRef = 0.001;
     double scaleRef = focal / depthRef;
-    double projRef[3] = {0.0f, 0.0f, 0.0f};
+    double projRef[3] = {0.0, 0.0, 0.0};
     int projDim = std::min(3, d - 1);
     for (int k = 0; k < projDim; ++k) {
         projRef[k] = referenceVertex[k] * scaleRef;
+    }
+    glm::vec3 projRefVec(static_cast<float>(projRef[0]), static_cast<float>(projRef[1]), static_cast<float>(projRef[2]));
+    {
+        std::lock_guard<std::mutex> lock(projMutex_);
+        projectedVerts_.push_back(projRefVec);
     }
     if (debug_) {
         std::lock_guard<std::mutex> lock(debugMutex_);
@@ -357,14 +374,16 @@ void UniversalEquation::updateInteractions() const {
         #pragma omp parallel
         {
             std::vector<DimensionInteraction> localInteractions;
+            std::vector<glm::vec3> localProjected;
             localInteractions.reserve((numVertices - 1) / omp_get_num_threads() + 1);
+            localProjected.reserve((numVertices - 1) / omp_get_num_threads() + 1);
             #pragma omp for
             for (uint64_t i = 1; i < numVertices; ++i) {
                 const auto& v = nCubeVertices_[i];
                 double depthI = v[depthIdx] + trans;
                 if (depthI <= 0.0) depthI = 0.001;
                 double scaleI = focal / depthI;
-                double projI[3] = {0.0f, 0.0f, 0.0f};
+                double projI[3] = {0.0, 0.0, 0.0};
                 for (int k = 0; k < projDim; ++k) {
                     projI[k] = v[k] * scaleI;
                 }
@@ -379,10 +398,14 @@ void UniversalEquation::updateInteractions() const {
                 }
                 double strength = computeInteraction(static_cast<int>(i), distance);
                 localInteractions.emplace_back(static_cast<int>(i), distance, strength);
+                glm::vec3 projIVec(static_cast<float>(projI[0]), static_cast<float>(projI[1]), static_cast<float>(projI[2]));
+                localProjected.push_back(projIVec);
             }
             #pragma omp critical
             {
                 interactions_.insert(interactions_.end(), localInteractions.begin(), localInteractions.end());
+                std::lock_guard<std::mutex> lock(projMutex_);
+                projectedVerts_.insert(projectedVerts_.end(), localProjected.begin(), localProjected.end());
             }
         }
     } else {
@@ -391,7 +414,7 @@ void UniversalEquation::updateInteractions() const {
             double depthI = v[depthIdx] + trans;
             if (depthI <= 0.0) depthI = 0.001;
             double scaleI = focal / depthI;
-            double projI[3] = {0.0f, 0.0f, 0.0f};
+            double projI[3] = {0.0, 0.0, 0.0};
             for (int k = 0; k < projDim; ++k) {
                 projI[k] = v[k] * scaleI;
             }
@@ -406,6 +429,11 @@ void UniversalEquation::updateInteractions() const {
             }
             double strength = computeInteraction(static_cast<int>(i), distance);
             interactions_.emplace_back(static_cast<int>(i), distance, strength);
+            glm::vec3 projIVec(static_cast<float>(projI[0]), static_cast<float>(projI[1]), static_cast<float>(projI[2]));
+            {
+                std::lock_guard<std::mutex> lock(projMutex_);
+                projectedVerts_.push_back(projIVec);
+            }
         }
     }
     if (d == 3) {
@@ -418,7 +446,7 @@ void UniversalEquation::updateInteractions() const {
                 double depthI = v[depthIdx] + trans;
                 if (depthI <= 0.0) depthI = 0.001;
                 double scaleI = focal / depthI;
-                double projI[3] = {0.0f, 0.0f, 0.0f};
+                double projI[3] = {0.0, 0.0, 0.0};
                 for (int k = 0; k < projDim; ++k) {
                     projI[k] = v[k] * scaleI;
                 }
@@ -430,6 +458,11 @@ void UniversalEquation::updateInteractions() const {
                 double distance = std::sqrt(distSq);
                 double strength = computeInteraction(static_cast<int>(vertexIndex), distance);
                 interactions_.emplace_back(static_cast<int>(vertexIndex), distance, strength);
+                glm::vec3 projIVec(static_cast<float>(projI[0]), static_cast<float>(projI[1]), static_cast<float>(projI[2]));
+                {
+                    std::lock_guard<std::mutex> lock(projMutex_);
+                    projectedVerts_.push_back(projIVec);
+                }
             }
         }
     }
@@ -521,4 +554,47 @@ UniversalEquation::DimensionData UniversalEquation::updateCache() {
         std::cout << "[DEBUG] updateCache completed: " << data.toString() << "\n";
     }
     return data;
+}
+
+// Computes batch of dimension data
+std::vector<UniversalEquation::DimensionData> UniversalEquation::computeBatch(int startDim, int endDim) {
+    if (endDim == -1) endDim = maxDimensions_;
+    startDim = std::clamp(startDim, 1, maxDimensions_);
+    endDim = std::clamp(endDim, startDim, maxDimensions_);
+    int savedDim = currentDimension_.load();
+    int savedMode = mode_.load();
+    std::vector<DimensionData> results;
+    results.reserve(static_cast<size_t>(endDim - startDim + 1));
+    for (int d = startDim; d <= endDim; ++d) {
+        currentDimension_.store(d);
+        mode_.store(d);
+        needsUpdate_.store(true);
+        initializeWithRetry();
+        results.push_back(updateCache());
+    }
+    currentDimension_.store(savedDim);
+    mode_.store(savedMode);
+    needsUpdate_.store(true);
+    initializeWithRetry();  // Restore original state
+    return results;
+}
+
+// Exports data to CSV
+void UniversalEquation::exportToCSV(const std::string& filename, const std::vector<DimensionData>& data) const {
+    std::ofstream ofs(filename);
+    if (!ofs) {
+        throw std::runtime_error("Cannot open CSV file for writing: " + filename);
+    }
+    ofs << "Dimension,Observable,Potential,DarkMatter,DarkEnergy\n";
+    for (const auto& d : data) {
+        ofs << d.dimension << ","
+            << std::fixed << std::setprecision(6) << d.observable << ","
+            << d.potential << ","
+            << d.darkMatter << ","
+            << d.darkEnergy << "\n";
+    }
+    if (debug_) {
+        std::lock_guard<std::mutex> lock(debugMutex_);
+        std::cout << "[DEBUG] Exported data to " << filename << "\n";
+    }
 }
