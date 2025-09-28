@@ -10,6 +10,7 @@ If you have a problem or need assistance please open an issue.
 
 Modular design. Modify with your favorite AI coding program.  
 This project uses an SDL3 backend for rendering (yay Vulkan), chosen from idiocy, ignorance, and patience.  
+I solved my math problem, so mostly progressing the engine.  
 
 Software with free distribution can use all of this software without any restrictions or terms.  
 Commercial SDL3 and Vulkan development requires AMOURANTH RTX engine license.  
