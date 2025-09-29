@@ -2,59 +2,32 @@
 #define UE_INIT_HPP
 
 #include <vector>
-#include <string>
 #include <cmath>
-#include <sstream>
-#include <iomanip>
 #include <mutex>
 #include <atomic>
 #include <algorithm>
-#include <fstream>
-#include <random>
-#include <iostream>
 #include <glm/glm.hpp>
+#include <random>
 
 // used by AMOURANTH RTX September 2025
-// this is not part of universal_equation and is for visualization
+// Optimized for visualization of 30,000 balls in dimension 8
 // Zachary Geurts 2025
 
-// Structure to hold data for each rendered dimension
 struct DimensionData {
     int dimension;
     double observable;
     double potential;
     double darkMatter;
     double darkEnergy;
-    std::string toString() const {
-        std::ostringstream oss;
-        oss << std::fixed << std::setprecision(6)
-            << "Dimension: " << dimension
-            << ", Observable: " << observable
-            << ", Potential: " << potential
-            << ", Dark Matter: " << darkMatter
-            << ", Dark Energy: " << darkEnergy;
-        return oss.str();
-    }
 };
 
-// Structure to hold energy computation results
 struct EnergyResult {
     double observable = 0.0;
     double potential = 0.0;
     double darkMatter = 0.0;
     double darkEnergy = 0.0;
-    std::string toString() const {
-        std::ostringstream oss;
-        oss << std::fixed << std::setprecision(6)
-            << "Observable: " << observable
-            << ", Potential: " << potential
-            << ", Dark Matter: " << darkMatter
-            << ", Dark Energy: " << darkEnergy;
-        return oss.str();
-    }
 };
 
-// Structure to hold dimension interaction data
 struct DimensionInteraction {
     int dimension;
     double strength;
@@ -63,29 +36,38 @@ struct DimensionInteraction {
         : dimension(dim), strength(str), phase(ph) {}
 };
 
-// Structure to hold ball physics properties
 struct Ball {
     glm::vec3 position;
     glm::vec3 velocity;
     glm::vec3 acceleration;
     float mass;
     float radius;
-    float startTime; // Start time in seconds for staggered initialization
+    float startTime;
     Ball(const glm::vec3& pos, const glm::vec3& vel, float m, float r, float start)
         : position(pos), velocity(vel), acceleration(0.0f), mass(m), radius(r), startTime(start) {}
 };
 
-// Forward declaration for Vulkan rendering
 class AMOURANTH;
 
-// Class for computing multidimensional physics simulations for visualization
+class Xorshift {
+public:
+    Xorshift(uint32_t seed) : state_(seed) {}
+    float nextFloat(float min, float max) {
+        state_ ^= state_ << 13;
+        state_ ^= state_ >> 17;
+        state_ ^= state_ << 5;
+        return min + (max - min) * (state_ & 0x7FFFFFFF) / static_cast<float>(0x7FFFFFFF);
+    }
+private:
+    uint32_t state_;
+};
+
 class UniversalEquation {
 public:
-    // Constructor with simulation parameters
     UniversalEquation(
-        int maxDimensions = 11,
-        int mode = 3,
-        double influence = 1.0,
+        int maxDimensions = 8,
+        int mode = 8,
+        double influence = 2.5,
         double alpha = 0.0072973525693,
         bool debug = false
     ) : maxDimensions_(maxDimensions),
@@ -100,7 +82,6 @@ public:
         initializeNCube();
     }
 
-    // Parameter setters (thread-safe, clamped)
     void setCurrentDimension(int dimension) {
         currentDimension_ = std::clamp(dimension, 1, maxDimensions_);
         needsUpdate_ = true;
@@ -113,15 +94,12 @@ public:
         alpha_ = std::clamp(alpha, 0.1, 10.0);
         needsUpdate_ = true;
     }
-    void setDebug(bool debug) {
-        debug_ = debug;
-    }
+    void setDebug(bool debug) { debug_ = debug; }
     void setMode(int mode) {
         mode_ = std::clamp(mode, 1, maxDimensions_);
         needsUpdate_ = true;
     }
 
-    // Parameter getters (thread-safe)
     int getCurrentDimension() const { return currentDimension_.load(); }
     double getInfluence() const { return influence_.load(); }
     double getAlpha() const { return alpha_.load(); }
@@ -131,10 +109,6 @@ public:
     double getWavePhase() const { return wavePhase_; }
     float getSimulationTime() const { return simulationTime_; }
     const std::vector<DimensionInteraction>& getInteractions() const {
-        std::lock_guard<std::mutex> lock(mutex_);
-        if (debug_) {
-            std::cout << "[DEBUG] Entering getInteractions, needsUpdate=" << needsUpdate_ << "\n";
-        }
         if (needsUpdate_) {
             updateInteractions();
             needsUpdate_ = false;
@@ -142,36 +116,24 @@ public:
         return interactions_;
     }
     const std::vector<std::vector<double>>& getNCubeVertices() const {
-        std::lock_guard<std::mutex> lock(mutex_);
         return nCubeVertices_;
     }
     const std::vector<glm::vec3>& getProjectedVertices() const {
-        std::lock_guard<std::mutex> lock(projMutex_);
         return projectedVerts_;
     }
-    double getAvgProjScale() const {
-        std::lock_guard<std::mutex> lock(projMutex_);
-        return avgProjScale_;
-    }
-    const std::vector<Ball>& getBalls() const {
-        std::lock_guard<std::mutex> lock(physicsMutex_);
-        return balls_;
-    }
+    double getAvgProjScale() const { return avgProjScale_; }
+    const std::vector<Ball>& getBalls() const { return balls_; }
     std::mutex& getPhysicsMutex() const { return physicsMutex_; }
 
-    // Updates projected vertices (thread-safe)
     void updateProjectedVertices(const std::vector<glm::vec3>& newVerts) {
-        std::lock_guard<std::mutex> lock(projMutex_);
         projectedVerts_ = newVerts;
     }
 
-    // Advances simulation to next dimension
     void advanceCycle() {
         wavePhase_ += 0.1;
         needsUpdate_ = true;
     }
 
-    // Computes energy components
     EnergyResult compute() const {
         EnergyResult result;
         result.observable = influence_ * std::cos(wavePhase_);
@@ -181,19 +143,12 @@ public:
         return result;
     }
 
-    // Initializes with AMOURANTH for Vulkan rendering
     void initializeCalculator(AMOURANTH* amouranth) {
-        if (!amouranth) {
-            throw std::invalid_argument("AMOURANTH cannot be null");
-        }
+        if (!amouranth) return;
         navigator_ = amouranth;
         initializeWithRetry();
-        if (debug_) {
-            std::cout << "[DEBUG] Initialized calculator with AMOURANTH\n";
-        }
     }
 
-    // Updates and returns cached data
     DimensionData updateCache() {
         DimensionData data;
         data.dimension = currentDimension_;
@@ -205,15 +160,12 @@ public:
         return data;
     }
 
-    // Computes batch of dimension data
     std::vector<DimensionData> computeBatch(int startDim = 1, int endDim = -1) {
         if (endDim == -1) endDim = maxDimensions_;
         startDim = std::clamp(startDim, 1, maxDimensions_);
         endDim = std::clamp(endDim, startDim, maxDimensions_);
-        
         std::vector<DimensionData> results;
         results.reserve(endDim - startDim + 1);
-        
         for (int dim = startDim; dim <= endDim; ++dim) {
             setCurrentDimension(dim);
             results.push_back(updateCache());
@@ -221,90 +173,42 @@ public:
         return results;
     }
 
-    // Exports data to CSV
-    void exportToCSV(const std::string& filename, const std::vector<DimensionData>& data) const {
-        std::ofstream ofs(filename);
-        if (!ofs) {
-            throw std::runtime_error("Cannot open CSV file for writing: " + filename);
-        }
-        ofs << "Dimension,Observable,Potential,DarkMatter,DarkEnergy\n";
-        for (const auto& d : data) {
-            ofs << d.dimension << ","
-                << std::fixed << std::setprecision(6) << d.observable << ","
-                << d.potential << ","
-                << d.darkMatter << ","
-                << d.darkEnergy << "\n";
-        }
-        if (debug_) {
-            std::lock_guard<std::mutex> lock(debugMutex_);
-            std::cout << "[DEBUG] Exported data to " << filename << "\n";
-        }
-    }
-
-    // Computes interaction strength
+    // Reintroduced methods for AMOURANTH compatibility
     double computeInteraction(int vertexIndex, double distance) const {
         return influence_ * std::cos(wavePhase_ + vertexIndex * 0.1) / (distance + 1e-6);
     }
-
-    // Computes permeation factor
     double computePermeation(int vertexIndex) const {
         return influence_ * std::sin(wavePhase_ + vertexIndex * 0.1);
     }
-
-    // Computes dark energy contribution
     double computeDarkEnergy(double distance) const {
         return influence_ * 0.68 / (distance + 1e-6);
     }
 
-    // Initializes balls with physics properties, staggered start times, and initial velocities
-    void initializeBalls(float baseMass = 1.0f, float baseRadius = 0.1f, size_t numBalls = 200) {
-        std::lock_guard<std::mutex> lock(physicsMutex_);
+    void initializeBalls(float baseMass = 1.2f, float baseRadius = 0.12f, size_t numBalls = 30000) {
         balls_.clear();
-        simulationTime_ = 0.0f; // Reset simulation time
-        auto verts = getProjectedVertices();
+        simulationTime_ = 0.0f;
         balls_.reserve(numBalls);
         auto result = compute();
         float massScale = static_cast<float>(result.darkMatter);
-        std::random_device rd;
-        std::mt19937 gen(rd());
-        std::uniform_real_distribution<float> distX(-5.0f, 5.0f);
-        std::uniform_real_distribution<float> distY(-5.0f, 5.0f);
-        std::uniform_real_distribution<float> distZ(-2.0f, 2.0f);
-        std::uniform_real_distribution<float> velDist(-1.0f, 1.0f); // Initial velocity range
+        Xorshift rng(12345);
         for (size_t i = 0; i < numBalls; ++i) {
-            glm::vec3 pos = (i < verts.size()) ? verts[i] : glm::vec3(distX(gen), distY(gen), distZ(gen));
-            glm::vec3 vel(velDist(gen), velDist(gen), velDist(gen)); // Random initial velocity
-            float startTime = i * 0.001f; // 1ms delay per ball
+            glm::vec3 pos(rng.nextFloat(-5.0f, 5.0f), rng.nextFloat(-5.0f, 5.0f), rng.nextFloat(-2.0f, 2.0f));
+            glm::vec3 vel(rng.nextFloat(-1.0f, 1.0f), rng.nextFloat(-1.0f, 1.0f), rng.nextFloat(-1.0f, 1.0f));
+            float startTime = i * 0.1f;
             balls_.emplace_back(pos, vel, baseMass * massScale, baseRadius, startTime);
-            if (debug_) {
-                std::cout << "[DEBUG] Initialized ball " << i << " with startTime=" << startTime
-                          << "s, velocity=(" << vel.x << ", " << vel.y << ", " << vel.z << ")\n";
-            }
-        }
-        if (debug_) {
-            std::lock_guard<std::mutex> lock(debugMutex_);
-            std::cout << "[DEBUG] Initialized " << balls_.size() << " balls with mass=" << baseMass * massScale
-                      << ", radius=" << baseRadius << ", requested numBalls=" << numBalls << "\n";
         }
     }
 
-    // Updates ball physics, respecting start times (with sphere-sphere collisions)
     void updateBalls(float deltaTime) {
-        std::lock_guard<std::mutex> lock(physicsMutex_);
         simulationTime_ += deltaTime;
-        if (debug_) {
-            std::cout << "[DEBUG] Starting updateBalls with " << balls_.size() << " balls, simulationTime=" << simulationTime_ << "s\n";
-        }
-
+        auto& balls = balls_;
         auto interactions = getInteractions();
         auto result = compute();
-        if (debug_) {
-            std::cout << "[DEBUG] Got interactions and computed result\n";
-        }
 
-        // Update accelerations for active balls
-        for (size_t i = 0; i < balls_.size(); ++i) {
-            if (simulationTime_ < balls_[i].startTime) continue;
+        // Update accelerations in parallel
+#pragma omp parallel for
+        for (size_t i = 0; i < balls.size(); ++i) {
+            if (simulationTime_ < balls[i].startTime) continue;
             glm::vec3 force(0.0f);
             double interactionStrength = (i < interactions.size()) ? interactions[i].strength : 0.0;
             force += glm::vec3(
@@ -312,68 +216,90 @@ public:
                 static_cast<float>(result.potential),
                 static_cast<float>(result.darkEnergy)
             ) * static_cast<float>(interactionStrength);
-            balls_[i].acceleration = force / balls_[i].mass;
-            if (debug_) {
-                std::cout << "[DEBUG] Updated acceleration for ball " << i << "\n";
-            }
+            balls[i].acceleration = force / balls[i].mass;
         }
 
-        // Detect and resolve sphere-sphere collisions
-        bool allStarted = true;
-        for (const auto& ball : balls_) {
-            if (simulationTime_ < ball.startTime) {
-                allStarted = false;
-                break;
-            }
+        // Boundary collisions (moved from renderMode8)
+        const glm::vec3 boundsMin(-5.0f, -5.0f, -2.0f);
+        const glm::vec3 boundsMax(5.0f, 5.0f, 2.0f);
+#pragma omp parallel for
+        for (size_t i = 0; i < balls.size(); ++i) {
+            if (simulationTime_ < balls[i].startTime) continue;
+            auto& pos = balls[i].position;
+            auto& vel = balls[i].velocity;
+            if (pos.x < boundsMin.x) { pos.x = boundsMin.x; vel.x = -vel.x; }
+            if (pos.x > boundsMax.x) { pos.x = boundsMax.x; vel.x = -vel.x; }
+            if (pos.y < boundsMin.y) { pos.y = boundsMin.y; vel.y = -vel.y; }
+            if (pos.y > boundsMax.y) { pos.y = boundsMax.y; vel.y = -vel.y; }
+            if (pos.z < boundsMin.z) { pos.z = boundsMin.z; vel.z = -vel.z; }
+            if (pos.z > boundsMax.z) { pos.z = boundsMax.z; vel.z = -vel.z; }
         }
-        if (balls_.size() > 1 && allStarted) {
-            for (size_t i = 0; i < balls_.size(); ++i) {
-                for (size_t j = i + 1; j < balls_.size(); ++j) { // Corrected loop: ++j
-                    if (simulationTime_ < balls_[i].startTime || simulationTime_ < balls_[j].startTime) continue;
-                    glm::vec3 delta = balls_[j].position - balls_[i].position;
-                    float distance = glm::length(delta);
-                    float minDistance = balls_[i].radius + balls_[j].radius;
-                    if (distance < minDistance && distance > 0.0f) {
-                        glm::vec3 normal = delta / distance;
-                        glm::vec3 relVelocity = balls_[j].velocity - balls_[i].velocity;
-                        float impulse = -2.0f * glm::dot(relVelocity, normal) / (1.0f / balls_[i].mass + 1.0f / balls_[j].mass);
-                        balls_[i].velocity += (impulse / balls_[i].mass) * normal;
-                        balls_[j].velocity -= (impulse / balls_[j].mass) * normal;
-                        float overlap = minDistance - distance;
-                        balls_[i].position -= normal * (overlap * 0.5f);
-                        balls_[j].position += normal * (overlap * 0.5f);
-                        if (debug_) {
-                            std::cout << "[DEBUG] Resolved collision between balls " << i << " and " << j << "\n";
+
+        // Grid-based collision detection
+        const int gridSize = 10;
+        const float cellSize = 10.0f / gridSize;
+        std::vector<std::vector<size_t>> grid(gridSize * gridSize * gridSize);
+        for (size_t i = 0; i < balls.size(); ++i) {
+            if (simulationTime_ < balls[i].startTime) continue;
+            glm::vec3 pos = balls[i].position;
+            int x = static_cast<int>((pos.x + 5.0f) / cellSize);
+            int y = static_cast<int>((pos.y + 5.0f) / cellSize);
+            int z = static_cast<int>((pos.z + 2.0f) / cellSize * 0.5f);
+            x = std::clamp(x, 0, gridSize - 1);
+            y = std::clamp(y, 0, gridSize - 1);
+            z = std::clamp(z, 0, gridSize - 1);
+            int cellIdx = z * gridSize * gridSize + y * gridSize + x;
+            grid[cellIdx].push_back(i);
+        }
+
+        // Resolve collisions in neighboring cells
+#pragma omp parallel for
+        for (size_t i = 0; i < balls.size(); ++i) {
+            if (simulationTime_ < balls[i].startTime) continue;
+            glm::vec3 pos = balls[i].position;
+            int x = static_cast<int>((pos.x + 5.0f) / cellSize);
+            int y = static_cast<int>((pos.y + 5.0f) / cellSize);
+            int z = static_cast<int>((pos.z + 2.0f) / cellSize * 0.5f);
+            x = std::clamp(x, 0, gridSize - 1);
+            y = std::clamp(y, 0, gridSize - 1);
+            z = std::clamp(z, 0, gridSize - 1);
+
+            for (int dz = -1; dz <= 1; ++dz) {
+                for (int dy = -1; dy <= 1; ++dy) {
+                    for (int dx = -1; dx <= 1; ++dx) {
+                        int nx = x + dx, ny = y + dy, nz = z + dz;
+                        if (nx < 0 || nx >= gridSize || ny < 0 || ny >= gridSize || nz < 0 || nz >= gridSize) continue;
+                        int cellIdx = nz * gridSize * gridSize + ny * gridSize + nx;
+                        for (size_t j : grid[cellIdx]) {
+                            if (j <= i || simulationTime_ < balls[j].startTime) continue;
+                            glm::vec3 delta = balls[j].position - balls[i].position;
+                            float distance = glm::length(delta);
+                            float minDistance = balls[i].radius + balls[j].radius;
+                            if (distance < minDistance && distance > 0.0f) {
+                                glm::vec3 normal = delta / distance;
+                                glm::vec3 relVelocity = balls[j].velocity - balls[i].velocity;
+                                float impulse = -2.0f * glm::dot(relVelocity, normal) / (1.0f / balls[i].mass + 1.0f / balls[j].mass);
+#pragma omp critical
+                                {
+                                    balls[i].velocity += (impulse / balls[i].mass) * normal;
+                                    balls[j].velocity -= (impulse / balls[j].mass) * normal;
+                                    float overlap = minDistance - distance;
+                                    balls[i].position -= normal * (overlap * 0.5f);
+                                    balls[j].position += normal * (overlap * 0.5f);
+                                }
+                            }
                         }
                     }
                 }
             }
         }
 
-        // Update velocities and positions for active balls
-        for (size_t i = 0; i < balls_.size(); ++i) {
-            if (simulationTime_ < balls_[i].startTime) continue;
-            balls_[i].velocity += balls_[i].acceleration * deltaTime;
-            balls_[i].position += balls_[i].velocity * deltaTime;
-            if (debug_) {
-                std::cout << "[DEBUG] Updated velocity and position for ball " << i << "\n";
-            }
-        }
-
-        // Update projectedVerts_ for rendering
-        {
-            std::lock_guard<std::mutex> projLock(projMutex_);
-            projectedVerts_ = std::vector<glm::vec3>(balls_.size());
-            for (size_t i = 0; i < balls_.size(); ++i) {
-                projectedVerts_[i] = (simulationTime_ >= balls_[i].startTime) ? balls_[i].position : glm::vec3(0.0f);
-            }
-            if (debug_) {
-                std::cout << "[DEBUG] Updated projectedVerts_\n";
-            }
-        }
-
-        if (debug_) {
-            std::cout << "[DEBUG] Completed updateBalls for deltaTime=" << deltaTime << "\n";
+        // Update velocities and positions in parallel
+#pragma omp parallel for
+        for (size_t i = 0; i < balls.size(); ++i) {
+            if (simulationTime_ < balls[i].startTime) continue;
+            balls[i].velocity += balls[i].acceleration * deltaTime;
+            balls[i].position += balls[i].velocity * deltaTime;
         }
     }
 
@@ -385,23 +311,20 @@ private:
     std::atomic<double> alpha_;
     std::atomic<bool> debug_;
     double wavePhase_;
-    float simulationTime_; // Tracks total simulation time
+    float simulationTime_;
     mutable std::vector<DimensionInteraction> interactions_;
     std::vector<std::vector<double>> nCubeVertices_;
     mutable std::vector<glm::vec3> projectedVerts_;
     mutable double avgProjScale_;
-    mutable std::mutex mutex_;
-    mutable std::mutex projMutex_;
-    mutable std::mutex debugMutex_;
     mutable std::mutex physicsMutex_;
     mutable std::vector<Ball> balls_;
     mutable std::atomic<bool> needsUpdate_;
     AMOURANTH* navigator_;
 
-    // Initializes n-cube vertices
     void initializeNCube() {
         nCubeVertices_.clear();
         uint64_t maxVertices = 1ULL << maxDimensions_;
+        nCubeVertices_.reserve(maxVertices);
         for (uint64_t i = 0; i < maxVertices; ++i) {
             std::vector<double> vertex(maxDimensions_);
             for (int d = 0; d < maxDimensions_; ++d) {
@@ -413,24 +336,20 @@ private:
         avgProjScale_ = 1.0;
     }
 
-    // Updates interaction data (no lock, called from getInteractions)
     void updateInteractions() const {
         interactions_.clear();
-        for (int i = 0; i < static_cast<int>(nCubeVertices_.size()); ++i) {
+        interactions_.reserve(nCubeVertices_.size());
+        for (size_t i = 0; i < nCubeVertices_.size(); ++i) {
             double distance = 0.0;
             for (const auto& v : nCubeVertices_[i]) {
                 distance += v * v;
             }
             distance = std::sqrt(distance);
-            double strength = computeInteraction(i, distance);
+            double strength = influence_ * std::cos(wavePhase_ + i * 0.1) / (distance + 1e-6);
             interactions_.emplace_back(currentDimension_, strength, wavePhase_ + i * 0.1);
-        }
-        if (debug_) {
-            std::cout << "[DEBUG] Updated interactions for " << interactions_.size() << " vertices\n";
         }
     }
 
-    // Initializes with retry logic
     void initializeWithRetry() {
         initializeNCube();
         updateInteractions();
