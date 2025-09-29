@@ -184,6 +184,7 @@ Run `sudo ./vulkansdk`
 sudo apt install -y git g++ libglm-dev libfreetype-dev libasound2-dev libpulse-dev
 sudo apt install -y libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev
 sudo apt install -y libxss-dev libomp-dev libfreetype6 libharfbuzz-dev  libspdlog-dev
+sudo apt install -y libfmt-dev
 
 # Build and install SDL3 from source
 git clone https://github.com/libsdl-org/SDL.git
