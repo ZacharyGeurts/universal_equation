@@ -1,6 +1,8 @@
 #ifndef MAIN_HPP
 #define MAIN_HPP
 
+// make modes and set inputs in core.hpp
+
 // AMOURANTH RTX engine, Sep 2025 - Main Application class header.
 // Manages SDL3 window/input, Vulkan rendering, and engine logic (DimensionalNavigator, AMOURANTH).
 // Features: Thread-safe (OpenMP), memory-safe, error handling (std::runtime_error), Vulkan 1.2+ with ray tracing.
@@ -23,9 +25,9 @@
 #include <iostream>
 #include <omp.h>
 #include <vector>
-#include "SDL3_init.hpp"
-#include "Vulkan_init.hpp"
-#include "core.hpp"
+#include "engine/SDL3_init.hpp" // single entry point o7
+#include "engine/Vulkan_init.hpp" // single entry point o7
+#include "engine/core.hpp" // AMOURANTH RTX 
 
 class DimensionalNavigator;
 class AMOURANTH;
@@ -102,7 +104,7 @@ public:
 
 private:
     DimensionalNavigator* simulator_;
-    SDL3Initializer sdlInitializer_;
+    SDL3Initializer::SDL3Initializer sdlInitializer_;
     SDL_Window* window_;
     VkInstance vulkanInstance_;
     VkDevice vulkanDevice_;
