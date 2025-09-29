@@ -1,183 +1,207 @@
-#include "Vulkan_init.hpp"
-#include "Vulkan_func.hpp"
-#include <stdexcept>
-#include <iostream>
-
-void VulkanInit::initializeVulkan(
-    VkInstance& instance, VkPhysicalDevice& physicalDevice, VkDevice& device, VkSurfaceKHR& surface,
-    VkQueue& graphicsQueue, VkQueue& presentQueue, uint32_t& graphicsFamily, uint32_t& presentFamily,
-    VkSwapchainKHR& swapchain, std::vector<VkImage>& swapchainImages, std::vector<VkImageView>& swapchainImageViews,
-    VkRenderPass& renderPass, VkPipeline& pipeline, VkPipelineLayout& pipelineLayout,
-    VkDescriptorSetLayout& descriptorSetLayout, std::vector<VkFramebuffer>& swapchainFramebuffers,
-    VkCommandPool& commandPool, std::vector<VkCommandBuffer>& commandBuffers,
-    std::vector<VkSemaphore>& imageAvailableSemaphores, std::vector<VkSemaphore>& renderFinishedSemaphores,
-    std::vector<VkFence>& inFlightFences, VkBuffer& vertexBuffer, VkDeviceMemory& vertexBufferMemory,
-    VkBuffer& indexBuffer, VkDeviceMemory& indexBufferMemory,
-    VkBuffer& sphereStagingBuffer, VkDeviceMemory& sphereStagingBufferMemory,
-    VkBuffer& indexStagingBuffer, VkDeviceMemory& indexStagingBufferMemory,
-    [[maybe_unused]] VkDescriptorSetLayout& descriptorSetLayoutOut, VkDescriptorPool& descriptorPool,
-    [[maybe_unused]] VkDescriptorSet& descriptorSet, VkSampler& sampler,
-    VkShaderModule& vertShaderModule, VkShaderModule& fragShaderModule,
-    const std::vector<glm::vec3>& vertices, const std::vector<uint32_t>& indices, int width, int height) {
-    if (instance == VK_NULL_HANDLE || surface == VK_NULL_HANDLE) {
+#include "Vulkan_init.hpp"  // This header
+#include "Vulkan_func.hpp"  // Assumes VulkanInitializer is here
+// AMOURANTH RTX September 2025
+// Zachary Geurts 2025
+VulkanRenderer::VulkanRenderer(
+    VkInstance instance, VkSurfaceKHR surface,
+    const std::vector<glm::vec3>& vertices, const std::vector<uint32_t>& indices,
+    VkShaderModule vertShaderModule, VkShaderModule fragShaderModule,
+    int width, int height,
+    std::function<void(const std::string&)> logger)
+    : instance_(instance), surface_(surface), logger_(logger) {
+    if (instance_ == VK_NULL_HANDLE || surface_ == VK_NULL_HANDLE) {
         throw std::runtime_error("Vulkan instance or surface is null");
     }
+    initializeVulkan(vertices, indices, vertShaderModule, fragShaderModule, width, height);
+}
 
+VulkanRenderer::~VulkanRenderer() {
+    cleanupVulkan();
+}
+
+void VulkanRenderer::initializeVulkan(
+    const std::vector<glm::vec3>& vertices, const std::vector<uint32_t>& indices,
+    VkShaderModule vertShaderModule, VkShaderModule fragShaderModule,
+    int width, int height) {
+    // Pick physical device with validation enabled
     VulkanInitializer::createPhysicalDevice(
-        instance, physicalDevice, graphicsFamily, presentFamily, surface, true,
-        [](const std::string& msg) { std::cerr << "Vulkan: " << msg << "\n"; });
-    VkSurfaceFormatKHR surfaceFormat = VulkanInitializer::selectSurfaceFormat(physicalDevice, surface);
-    VulkanInitializer::createLogicalDevice(physicalDevice, device, graphicsQueue, presentQueue, graphicsFamily, presentFamily);
-    VulkanInitializer::createSwapchain(physicalDevice, device, surface, swapchain, swapchainImages, swapchainImageViews,
-                                      surfaceFormat.format, graphicsFamily, presentFamily, width, height);
-    VulkanInitializer::createRenderPass(device, renderPass, surfaceFormat.format);
-    VulkanInitializer::createDescriptorSetLayout(device, descriptorSetLayout);
-    VulkanInitializer::createGraphicsPipeline(device, renderPass, pipeline, pipelineLayout, descriptorSetLayout,
-                                             width, height, vertShaderModule, fragShaderModule);
-    VulkanInitializer::createFramebuffers(device, renderPass, swapchainImageViews, swapchainFramebuffers, width, height);
-    VulkanInitializer::createCommandPool(device, commandPool, graphicsFamily);
-    VulkanInitializer::createCommandBuffers(device, commandPool, commandBuffers, swapchainFramebuffers);
-    VulkanInitializer::createSyncObjects(device, imageAvailableSemaphores, renderFinishedSemaphores, inFlightFences,
-                                        static_cast<uint32_t>(swapchainImages.size()));
-    VulkanInitializer::createVertexBuffer(device, physicalDevice, commandPool, graphicsQueue, vertexBuffer,
-                                         vertexBufferMemory, sphereStagingBuffer, sphereStagingBufferMemory, vertices);
-    VulkanInitializer::createIndexBuffer(device, physicalDevice, commandPool, graphicsQueue, indexBuffer,
-                                        indexBufferMemory, indexStagingBuffer, indexStagingBufferMemory, indices);
-    VulkanInitializer::createSampler(device, physicalDevice, sampler);
-    VulkanInitializer::createDescriptorPoolAndSet(device, descriptorSetLayout, descriptorPool, descriptorSet, sampler);
-}
+        instance_, context_.physicalDevice, context_.graphicsFamily, context_.presentFamily, surface_, true, logger_);
 
-void VulkanInit::initializeQuadBuffers(
-    VkDevice device, VkPhysicalDevice physicalDevice, VkCommandPool commandPool, VkQueue graphicsQueue,
-    VkBuffer& quadVertexBuffer, VkDeviceMemory& quadVertexBufferMemory,
-    VkBuffer& quadIndexBuffer, VkDeviceMemory& quadIndexBufferMemory,
-    VkBuffer& quadStagingBuffer, VkDeviceMemory& quadStagingBufferMemory,
-    VkBuffer& quadIndexStagingBuffer, VkDeviceMemory& quadIndexStagingBufferMemory,
-    const std::vector<glm::vec3>& quadVertices, const std::vector<uint32_t>& quadIndices) {
-    VulkanInitializer::createVertexBuffer(device, physicalDevice, commandPool, graphicsQueue, quadVertexBuffer,
-                                         quadVertexBufferMemory, quadStagingBuffer, quadStagingBufferMemory, quadVertices);
-    VulkanInitializer::createIndexBuffer(device, physicalDevice, commandPool, graphicsQueue, quadIndexBuffer,
-                                        quadIndexBufferMemory, quadIndexStagingBuffer, quadIndexStagingBufferMemory, quadIndices);
-}
+    // Select surface format
+    VkSurfaceFormatKHR surfaceFormat = VulkanInitializer::selectSurfaceFormat(context_.physicalDevice, surface_);
 
-void VulkanInit::cleanupVulkan(
-    VkDevice& device, VkSwapchainKHR& swapchain,
-    std::vector<VkImageView>& swapchainImageViews, std::vector<VkFramebuffer>& swapchainFramebuffers,
-    VkPipeline& pipeline, VkPipelineLayout& pipelineLayout, VkRenderPass& renderPass,
-    VkCommandPool& commandPool, [[maybe_unused]] std::vector<VkCommandBuffer>& commandBuffers,
-    std::vector<VkSemaphore>& imageAvailableSemaphores, std::vector<VkSemaphore>& renderFinishedSemaphores,
-    std::vector<VkFence>& inFlightFences, VkBuffer& vertexBuffer, VkDeviceMemory& vertexBufferMemory,
-    VkBuffer& indexBuffer, VkDeviceMemory& indexBufferMemory,
-    VkDescriptorSetLayout& descriptorSetLayout, VkDescriptorPool& descriptorPool,
-    [[maybe_unused]] VkDescriptorSet& descriptorSet, VkSampler& sampler,
-    VkBuffer& sphereStagingBuffer, VkDeviceMemory& sphereStagingBufferMemory,
-    VkBuffer& indexStagingBuffer, VkDeviceMemory& indexStagingBufferMemory,
-    VkShaderModule& vertShaderModule, VkShaderModule& fragShaderModule) {
-    if (device != VK_NULL_HANDLE) {
-        vkDeviceWaitIdle(device);
-        for (auto& fence : inFlightFences) {
-            if (fence != VK_NULL_HANDLE) {
-                vkDestroyFence(device, fence, nullptr);
-                fence = VK_NULL_HANDLE;
-            }
-        }
-        for (auto& semaphore : imageAvailableSemaphores) {
-            if (semaphore != VK_NULL_HANDLE) {
-                vkDestroySemaphore(device, semaphore, nullptr);
-                semaphore = VK_NULL_HANDLE;
-            }
-        }
-        for (auto& semaphore : renderFinishedSemaphores) {
-            if (semaphore != VK_NULL_HANDLE) {
-                vkDestroySemaphore(device, semaphore, nullptr);
-                semaphore = VK_NULL_HANDLE;
-            }
-        }
-        if (commandPool != VK_NULL_HANDLE) {
-            vkDestroyCommandPool(device, commandPool, nullptr);
-            commandPool = VK_NULL_HANDLE;
-        }
-        for (auto& framebuffer : swapchainFramebuffers) {
-            if (framebuffer != VK_NULL_HANDLE) {
-                vkDestroyFramebuffer(device, framebuffer, nullptr);
-                framebuffer = VK_NULL_HANDLE;
-            }
-        }
-        if (pipeline != VK_NULL_HANDLE) {
-            vkDestroyPipeline(device, pipeline, nullptr);
-            pipeline = VK_NULL_HANDLE;
-        }
-        if (pipelineLayout != VK_NULL_HANDLE) {
-            vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
-            pipelineLayout = VK_NULL_HANDLE;
-        }
-        if (renderPass != VK_NULL_HANDLE) {
-            vkDestroyRenderPass(device, renderPass, nullptr);
-            renderPass = VK_NULL_HANDLE;
-        }
-        for (auto& imageView : swapchainImageViews) {
-            if (imageView != VK_NULL_HANDLE) {
-                vkDestroyImageView(device, imageView, nullptr);
-                imageView = VK_NULL_HANDLE;
-            }
-        }
-        if (swapchain != VK_NULL_HANDLE) {
-            vkDestroySwapchainKHR(device, swapchain, nullptr);
-            swapchain = VK_NULL_HANDLE;
-        }
-        if (sampler != VK_NULL_HANDLE) {
-            vkDestroySampler(device, sampler, nullptr);
-            sampler = VK_NULL_HANDLE;
-        }
-        if (descriptorPool != VK_NULL_HANDLE) {
-            vkDestroyDescriptorPool(device, descriptorPool, nullptr);
-            descriptorPool = VK_NULL_HANDLE;
-        }
-        if (descriptorSetLayout != VK_NULL_HANDLE) {
-            vkDestroyDescriptorSetLayout(device, descriptorSetLayout, nullptr);
-            descriptorSetLayout = VK_NULL_HANDLE;
-        }
-        if (vertexBuffer != VK_NULL_HANDLE) {
-            vkDestroyBuffer(device, vertexBuffer, nullptr);
-            vertexBuffer = VK_NULL_HANDLE;
-        }
-        if (vertexBufferMemory != VK_NULL_HANDLE) {
-            vkFreeMemory(device, vertexBufferMemory, nullptr);
-            vertexBufferMemory = VK_NULL_HANDLE;
-        }
-        if (indexBuffer != VK_NULL_HANDLE) {
-            vkDestroyBuffer(device, indexBuffer, nullptr);
-            indexBuffer = VK_NULL_HANDLE;
-        }
-        if (indexBufferMemory != VK_NULL_HANDLE) {
-            vkFreeMemory(device, indexBufferMemory, nullptr);
-            indexBufferMemory = VK_NULL_HANDLE;
-        }
-        if (sphereStagingBuffer != VK_NULL_HANDLE) {
-            vkDestroyBuffer(device, sphereStagingBuffer, nullptr);
-            sphereStagingBuffer = VK_NULL_HANDLE;
-        }
-        if (sphereStagingBufferMemory != VK_NULL_HANDLE) {
-            vkFreeMemory(device, sphereStagingBufferMemory, nullptr);
-            sphereStagingBufferMemory = VK_NULL_HANDLE;
-        }
-        if (indexStagingBuffer != VK_NULL_HANDLE) {
-            vkDestroyBuffer(device, indexStagingBuffer, nullptr);
-            indexStagingBuffer = VK_NULL_HANDLE;
-        }
-        if (indexStagingBufferMemory != VK_NULL_HANDLE) {
-            vkFreeMemory(device, indexStagingBufferMemory, nullptr);
-            indexStagingBufferMemory = VK_NULL_HANDLE;
-        }
-        if (vertShaderModule != VK_NULL_HANDLE) {
-            vkDestroyShaderModule(device, vertShaderModule, nullptr);
-            vertShaderModule = VK_NULL_HANDLE;
-        }
-        if (fragShaderModule != VK_NULL_HANDLE) {
-            vkDestroyShaderModule(device, fragShaderModule, nullptr);
-            fragShaderModule = VK_NULL_HANDLE;
-        }
-        vkDestroyDevice(device, nullptr);
-        device = VK_NULL_HANDLE;
+    // Create logical device and queues
+    VulkanInitializer::createLogicalDevice(context_.physicalDevice, context_.device, context_.graphicsQueue, context_.presentQueue,
+                                           context_.graphicsFamily, context_.presentFamily);
+
+    if (context_.device == VK_NULL_HANDLE) {
+        throw std::runtime_error("Failed to create logical device");
     }
+
+    // Create swapchain and images
+    VulkanInitializer::createSwapchain(context_.physicalDevice, context_.device, surface_, context_.swapchain, context_.swapchainImages,
+                                       context_.swapchainImageViews, surfaceFormat.format, context_.graphicsFamily, context_.presentFamily, width, height);
+
+    // Create render pass
+    VulkanInitializer::createRenderPass(context_.device, context_.renderPass, surfaceFormat.format);
+
+    // Create descriptor layout
+    VulkanInitializer::createDescriptorSetLayout(context_.device, context_.descriptorSetLayout);
+
+    // Create pipeline (uses provided shaders)
+    VulkanInitializer::createGraphicsPipeline(context_.device, context_.renderPass, context_.pipeline, context_.pipelineLayout,
+                                               context_.descriptorSetLayout, width, height, vertShaderModule, fragShaderModule);
+
+    // Create framebuffers
+    VulkanInitializer::createFramebuffers(context_.device, context_.renderPass, context_.swapchainImageViews, context_.swapchainFramebuffers, width, height);
+
+    // Create command pool and buffers
+    VulkanInitializer::createCommandPool(context_.device, context_.commandPool, context_.graphicsFamily);
+    VulkanInitializer::createCommandBuffers(context_.device, context_.commandPool, context_.commandBuffers, context_.swapchainFramebuffers);
+
+    // Create sync objects
+    VulkanInitializer::createSyncObjects(context_.device, context_.imageAvailableSemaphores, context_.renderFinishedSemaphores,
+                                         context_.inFlightFences, static_cast<uint32_t>(context_.swapchainImages.size()));
+
+    // Create vertex buffer with temporary staging
+    VkBuffer stagingBuffer = VK_NULL_HANDLE;
+    VkDeviceMemory stagingMemory = VK_NULL_HANDLE;
+    VulkanInitializer::createVertexBuffer(context_.device, context_.physicalDevice, context_.commandPool, context_.graphicsQueue,
+                                          context_.vertexBuffer, context_.vertexBufferMemory, stagingBuffer, stagingMemory, vertices);
+    vkDestroyBuffer(context_.device, stagingBuffer, nullptr);
+    vkFreeMemory(context_.device, stagingMemory, nullptr);
+
+    // Create index buffer with temporary staging
+    VkBuffer indexStagingBuffer = VK_NULL_HANDLE;
+    VkDeviceMemory indexStagingMemory = VK_NULL_HANDLE;
+    VulkanInitializer::createIndexBuffer(context_.device, context_.physicalDevice, context_.commandPool, context_.graphicsQueue,
+                                         context_.indexBuffer, context_.indexBufferMemory, indexStagingBuffer, indexStagingMemory, indices);
+    vkDestroyBuffer(context_.device, indexStagingBuffer, nullptr);
+    vkFreeMemory(context_.device, indexStagingMemory, nullptr);
+
+    // Create sampler and descriptors
+    VulkanInitializer::createSampler(context_.device, context_.physicalDevice, context_.sampler);
+    VulkanInitializer::createDescriptorPoolAndSet(context_.device, context_.descriptorSetLayout, context_.descriptorPool, context_.descriptorSet, context_.sampler);
+
+    // Store shaders (provided by caller)
+    context_.vertShaderModule = vertShaderModule;
+    context_.fragShaderModule = fragShaderModule;
+}
+
+void VulkanRenderer::initializeQuadBuffers(
+    const std::vector<glm::vec3>& quadVertices, const std::vector<uint32_t>& quadIndices) {
+    // Temporary staging for quad vertex
+    VkBuffer quadStagingBuffer = VK_NULL_HANDLE;
+    VkDeviceMemory quadStagingMemory = VK_NULL_HANDLE;
+    VulkanInitializer::createVertexBuffer(context_.device, context_.physicalDevice, context_.commandPool, context_.graphicsQueue,
+                                          context_.quadVertexBuffer, context_.quadVertexBufferMemory, quadStagingBuffer, quadStagingMemory, quadVertices);
+    vkDestroyBuffer(context_.device, quadStagingBuffer, nullptr);
+    vkFreeMemory(context_.device, quadStagingMemory, nullptr);
+
+    // Temporary staging for quad index
+    VkBuffer quadIndexStagingBuffer = VK_NULL_HANDLE;
+    VkDeviceMemory quadIndexStagingMemory = VK_NULL_HANDLE;
+    VulkanInitializer::createIndexBuffer(context_.device, context_.physicalDevice, context_.commandPool, context_.graphicsQueue,
+                                         context_.quadIndexBuffer, context_.quadIndexBufferMemory, quadIndexStagingBuffer, quadIndexStagingMemory, quadIndices);
+    vkDestroyBuffer(context_.device, quadIndexStagingBuffer, nullptr);
+    vkFreeMemory(context_.device, quadIndexStagingMemory, nullptr);
+}
+
+void VulkanRenderer::cleanupVulkan() {
+    if (context_.device != VK_NULL_HANDLE) {
+        vkDeviceWaitIdle(context_.device);
+
+        // Destroy quad buffers if initialized
+        if (context_.quadVertexBuffer != VK_NULL_HANDLE) {
+            vkDestroyBuffer(context_.device, context_.quadVertexBuffer, nullptr);
+            context_.quadVertexBuffer = VK_NULL_HANDLE;
+        }
+        if (context_.quadVertexBufferMemory != VK_NULL_HANDLE) {
+            vkFreeMemory(context_.device, context_.quadVertexBufferMemory, nullptr);
+            context_.quadVertexBufferMemory = VK_NULL_HANDLE;
+        }
+        if (context_.quadIndexBuffer != VK_NULL_HANDLE) {
+            vkDestroyBuffer(context_.device, context_.quadIndexBuffer, nullptr);
+            context_.quadIndexBuffer = VK_NULL_HANDLE;
+        }
+        if (context_.quadIndexBufferMemory != VK_NULL_HANDLE) {
+            vkFreeMemory(context_.device, context_.quadIndexBufferMemory, nullptr);
+            context_.quadIndexBufferMemory = VK_NULL_HANDLE;
+        }
+
+        for (auto& fence : context_.inFlightFences) {
+            if (fence != VK_NULL_HANDLE) vkDestroyFence(context_.device, fence, nullptr);
+        }
+        for (auto& semaphore : context_.imageAvailableSemaphores) {
+            if (semaphore != VK_NULL_HANDLE) vkDestroySemaphore(context_.device, semaphore, nullptr);
+        }
+        for (auto& semaphore : context_.renderFinishedSemaphores) {
+            if (semaphore != VK_NULL_HANDLE) vkDestroySemaphore(context_.device, semaphore, nullptr);
+        }
+        if (context_.commandPool != VK_NULL_HANDLE) {
+            vkDestroyCommandPool(context_.device, context_.commandPool, nullptr);
+            context_.commandPool = VK_NULL_HANDLE;
+        }
+        for (auto& framebuffer : context_.swapchainFramebuffers) {
+            if (framebuffer != VK_NULL_HANDLE) vkDestroyFramebuffer(context_.device, framebuffer, nullptr);
+        }
+        if (context_.pipeline != VK_NULL_HANDLE) {
+            vkDestroyPipeline(context_.device, context_.pipeline, nullptr);
+            context_.pipeline = VK_NULL_HANDLE;
+        }
+        if (context_.pipelineLayout != VK_NULL_HANDLE) {
+            vkDestroyPipelineLayout(context_.device, context_.pipelineLayout, nullptr);
+            context_.pipelineLayout = VK_NULL_HANDLE;
+        }
+        if (context_.renderPass != VK_NULL_HANDLE) {
+            vkDestroyRenderPass(context_.device, context_.renderPass, nullptr);
+            context_.renderPass = VK_NULL_HANDLE;
+        }
+        for (auto& imageView : context_.swapchainImageViews) {
+            if (imageView != VK_NULL_HANDLE) vkDestroyImageView(context_.device, imageView, nullptr);
+        }
+        if (context_.swapchain != VK_NULL_HANDLE) {
+            vkDestroySwapchainKHR(context_.device, context_.swapchain, nullptr);
+            context_.swapchain = VK_NULL_HANDLE;
+        }
+        if (context_.sampler != VK_NULL_HANDLE) {
+            vkDestroySampler(context_.device, context_.sampler, nullptr);
+            context_.sampler = VK_NULL_HANDLE;
+        }
+        if (context_.descriptorPool != VK_NULL_HANDLE) {
+            vkDestroyDescriptorPool(context_.device, context_.descriptorPool, nullptr);
+            context_.descriptorPool = VK_NULL_HANDLE;
+        }
+        if (context_.descriptorSetLayout != VK_NULL_HANDLE) {
+            vkDestroyDescriptorSetLayout(context_.device, context_.descriptorSetLayout, nullptr);
+            context_.descriptorSetLayout = VK_NULL_HANDLE;
+        }
+        if (context_.vertexBuffer != VK_NULL_HANDLE) {
+            vkDestroyBuffer(context_.device, context_.vertexBuffer, nullptr);
+            context_.vertexBuffer = VK_NULL_HANDLE;
+        }
+        if (context_.vertexBufferMemory != VK_NULL_HANDLE) {
+            vkFreeMemory(context_.device, context_.vertexBufferMemory, nullptr);
+            context_.vertexBufferMemory = VK_NULL_HANDLE;
+        }
+        if (context_.indexBuffer != VK_NULL_HANDLE) {
+            vkDestroyBuffer(context_.device, context_.indexBuffer, nullptr);
+            context_.indexBuffer = VK_NULL_HANDLE;
+        }
+        if (context_.indexBufferMemory != VK_NULL_HANDLE) {
+            vkFreeMemory(context_.device, context_.indexBufferMemory, nullptr);
+            context_.indexBufferMemory = VK_NULL_HANDLE;
+        }
+        if (context_.vertShaderModule != VK_NULL_HANDLE) {
+            vkDestroyShaderModule(context_.device, context_.vertShaderModule, nullptr);
+            context_.vertShaderModule = VK_NULL_HANDLE;
+        }
+        if (context_.fragShaderModule != VK_NULL_HANDLE) {
+            vkDestroyShaderModule(context_.device, context_.fragShaderModule, nullptr);
+            context_.fragShaderModule = VK_NULL_HANDLE;
+        }
+        vkDestroyDevice(context_.device, nullptr);
+        context_.device = VK_NULL_HANDLE;
+    }
+    // Note: Instance and surface not destroyed here; caller owns them
 }

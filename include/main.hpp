@@ -8,9 +8,9 @@
 // Fixed: Updated initializeVulkan to avoid redundant sync object creation, resolving VUID-vkDestroyDevice-device-05137.
 // Fixed: Updated render to cycle semaphores/fences with currentFrame, resolving VUID-vkQueueSubmit-pSignalSemaphores-00067.
 // Fixed: Updated cleanup and recreateSwapchain to include descriptorPool, descriptorSet, sampler, and shader modules,
-// resolving signature mismatch with VulkanInit::cleanupVulkan.
-// Fixed: Moved quad buffer destruction before VulkanInit::cleanupVulkan to resolve VUID-vkDestroyDevice-device-05137.
-// Fixed: Removed instance and surface destruction from VulkanInit::cleanupVulkan to avoid double destruction,
+// resolving signature mismatch with VulkanInitializer::cleanupVulkan.
+// Fixed: Moved quad buffer destruction before VulkanInitializer::cleanupVulkan to resolve VUID-vkDestroyDevice-device-05137.
+// Fixed: Removed instance and surface destruction from VulkanInitializer::cleanupVulkan to avoid double destruction,
 // resolving VUID-vkDestroySurfaceKHR-instance-parameter.
 // Zachary Geurts, 2025
 
@@ -150,7 +150,7 @@ private:
     AMOURANTH* amouranth_;
 
     void initializeVulkan() {
-        VulkanInit::initializeVulkan(
+        VulkanInitializer::initializeVulkan(
             vulkanInstance_, physicalDevice_, vulkanDevice_, surface_, graphicsQueue_, presentQueue_,
             graphicsFamily_, presentFamily_, swapchain_, swapchainImages_, swapchainImageViews_,
             renderPass_, pipeline_, pipelineLayout_, descriptorSetLayout_, swapchainFramebuffers_,
@@ -161,7 +161,7 @@ private:
             vertShaderModule_, fragShaderModule_,
             amouranth_->getSphereVertices(), amouranth_->getSphereIndices(), width_, height_);
 
-        VulkanInit::initializeQuadBuffers(
+        VulkanInitializer::initializeQuadBuffers(
             vulkanDevice_, physicalDevice_, commandPool_, graphicsQueue_,
             quadVertexBuffer_, quadVertexBufferMemory_, quadIndexBuffer_, quadIndexBufferMemory_,
             quadStagingBuffer_, quadStagingBufferMemory_, quadIndexStagingBuffer_, quadIndexStagingBufferMemory_,
@@ -206,7 +206,7 @@ private:
             vkFreeMemory(vulkanDevice_, quadIndexStagingBufferMemory_, nullptr);
             quadIndexStagingBufferMemory_ = VK_NULL_HANDLE;
         }
-        VulkanInit::cleanupVulkan(
+        VulkanInitializer::cleanupVulkan(
             vulkanDevice_, swapchain_, swapchainImageViews_,
             swapchainFramebuffers_, pipeline_, pipelineLayout_, renderPass_, commandPool_,
             commandBuffers_, imageAvailableSemaphores_, renderFinishedSemaphores_, inFlightFences_,
@@ -288,7 +288,7 @@ private:
             vkFreeMemory(vulkanDevice_, quadIndexStagingBufferMemory_, nullptr);
             quadIndexStagingBufferMemory_ = VK_NULL_HANDLE;
         }
-        VulkanInit::cleanupVulkan(
+        VulkanInitializer::cleanupVulkan(
             vulkanDevice_, swapchain_, swapchainImageViews_,
             swapchainFramebuffers_, pipeline_, pipelineLayout_, renderPass_, commandPool_,
             commandBuffers_, imageAvailableSemaphores_, renderFinishedSemaphores_, inFlightFences_,

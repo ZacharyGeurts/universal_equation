@@ -45,9 +45,16 @@ UniversalEquation::UniversalEquation(
       debug_(debug),
       omega_(maxDimensions_ > 0 ? 2.0 * M_PI / (2 * maxDimensions_ - 1) : 1.0),
       invMaxDim_(maxDimensions_ > 0 ? 1.0 / maxDimensions_ : 1e-15),
+      interactions_(),
+      nCubeVertices_(),
+      projectedVerts_(),
+      avgProjScale_(1.0),
+      projMutex_(),
       needsUpdate_(true),
+      cachedCos_(),
       navigator_(nullptr),
-      avgProjScale_(1.0) {
+      mutex_(),
+      debugMutex_() {
     try {
         initializeWithRetry();
         if (debug_) {
