@@ -7,9 +7,13 @@
 #include <functional>
 #include <optional>
 #include <glm/glm.hpp>
+#include "Vulkan_func_pipe.hpp"
+#include "Vulkan_func_swapchain.hpp"
 // AMOURANTH RTX September 2025
 // Zachary Geurts 2025
+
 namespace VulkanInitializer {
+
     // Structure to hold queue family indices for graphics and presentation
     struct QueueFamilyIndices {
         std::optional<uint32_t> graphicsFamily;
@@ -98,9 +102,6 @@ namespace VulkanInitializer {
         VkBuffer& indexStagingBuffer, VkDeviceMemory& indexStagingBufferMemory,
         VkShaderModule& vertShaderModule, VkShaderModule& fragShaderModule);
 
-    // Select a suitable surface format for the swapchain
-    VkSurfaceFormatKHR selectSurfaceFormat(VkPhysicalDevice physicalDevice, VkSurfaceKHR surface);
-
     // Create a physical device with graphics and presentation support
     void createPhysicalDevice(VkInstance instance, VkPhysicalDevice& physicalDevice, uint32_t& graphicsFamily,
                              uint32_t& presentFamily, VkSurfaceKHR surface, bool preferNvidia,
@@ -109,36 +110,6 @@ namespace VulkanInitializer {
     // Create a logical device and retrieve graphics/present queues
     void createLogicalDevice(VkPhysicalDevice physicalDevice, VkDevice& device, VkQueue& graphicsQueue,
                              VkQueue& presentQueue, uint32_t graphicsFamily, uint32_t presentFamily);
-
-    // Create a swapchain and its associated images/views
-    void createSwapchain(VkPhysicalDevice physicalDevice, VkDevice device, VkSurfaceKHR surface, VkSwapchainKHR& swapchain,
-                         std::vector<VkImage>& swapchainImages, std::vector<VkImageView>& swapchainImageViews,
-                         VkFormat& swapchainFormat, uint32_t graphicsFamily, uint32_t presentFamily, int width, int height);
-
-    // Create a render pass for the graphics pipeline
-    void createRenderPass(VkDevice device, VkRenderPass& renderPass, VkFormat format);
-
-    // Create a shader module from a SPIR-V file
-    VkShaderModule createShaderModule(VkDevice device, const std::string& filename);
-
-    // Create a descriptor set layout for shader resources
-    void createDescriptorSetLayout(VkDevice device, VkDescriptorSetLayout& descriptorSetLayout);
-
-    // Create a descriptor pool and allocate a descriptor set
-    void createDescriptorPoolAndSet(VkDevice device, VkDescriptorSetLayout descriptorSetLayout,
-                                   VkDescriptorPool& descriptorPool, VkDescriptorSet& descriptorSet, VkSampler sampler);
-
-    // Create a texture sampler
-    void createSampler(VkDevice device, VkPhysicalDevice physicalDevice, VkSampler& sampler);
-
-    // Create a graphics pipeline with provided shaders
-    void createGraphicsPipeline(VkDevice device, VkRenderPass renderPass, VkPipeline& pipeline,
-                               VkPipelineLayout& pipelineLayout, VkDescriptorSetLayout& descriptorSetLayout,
-                               int width, int height, VkShaderModule& vertShaderModule, VkShaderModule& fragShaderModule);
-
-    // Create framebuffers for the swapchain images
-    void createFramebuffers(VkDevice device, VkRenderPass renderPass, std::vector<VkImageView>& swapchainImageViews,
-                            std::vector<VkFramebuffer>& swapchainFramebuffers, int width, int height);
 
     // Create a command pool for allocating command buffers
     void createCommandPool(VkDevice device, VkCommandPool& commandPool, uint32_t graphicsFamily);
@@ -169,6 +140,7 @@ namespace VulkanInitializer {
     void createIndexBuffer(VkDevice device, VkPhysicalDevice physicalDevice, VkCommandPool commandPool, VkQueue graphicsQueue,
                            VkBuffer& indexBuffer, VkDeviceMemory& indexBufferMemory, VkBuffer& stagingBuffer,
                            VkDeviceMemory& stagingBufferMemory, const std::vector<uint32_t>& indices);
+
 }
 
 #endif // VULKAN_FUNC_HPP
