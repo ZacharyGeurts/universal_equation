@@ -159,15 +159,6 @@ The `UniversalEquation` models the universe as:
 - **Dark Energy**: Drives dimensional expansion, increasing effective distances between dimensions.
 - **Code** Estimates are you can do up to 20-30 dimensions.  
 
-## Model Description
-The `UniversalEquation` class defines dimensional interactions:  
-- **1D (God)**: A singular, infinite static permeating all dimensions, modeled as a wave-like influence.  
-- **2D (Truth)**: The cosmic boundary, interacting strongly with 1D and 3D, visualized as pulsating neon green spheres.  
-- **3D to 9D**: Nested dimensions with exponentially decaying influence on lower dimensions, modulated by a weak interaction factor for D > 3.  
-- **Dark Matter**: Increases density with dimension, stabilizing interactions and amplifying visual pulsing (e.g., stronger in 3D/4D).  
-- **Dark Energy**: Drives exponential expansion of dimensional distances, affecting sphere positions and spacing.  
-- **Outputs**: Symmetric ± energy fluctuations (`observable`, `potential`) reflect frequency and field dynamics, with contributions from `darkMatter` and `darkEnergy`, compatible with relativistic principles.  
-
 ## Requirements
 - **OS**: Linux, (Windows and MacOS supported and untested) with Vulkan Drivers
 - **Compiler**: `g++` with C++17 support.  
