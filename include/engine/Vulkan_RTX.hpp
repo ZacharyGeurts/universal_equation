@@ -2,61 +2,174 @@
 #define VULKAN_RTX_HPP
 
 // AMOURANTH RTX Engine - September 2025
-// Header for ray tracing (RTX) pipeline management.
-// Manages acceleration structures (BLAS/TLAS), SBT, pipeline, and descriptors for hybrid rendering.
-// Requires Vulkan 1.2+ with VK_KHR_ray_tracing_pipeline and VK_KHR_acceleration_structure extensions.
+// Core header for ray tracing (RTX) pipeline management.
+// Manages pipeline, descriptors, and rendering commands for hybrid rendering.
+// Requires Vulkan 1.2+ with VK_KHR_ray_tracing_pipeline, VK_KHR_acceleration_structure, and optional VK_KHR_ray_tracing_maintenance1.
 // Author: Zachary Geurts, 2025
 
 #include <vulkan/vulkan.h>
-#include <vulkan/vulkan_core.h>  // For core types if not in vulkan.h
+#include <vulkan/vulkan_core.h>
 #include <vector>
 #include <string>
-#include <array>
 #include <glm/glm.hpp>
-#include <glm/gtc/matrix_transform.hpp>  // If transforms used
+#include <glm/gtc/matrix_transform.hpp>
 #include <mutex>
-#include <future>
-#include <optional>
-#include <cstdint>  // For uint32_t etc.
+#include <cstdint>
+#include <spdlog/spdlog.h>  // For logging
+#include "core.hpp"  // For AMOURANTH integration
 
-struct PushConstants {
-    alignas(16) glm::mat4 model;       // 64 bytes: Per-object world transform
-    alignas(16) glm::mat4 view_proj;   // 64 bytes: Pre-computed view * projection (per-frame)
-    static constexpr VkDeviceSize size = sizeof(glm::mat4) * 2;  // Explicit 128 bytes for validation
+// Custom exception for Vulkan errors
+class VulkanRTXException : public std::runtime_error {
+public:
+    VulkanRTXException(const std::string& msg, VkResult result = VK_SUCCESS)
+        : std::runtime_error(msg + " (VkResult: " + std::to_string(result) + ")"), result_(result) {}
+    VkResult getResult() const { return result_; }
+private:
+    VkResult result_;
 };
 
+// RAII wrapper for Vulkan resources
+template<typename T, void(*DestroyFunc)(VkDevice, T, const VkAllocationCallbacks*)>
+class VulkanResource {
+public:
+    VulkanResource(VkDevice device, T handle = VK_NULL_HANDLE)
+        : device_(device), handle_(handle) {}
+    ~VulkanResource() {
+        if (handle_ != VK_NULL_HANDLE && DestroyFunc) {
+            DestroyFunc(device_, handle_, nullptr);
+        }
+    }
+    VulkanResource(const VulkanResource&) = delete;
+    VulkanResource& operator=(const VulkanResource&) = delete;
+    VulkanResource(VulkanResource&& other) noexcept : device_(other.device_), handle_(other.handle_) {
+        other.handle_ = VK_NULL_HANDLE;
+    }
+    VulkanResource& operator=(VulkanResource&& other) noexcept {
+        if (this != &other) {
+            if (handle_ != VK_NULL_HANDLE && DestroyFunc) {
+                DestroyFunc(device_, handle_, nullptr);
+            }
+            device_ = other.device_;
+            handle_ = other.handle_;
+            other.handle_ = VK_NULL_HANDLE;
+        }
+        return *this;
+    }
+    T& get() { return handle_; }
+    const T& get() const { return handle_; }
+private:
+    VkDevice device_;
+    T handle_;
+};
+
+// RAII wrapper for VkDescriptorSet
+class VulkanDescriptorSet {
+public:
+    VulkanDescriptorSet(VkDevice device, VkDescriptorPool pool, VkDescriptorSet handle = VK_NULL_HANDLE)
+        : device_(device), pool_(pool), handle_(handle) {}
+    ~VulkanDescriptorSet() {
+        if (handle_ != VK_NULL_HANDLE) vkFreeDescriptorSets(device_, pool_, 1, &handle_);
+    }
+    VulkanDescriptorSet(const VulkanDescriptorSet&) = delete;
+    VulkanDescriptorSet& operator=(const VulkanDescriptorSet&) = delete;
+    VulkanDescriptorSet(VulkanDescriptorSet&& other) noexcept
+        : device_(other.device_), pool_(other.pool_), handle_(other.handle_) {
+        other.handle_ = VK_NULL_HANDLE;
+    }
+    VulkanDescriptorSet& operator=(VulkanDescriptorSet&& other) noexcept {
+        if (this != &other) {
+            if (handle_ != VK_NULL_HANDLE) vkFreeDescriptorSets(device_, pool_, 1, &handle_);
+            device_ = other.device_;
+            pool_ = other.pool_;
+            handle_ = other.handle_;
+            other.handle_ = VK_NULL_HANDLE;
+        }
+        return *this;
+    }
+    VkDescriptorSet& get() { return handle_; }
+    const VkDescriptorSet& get() const { return handle_; }
+private:
+    VkDevice device_;
+    VkDescriptorPool pool_;
+    VkDescriptorSet handle_;
+};
+
+// Forward declaration of VulkanRTX
+class VulkanRTX;
+
+// RAII wrapper for VkAccelerationStructureKHR_T*
+class VulkanASResource {
+public:
+    VulkanASResource(VkDevice device, VkAccelerationStructureKHR_T* handle = VK_NULL_HANDLE)
+        : device_(device), handle_(handle) {}
+    ~VulkanASResource();
+    VulkanASResource(const VulkanASResource&) = delete;
+    VulkanASResource& operator=(const VulkanASResource&) = delete;
+    VulkanASResource(VulkanASResource&& other) noexcept : device_(other.device_), handle_(other.handle_) {
+        other.handle_ = VK_NULL_HANDLE;
+    }
+    VulkanASResource& operator=(VulkanASResource&& other) noexcept;
+    VkAccelerationStructureKHR_T*& get() { return handle_; }
+    const VkAccelerationStructureKHR_T* get() const { return handle_; }
+private:
+    VkDevice device_;
+    VkAccelerationStructureKHR_T* handle_;
+};
+
+// Macro for Vulkan call checking
+#define VK_CHECK(call, msg) do { \
+    VkResult result = call; \
+    if (result != VK_SUCCESS) { \
+        spdlog::error("{}: VkResult {}", msg, result); \
+        throw VulkanRTXException(msg, result); \
+    } \
+} while (0)
+
 struct SBT {
-    VkBuffer buffer = VK_NULL_HANDLE;
-    VkDeviceMemory memory = VK_NULL_HANDLE;
+    VulkanResource<VkBuffer_T*, vkDestroyBuffer> buffer;
+    VulkanResource<VkDeviceMemory, vkFreeMemory> memory;
     VkStridedDeviceAddressRegionKHR raygen = {};
     VkStridedDeviceAddressRegionKHR miss = {};
     VkStridedDeviceAddressRegionKHR hit = {};
     VkStridedDeviceAddressRegionKHR callable = {};
+    SBT(VkDevice device) : buffer(device, VK_NULL_HANDLE), memory(device, VK_NULL_HANDLE) {}
+};
+
+enum class DescriptorBindings : uint32_t {
+    TLAS = 0,
+    StorageImage = 1,
+    CameraUBO = 2,
+    MaterialSSBO = 3,
+    DimensionDataSSBO = 4
+};
+
+enum class ShaderFeatures : uint32_t {
+    None = 0,
+    AnyHit = 1 << 0,
+    Intersection = 1 << 1,
+    Callable = 1 << 2
 };
 
 class VulkanRTX {
+    friend class VulkanASResource; // Allow VulkanASResource to access vkDestroyASFunc
 private:
     VkDevice device_ = VK_NULL_HANDLE;
-    VkDescriptorSetLayout dsLayout_ = VK_NULL_HANDLE;
-    VkDescriptorPool dsPool_ = VK_NULL_HANDLE;
-    VkDescriptorSet ds_ = VK_NULL_HANDLE;
-    VkPipelineLayout rtPipelineLayout_ = VK_NULL_HANDLE;
-    VkPipeline rtPipeline_ = VK_NULL_HANDLE;
-    VkAccelerationStructureKHR blas_ = VK_NULL_HANDLE;
-    VkBuffer blasBuffer_ = VK_NULL_HANDLE;
-    VkDeviceMemory blasMemory_ = VK_NULL_HANDLE;
-    VkAccelerationStructureKHR tlas_ = VK_NULL_HANDLE;
-    VkBuffer tlasBuffer_ = VK_NULL_HANDLE;
-    VkDeviceMemory tlasMemory_ = VK_NULL_HANDLE;
+    std::vector<std::string> shaderPaths_;
+    std::vector<DimensionData> dimensionCache_;
+    std::vector<uint32_t> primitiveCounts_; // Store primitive counts for compaction
+    VulkanResource<VkDescriptorSetLayout, vkDestroyDescriptorSetLayout> dsLayout_;
+    VulkanResource<VkDescriptorPool, vkDestroyDescriptorPool> dsPool_;
+    VulkanDescriptorSet ds_;
+    VulkanResource<VkPipelineLayout, vkDestroyPipelineLayout> rtPipelineLayout_;
+    VulkanResource<VkPipeline, vkDestroyPipeline> rtPipeline_;
+    VulkanASResource blas_;
+    VulkanResource<VkBuffer_T*, vkDestroyBuffer> blasBuffer_;
+    VulkanResource<VkDeviceMemory, vkFreeMemory> blasMemory_;
+    VulkanASResource tlas_;
+    VulkanResource<VkBuffer_T*, vkDestroyBuffer> tlasBuffer_;
+    VulkanResource<VkDeviceMemory, vkFreeMemory> tlasMemory_;
     SBT sbt_;
-
-    // Shader feature flags (bitfield for future expansion)
-    enum class ShaderFeatures : uint32_t {
-        None = 0,
-        AnyHit = 1 << 0,
-        Intersection = 1 << 1,
-        Callable = 1 << 2
-    };
+    bool supportsCompaction_ = false;
     ShaderFeatures shaderFeatures_ = ShaderFeatures::None;
 
     static std::mutex functionPtrMutex_;
@@ -64,122 +177,79 @@ private:
     static PFN_vkGetBufferDeviceAddress vkGetBufferDeviceAddress;
     static PFN_vkCmdTraceRaysKHR vkCmdTraceRaysKHR;
     static PFN_vkCreateAccelerationStructureKHR vkCreateAccelerationStructureKHR;
-    static PFN_vkDestroyAccelerationStructureKHR vkDestroyAccelerationStructureKHR;
+    static PFN_vkDestroyAccelerationStructureKHR vkDestroyASFunc;
     static PFN_vkGetAccelerationStructureBuildSizesKHR vkGetAccelerationStructureBuildSizesKHR;
     static PFN_vkCmdBuildAccelerationStructuresKHR vkCmdBuildAccelerationStructuresKHR;
     static PFN_vkGetAccelerationStructureDeviceAddressKHR vkGetAccelerationStructureDeviceAddressKHR;
     static PFN_vkCreateRayTracingPipelinesKHR vkCreateRayTracingPipelinesKHR;
     static PFN_vkGetRayTracingShaderGroupHandlesKHR vkGetRayTracingShaderGroupHandlesKHR;
+    static PFN_vkCmdCopyAccelerationStructureKHR vkCmdCopyAccelerationStructureKHR;
 
 public:
-    /**
-     * Constructs the VulkanRTX manager with the given device.
-     * Loads ray tracing extension functions thread-safely.
-     * @param device Valid VkDevice handle.
-     * @throws std::runtime_error If extension loading fails.
-     */
-    explicit VulkanRTX(VkDevice device);
-    ~VulkanRTX();
+    explicit VulkanRTX(VkDevice device, const std::vector<std::string>& shaderPaths = {
+        "assets/shaders/raygen.spv", "assets/shaders/miss.spv", "assets/shaders/closest_hit.spv",
+        "assets/shaders/any_hit.spv", "assets/shaders/intersection.spv", "assets/shaders/callable.spv"
+    });
 
-    // Deleted copy/move for resource safety
-    VulkanRTX(const VulkanRTX&) = delete;
-    VulkanRTX& operator=(const VulkanRTX&) = delete;
-    VulkanRTX(VulkanRTX&&) = delete;
-    VulkanRTX& operator=(VulkanRTX&&) = delete;
-
-    /**
-     * Initializes the ray tracing pipeline and resources.
-     * Builds BLAS from provided vertex/index buffers (assumes positions only; stride=12 bytes).
-     * Creates TLAS with single BLAS instance (identity transform).
-     * Loads shaders asynchronously from 'assets/shaders/'.
-     * @param physicalDevice For memory queries and properties.
-     * @param commandPool For one-time build command buffers.
-     * @param graphicsQueue For submitting builds.
-     * @param vertexBuffer Device-local buffer with glm::vec3 positions.
-     * @param indexBuffer Device-local uint32 indices (triangles).
-     * @param vertexCount Number of vertices.
-     * @param indexCount Number of indices (must be multiple of 3).
-     * @param maxRayRecursionDepth Optional max recursion (defaults to 2; query hardware limit recommended).
-     * @param vertexStride Optional vertex stride (defaults to sizeof(glm::vec3); for interleaved attributes).
-     * @throws std::runtime_error On invalid inputs or creation failures.
-     */
+    // Initialization methods
     void initializeRTX(
         VkPhysicalDevice physicalDevice, VkCommandPool commandPool, VkQueue graphicsQueue,
-        VkBuffer vertexBuffer, VkBuffer indexBuffer, uint32_t vertexCount, uint32_t indexCount,
+        const std::vector<std::tuple<VkBuffer_T*, VkBuffer_T*, uint32_t, uint32_t, uint64_t>>& geometries,
         uint32_t maxRayRecursionDepth = 2,
-        uint64_t vertexStride = sizeof(glm::vec3)
+        const std::vector<DimensionData>& dimensionCache = {}
     );
 
-    /**
-     * Cleans up all RTX resources (AS, pipeline, descriptors, buffers).
-     * Safe to call multiple times.
-     */
-    void cleanupRTX();
-
-    /**
-     * Creates a 2D storage image suitable for ray tracing output.
-     * Usage: STORAGE | COLOR_ATTACHMENT | TRANSFER_SRC/DST.
-     * @param physicalDevice For memory allocation.
-     * @param extent Image dimensions.
-     * @param format Preferred format (e.g., VK_FORMAT_R8G8B8A8_UNORM).
-     * @param[out] image Created VkImage.
-     * @param[out] imageView Created VkImageView (2D, full subresource).
-     * @param[out] memory Allocated VkDeviceMemory (device-local).
-     * @throws std::runtime_error On creation failures.
-     */
-    void createStorageImage(
-        VkPhysicalDevice physicalDevice, VkExtent2D extent, VkFormat format,
-        VkImage& image, VkImageView& imageView, VkDeviceMemory& memory
+    void updateRTX(
+        VkPhysicalDevice physicalDevice, VkCommandPool commandPool, VkQueue graphicsQueue,
+        const std::vector<std::tuple<VkBuffer_T*, VkBuffer_T*, uint32_t, uint32_t, uint64_t>>& geometries,
+        const std::vector<DimensionData>& dimensionCache
     );
 
-    /**
-     * Updates descriptor set bindings for camera UBO (binding 2) and material SSBO (binding 3).
-     * Call per-frame if buffers change.
-     * @param cameraBuffer Uniform buffer with view/proj data.
-     * @param materialBuffer Storage buffer with material properties.
-     */
-    void updateCameraAndMaterialDescriptor(VkBuffer cameraBuffer, VkBuffer materialBuffer);
+    void compactAccelerationStructures(VkPhysicalDevice physicalDevice, VkCommandPool commandPool, VkQueue queue);
 
-    /**
-     * Records ray tracing commands into the command buffer.
-     * Binds pipeline/descriptors, pushes constants, traces rays, transitions output image.
-     * Updates descriptors for output image and TLAS (if provided; reverts if temporary).
-     * Assumes cmdBuffer is in recording state.
-     * @param cmdBuffer Target command buffer.
-     * @param extent Ray dispatch dimensions (width/height).
-     * @param outputImage Storage image for results.
-     * @param outputImageView View for the image.
-     * @param pc Push constants (model/view_proj).
-     * @param tlas Optional TLAS (defaults to internal; updates binding 0 temporarily).
-     */
-    void recordRayTracingCommands(
-        VkCommandBuffer cmdBuffer, VkExtent2D extent, VkImage outputImage, VkImageView outputImageView,
-        const PushConstants& pc, VkAccelerationStructureKHR tlas = VK_NULL_HANDLE
-    );
+    void updateDescriptors(VkBuffer_T* cameraBuffer, VkBuffer_T* materialBuffer, VkBuffer_T* dimensionBuffer);
+    void createStorageImage(VkPhysicalDevice physicalDevice, VkExtent2D extent, VkFormat format,
+                           VkImage& image, VkImageView& imageView, VkDeviceMemory& memory);
+    void recordRayTracingCommands(VkCommandBuffer cmdBuffer, VkExtent2D extent, VkImage outputImage,
+                                 VkImageView outputImageView, const PushConstants& pc,
+                                 VkAccelerationStructureKHR_T* tlas = VK_NULL_HANDLE);
+    void denoiseImage(VkCommandBuffer cmdBuffer, VkImage inputImage, VkImage outputImage);
 
-    // Getters for integration with external render loops
-    VkPipeline getPipeline() const { return rtPipeline_; }
-    VkPipelineLayout getPipelineLayout() const { return rtPipelineLayout_; }
+    VkPipeline getPipeline() const { return rtPipeline_.get(); }
+    VkPipelineLayout getPipelineLayout() const { return rtPipelineLayout_.get(); }
     const SBT& getSBT() const { return sbt_; }
-    VkAccelerationStructureKHR getTLAS() const { return tlas_; }
-    VkAccelerationStructureKHR getBLAS() const { return blas_; }
-    VkDescriptorSet getDescriptorSet() const { return ds_; }
-    bool hasShaderFeature(ShaderFeatures feature) const { return (static_cast<uint32_t>(shaderFeatures_) & static_cast<uint32_t>(feature)) != 0; }
+    const VkAccelerationStructureKHR_T* getTLAS() const { return tlas_.get(); }
+    const VkAccelerationStructureKHR_T* getBLAS() const { return blas_.get(); }
+    VkDescriptorSet getDescriptorSet() const { return ds_.get(); }
+    bool hasShaderFeature(ShaderFeatures feature) const {
+        return (static_cast<uint32_t>(shaderFeatures_) & static_cast<uint32_t>(feature)) != 0;
+    }
 
 private:
     void createDescriptorSetLayout();
     void createDescriptorPoolAndSet();
     void createRayTracingPipeline(uint32_t maxRayRecursionDepth);
     void createShaderBindingTable(VkPhysicalDevice physicalDevice);
-    void createBottomLevelAS(VkPhysicalDevice physicalDevice, VkCommandPool commandPool, VkQueue queue,
-                             VkBuffer vertexBuffer, VkBuffer indexBuffer, uint32_t vertexCount, uint32_t indexCount,
-                             uint64_t vertexStride);
-    void createTopLevelAS(VkPhysicalDevice physicalDevice, VkCommandPool commandPool, VkQueue queue);
-    void updateDescriptorSetForTLAS(VkAccelerationStructureKHR tlas);
-    void createBuffer(VkPhysicalDevice physicalDevice, VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags props, VkBuffer& buffer, VkDeviceMemory& memory);
+    void updateDescriptorSetForTLAS(VkAccelerationStructureKHR_T* tlas);
+    void createBuffer(VkPhysicalDevice physicalDevice, VkDeviceSize size, VkBufferUsageFlags usage,
+                     VkMemoryPropertyFlags props, VulkanResource<VkBuffer_T*, vkDestroyBuffer>& buffer,
+                     VulkanResource<VkDeviceMemory, vkFreeMemory>& memory);
     uint32_t findMemoryType(VkPhysicalDevice physicalDevice, uint32_t typeFilter, VkMemoryPropertyFlags props);
     VkShaderModule createShaderModule(const std::string& filename);
     bool shaderFileExists(const std::string& filename) const;
+    void loadShadersAsync(std::vector<VkShaderModule>& modules, const std::vector<std::string>& paths);
+    void buildShaderGroups(std::vector<VkRayTracingShaderGroupCreateInfoKHR>& groups,
+                           const std::vector<VkPipelineShaderStageCreateInfo>& stages);
+
+    // Private initialization methods
+    void createBottomLevelAS(
+        VkPhysicalDevice physicalDevice, VkCommandPool commandPool, VkQueue queue,
+        const std::vector<std::tuple<VkBuffer_T*, VkBuffer_T*, uint32_t, uint32_t, uint64_t>>& geometries
+    );
+    void createTopLevelAS(
+        VkPhysicalDevice physicalDevice, VkCommandPool commandPool, VkQueue queue,
+        const std::vector<std::tuple<VkAccelerationStructureKHR_T*, glm::mat<4, 4, float, glm::packed_highp>>>& instances
+    );
 };
 
 #endif // VULKAN_RTX_HPP

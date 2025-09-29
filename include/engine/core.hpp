@@ -5,6 +5,7 @@
 // This header defines the core components of the AMOURANTH RTX engine, serving as the primary entry point for developers.
 // The engine integrates Vulkan-based ray tracing (VulkanRTX) and core initialization (VulkanInitializer) with a physics-based
 // simulation framework for rendering multidimensional phenomena, driven by the UniversalEquation and DimensionalNavigator classes.
+// Standardized 256-byte PushConstants for both rasterization and ray tracing pipelines to support high-end RTX GPUs.
 // Zachary Geurts 2025
 
 #include <glm/glm.hpp>
@@ -20,12 +21,13 @@
 #include <algorithm>
 #include "universal_equation.hpp"
 
-// PushConstants for shader data
+// PushConstants for shader data, standardized to 256 bytes for rasterization and ray tracing
 struct PushConstants {
     alignas(16) glm::mat4 model;       // 64 bytes
     alignas(16) glm::mat4 view_proj;   // 64 bytes
+    alignas(16) glm::vec4 extra[8];    // 128 bytes (8 vec4s x 16 bytes)
 };
-static_assert(sizeof(PushConstants) == 128, "PushConstants size must be 128 bytes");
+static_assert(sizeof(PushConstants) == 256, "PushConstants size must be 256 bytes");
 
 // Platform-specific font path
 #ifdef __ANDROID__
@@ -230,7 +232,7 @@ inline AMOURANTH::AMOURANTH(DimensionalNavigator* navigator) {
     isPaused_ = false;
     isUserCamActive_ = false;
     mode_ = 1;
-    userCamPos_ = glm::vec3(0.0f, 0.0f, 0.0f);
+    userCamPos_ = glm::vec3(0.0f);
     width_ = simulator_->getWidth();
     height_ = simulator_->getHeight();
 }

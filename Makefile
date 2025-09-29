@@ -31,8 +31,8 @@ else
 	ifeq ($(UNAME_S),Linux)
 	    # Linux
 	    CXX ?= g++
-	    CXXFLAGS ?= -O3 -std=c++17 -Wall -Wextra -g -fopenmp -Iinclude -Iinclude/engine
-	    LDFLAGS ?= -lSDL3 -lvulkan -lSDL3_ttf -lX11 -lxcb -fopenmp
+	    CXXFLAGS ?= -fPIC -O3 -std=c++17 -Wall -Wextra -g -fopenmp -Iinclude -Iinclude/engine -I/usr/include/fmt
+	    LDFLAGS ?= -lSDL3 -lvulkan -lSDL3_ttf -lX11 -lxcb -fopenmp -lfmt
 	    EXE_SUFFIX ?=
 	    MKDIR ?= mkdir -p
 	    CP ?= cp
