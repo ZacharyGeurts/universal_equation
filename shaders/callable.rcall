@@ -1,0 +1,54 @@
+#version 460
+#extension GL_EXT_ray_tracing : require
+#extension GL_EXT_nonuniform_qualifier : require
+#extension GL_EXT_scalar_block_layout : require
+
+// Callable shader for material computation in the AMOURANTH RTX engine
+// Computes albedo with a procedural checkerboard pattern, suitable for game-like visuals (e.g., Mario-style objects)
+// Outputs material properties (color, IOR, transparency) for use in closest hit shaders
+
+// Hit information structure for input/output
+struct HitInfo {
+    vec3 hitPoint;      // Hit point in world space
+    vec3 normal;        // Surface normal
+    vec3 color;         // Computed albedo
+    float ior;          // Index of refraction
+    float transparency; // Transparency value
+};
+
+// Material buffer (set = 0, binding = 1)
+layout(set = 0, binding = 1) readonly buffer MaterialBuffer {
+    vec4 colors[]; // RGB + padding
+} materials;
+
+// Index of refraction buffer (set = 0, binding = 2)
+layout(set = 0, binding = 2) readonly buffer IORBuffer {
+    float iors[];
+} iors;
+
+// Transparency buffer (set = 0, binding = 3)
+layout(set = 0, binding = 3) readonly buffer TransparencyBuffer {
+    float transparencies[];
+} transparencies;
+
+// Callable shader input/output
+layout(location = 2) callableDataEXT HitInfo callableHitInfo;
+
+// Callable shader entry point
+void mainCallable() {
+    // Get material ID from instance custom index
+    int matID = gl_InstanceCustomIndexEXT;
+
+    // Base albedo from material buffer
+    vec3 albedo = materials.colors[matID].rgb;
+
+    // Add a procedural checkerboard pattern based on hit point
+    vec3 p = callableHitInfo.hitPoint * 2.0; // Scale for visibility
+    float checker = mod(floor(p.x) + floor(p.y) + floor(p.z), 2.0);
+    albedo = mix(albedo, albedo * 0.5, checker); // Darken alternate squares
+
+    // Output computed material properties
+    callableHitInfo.color = albedo;
+    callableHitInfo.ior = iors.iors[matID];
+    callableHitInfo.transparency = transparencies.transparencies[matID];
+}
