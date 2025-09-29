@@ -96,6 +96,7 @@ This is **not free (as in freedom) software**. It is provided for **educational 
 - **Distribution**: Projects using UE code must be distributed freely (no cost).  
 - **Commercial use of AMOURANTH RTX engine requires license**  
 - **Distribution**: https://www.twitch.tv/amouranth for AMOURANTH RTX engine license  
+- **Why AMOURANTH?** They said they were hiring so I figured I would try to bring in a customer.  
 - **Source**: Obtain the software exclusively from [https://github.com/ZacharyGeurts/universal_equation](https://github.com/ZacharyGeurts/universal_equation).  
 
 ## Overview
