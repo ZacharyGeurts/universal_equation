@@ -2,9 +2,11 @@
 #define CORE_HPP
 
 // AMOURANTH RTX Engine Core September 2025
-// This header defines the core components of the AMOURANTH RTX engine, serving as the primary entry point for developers.
-// The engine integrates Vulkan-based ray tracing (VulkanRTX) and core initialization (VulkanInitializer) with a physics-based
-// simulation framework for rendering multidimensional phenomena, driven by the UniversalEquation and DimensionalNavigator classes.
+// This header provides the core rendering and navigation components for the AMOURANTH RTX engine, designed as the primary
+// entry point for game developers building applications like 3D platformers (e.g., the next Mario).
+// Integrates Vulkan-based ray tracing and SDL for rendering, input handling, and text overlays.
+// Physics computations (e.g., dark energy, multidimensional phenomena) are handled in ue_init.hpp, allowing developers
+// to focus on gameplay and rendering features.
 // Standardized 256-byte PushConstants for both rasterization and ray tracing pipelines to support high-end RTX GPUs.
 // Zachary Geurts 2025
 
@@ -18,18 +20,17 @@
 #include <vulkan/vulkan.h>
 #include <stdexcept>
 #include <cmath>
-#include <algorithm>
-#include "universal_equation.hpp"
+#include "ue_init.hpp"
 
 // PushConstants for shader data, standardized to 256 bytes for rasterization and ray tracing
 struct PushConstants {
-    alignas(16) glm::mat4 model;       // 64 bytes
-    alignas(16) glm::mat4 view_proj;   // 64 bytes
-    alignas(16) glm::vec4 extra[8];    // 128 bytes (8 vec4s x 16 bytes)
+    alignas(16) glm::mat4 model;       // 64 bytes: Model transformation matrix
+    alignas(16) glm::mat4 view_proj;   // 64 bytes: Combined view-projection matrix
+    alignas(16) glm::vec4 extra[8];    // 128 bytes: Additional data for shaders (8 vec4s x 16 bytes)
 };
 static_assert(sizeof(PushConstants) == 256, "PushConstants size must be 256 bytes");
 
-// Platform-specific font path
+// Platform-specific font path for text rendering
 #ifdef __ANDROID__
 #define FONT_PATH "fonts/sf-plasmatica-open.ttf"
 #elif defined(_WIN32) || defined(__WIN32__) || defined(WIN32) || defined(__NT__)
@@ -40,16 +41,7 @@ static_assert(sizeof(PushConstants) == 256, "PushConstants size must be 256 byte
 #define FONT_PATH "assets/fonts/sf-plasmatica-open.ttf"
 #endif
 
-// Structure to hold data for each rendered dimension, used for caching physics simulation results.
-struct DimensionData {
-    int dimension;           // Dimension index (1 to kMaxRenderedDimensions)
-    double observable;       // Observable energy component
-    double potential;        // Potential energy component
-    double darkMatter;       // Dark matter influence
-    double darkEnergy;       // Dark energy influence
-};
-
-// Structure for storing font glyph data for text rendering with SDL_ttf.
+// Structure for storing font glyph data for text rendering with SDL_ttf
 struct Glyph {
     SDL_Texture* texture;     // Texture for the glyph
     int width, height;       // Glyph dimensions
@@ -57,7 +49,7 @@ struct Glyph {
     int offset_x, offset_y;  // Offset for positioning
 };
 
-// TextFont class for rendering text overlays (e.g., debug information or UI).
+// TextFont class for rendering text overlays (e.g., UI, debug info, or game HUD)
 class TextFont {
 public:
     TextFont(SDL_Renderer* renderer, int char_width, int char_height);
@@ -78,10 +70,10 @@ private:
 // Forward declaration of DimensionalNavigator
 class DimensionalNavigator;
 
-// Core class of the AMOURANTH RTX engine, orchestrating rendering and simulation.
+// Core class of the AMOURANTH RTX engine, orchestrating rendering, input, and navigation for game development
 class AMOURANTH {
 public:
-    static constexpr int kMaxRenderedDimensions = 9;
+    static constexpr int kMaxRenderedDimensions = 9; // Maximum dimensions for rendering (configurable for gameplay)
 
     AMOURANTH(DimensionalNavigator* navigator);
     void render(uint32_t imageIndex, VkBuffer vertexBuffer, VkCommandBuffer commandBuffer,
@@ -89,6 +81,7 @@ public:
     void update(float deltaTime);
     void handleInput(const SDL_KeyboardEvent& key);
 
+    // Adjust physics parameters using UniversalEquation (optional for physics-based gameplay)
     void adjustInfluence(double delta) {
         ue_.setInfluence(ue_.getInfluence() + delta);
         updateCache();
@@ -112,6 +105,7 @@ public:
 
     void setCurrentDimension(int dimension) { ue_.setCurrentDimension(dimension); }
 
+    // Accessors for rendering, navigation, and optional physics data
     bool getDebug() const { return ue_.getDebug(); }
     double computeInteraction(int vertexIndex, double distance) const { return ue_.computeInteraction(vertexIndex, distance); }
     double computePermeation(int vertexIndex) const { return ue_.computePermeation(vertexIndex); }
@@ -127,33 +121,34 @@ public:
     float getZoomLevel() const { return zoomLevel_; }
     glm::vec3 getUserCamPos() const { return userCamPos_; }
     bool isUserCamActive() const { return isUserCamActive_; }
-    UniversalEquation::EnergyResult getEnergyResult() const { return ue_.compute(); }
-    const std::vector<UniversalEquation::DimensionInteraction>& getInteractions() const { return ue_.getInteractions(); }
+    // Access physics computation results from UniversalEquation
+    EnergyResult getEnergyResult() const { return ue_.compute(); }
+    const std::vector<DimensionInteraction>& getInteractions() const { return ue_.getInteractions(); }
 
 private:
     void initializeSphereGeometry();
     void initializeQuadGeometry();
     void initializeCalculator();
 
-    UniversalEquation ue_;
-    std::vector<DimensionData> cache_;
-    std::vector<glm::vec3> sphereVertices_;
-    std::vector<uint32_t> sphereIndices_;
-    std::vector<glm::vec3> quadVertices_;
-    std::vector<uint32_t> quadIndices_;
-    DimensionalNavigator* simulator_;
-    int mode_ = 1;
-    float wavePhase_ = 0.0f;
-    float waveSpeed_ = 1.0f;
-    float zoomLevel_ = 1.0f;
-    bool isPaused_ = false;
-    glm::vec3 userCamPos_ = glm::vec3(0.0f);
-    bool isUserCamActive_ = false;
-    int width_ = 800;
-    int height_ = 600;
+    UniversalEquation ue_;                     // Physics simulation instance (optional for gameplay)
+    std::vector<DimensionData> cache_;         // Cache for dimension data from UniversalEquation
+    std::vector<glm::vec3> sphereVertices_;    // Sphere geometry vertices for rendering
+    std::vector<uint32_t> sphereIndices_;      // Sphere geometry indices
+    std::vector<glm::vec3> quadVertices_;      // Quad geometry vertices for rendering
+    std::vector<uint32_t> quadIndices_;        // Quad geometry indices
+    DimensionalNavigator* simulator_;           // Navigation state manager
+    int mode_ = 1;                             // Current rendering mode (1-9)
+    float wavePhase_ = 0.0f;                   // Wave phase for animations
+    float waveSpeed_ = 1.0f;                   // Wave animation speed
+    float zoomLevel_ = 1.0f;                   // Zoom level for rendering
+    bool isPaused_ = false;                    // Pause state for simulation
+    glm::vec3 userCamPos_ = glm::vec3(0.0f);   // User-controlled camera position
+    bool isUserCamActive_ = false;             // User camera active state
+    int width_ = 800;                          // Window width
+    int height_ = 600;                         // Window height
 };
 
-// Manages navigation and state for multidimensional rendering.
+// Manages navigation and state for rendering, suitable for game camera and scene management
 class DimensionalNavigator {
 public:
     DimensionalNavigator(const std::string& name, int width, int height)
@@ -175,20 +170,20 @@ public:
     int getWidth() const { return width_; }
     int getHeight() const { return height_; }
 
-    void setMode(int mode) { mode_ = std::clamp(mode, 1, 9); }
+    void setMode(int mode) { mode_ = glm::clamp(mode, 1, 9); }
     void setZoomLevel(float zoom) { zoomLevel_ = std::max(0.1f, zoom); }
     void setWavePhase(float phase) { wavePhase_ = phase; }
 
 private:
-    std::string name_;
-    int width_, height_;
-    int mode_;
-    float zoomLevel_;
-    float wavePhase_;
-    std::vector<DimensionData> cache_;
+    std::string name_;                    // Navigator identifier
+    int width_, height_;                  // Window dimensions
+    int mode_;                            // Current rendering mode
+    float zoomLevel_;                     // Zoom level for camera
+    float wavePhase_;                     // Wave phase for animations
+    std::vector<DimensionData> cache_;    // Cache for dimension data (from ue_init.hpp)
 };
 
-// Forward declarations for mode-specific rendering functions.
+// Forward declarations for mode-specific rendering functions (customizable for different game visuals)
 void renderMode1(AMOURANTH* amouranth, uint32_t imageIndex, VkBuffer vertexBuffer, VkCommandBuffer commandBuffer,
                  VkBuffer indexBuffer, float zoomLevel, int width, int height, float wavePhase,
                  const std::vector<DimensionData>& cache, VkPipelineLayout pipelineLayout);
@@ -284,7 +279,7 @@ inline void AMOURANTH::handleInput(const SDL_KeyboardEvent& key) {
             case SDLK_1: case SDLK_2: case SDLK_3: case SDLK_4: case SDLK_5:
             case SDLK_6: case SDLK_7: case SDLK_8: case SDLK_9:
                 mode_ = key.key - SDLK_0;
-                simulator_->setMode(mode_);
+                simulator_->setMode(mode_); // WOOF
                 break;
         }
     }
