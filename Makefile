@@ -1,14 +1,11 @@
 # Operating System Boot-Inspired Makefile (September 2025)
-# This Makefile simulates an OS boot process while building the AMOURANTH RTX Engine.
+# Builds the AMOURANTH RTX Engine for game developers (e.g., Mario-like games).
 # Supports cross-platform compilation for Linux, macOS, Windows (via MinGW), and Android (via NDK).
-# Detects the host OS and adjusts compilers, flags, and library links accordingly.
-# Key features:
-# - Compiles C++17 sources with SDL3, Vulkan 1.3+, and SDL_ttf dependencies.
-# - Builds SPIR-V shaders for Vulkan ray tracing (vertex, fragment, raygen, etc.).
-# - Copies assets (shaders, fonts) to the output directory.
-# - Includes X11 libraries for Linux to resolve BadMatch errors.
-# - Adds Android NDK cross-compilation support for ARM64.
-# - Detailed logging for build debugging.
+# Compiles C++17 sources with SDL3, Vulkan 1.3+, and SDL_ttf dependencies.
+# Builds SPIR-V shaders for Vulkan ray tracing (raygen, miss, closesthit, anyhit, intersection, callable) and rasterization (vertex, fragment).
+# Copies assets (shaders, fonts) to the output directory.
+# Includes X11 libraries for Linux to resolve BadMatch errors.
+# Adds Android NDK cross-compilation support for ARM64.
 # Dependencies: SDL3, SDL_ttf, Vulkan 1.3+, libX11-dev (Linux), libomp (macOS), MinGW (Windows), Android NDK (Android).
 # Usage: make [all|clean|directories|shaders|objects|link|copy-assets]
 # Zachary Geurts, September 2025
@@ -92,15 +89,12 @@ ifdef TARGET_OS
 	    RMDIR ?= rm -rf
 	    PATH_SEP ?= /
 	endif
-	# Android cross-compilation
 	ifeq ($(TARGET_OS),Android)
 	    UNAME_S := Android
-	    # Android NDK settings
 	    NDK_HOME ?= $(shell echo $$NDK_HOME)
 	    ifeq ($(NDK_HOME),)
 	        $(error NDK_HOME is not set. Please set the Android NDK path.)
 	    endif
-	    # Target ARM64 for Android
 	    ARCH ?= aarch64-linux-android
 	    API_LEVEL ?= 33
 	    TOOLCHAIN = $(NDK_HOME)/toolchains/llvm/prebuilt/$(shell uname -s | tr A-Z a-z)-x86_64
@@ -113,7 +107,6 @@ ifdef TARGET_OS
 	    RM ?= rm -f
 	    RMDIR ?= rm -rf
 	    PATH_SEP ?= /
-	    # Android-specific output (shared library)
 	    EXECUTABLE = $(BIN_DIR)/libNavigator.so
 	endif
 endif
@@ -151,6 +144,8 @@ RAHIT_SHADERS = $(wildcard $(SHADER_DIR)/*.rahit)
 RCHIT_SHADERS = $(wildcard $(SHADER_DIR)/*.rchit)
 RMISS_SHADERS = $(wildcard $(SHADER_DIR)/*.rmiss)
 RGEN_SHADERS = $(wildcard $(SHADER_DIR)/*.rgen)
+RINT_SHADERS = $(wildcard $(SHADER_DIR)/*.rint)
+RCALL_SHADERS = $(wildcard $(SHADER_DIR)/*.rcall)
 
 # Shader objects (SPIR-V)
 VERT_OBJECTS = $(patsubst $(SHADER_DIR)/%.vert,$(SHADER_DIR)/%.spv,$(VERT_SHADERS))
@@ -159,11 +154,10 @@ RAHIT_OBJECTS = $(patsubst $(SHADER_DIR)/%.rahit,$(SHADER_DIR)/%.spv,$(RAHIT_SHA
 RCHIT_OBJECTS = $(patsubst $(SHADER_DIR)/%.rchit,$(SHADER_DIR)/%.spv,$(RCHIT_SHADERS))
 RMISS_OBJECTS = $(patsubst $(SHADER_DIR)/%.rmiss,$(SHADER_DIR)/%.spv,$(RMISS_SHADERS))
 RGEN_OBJECTS = $(patsubst $(SHADER_DIR)/%.rgen,$(SHADER_DIR)/%.spv,$(RGEN_SHADERS))
+RINT_OBJECTS = $(patsubst $(SHADER_DIR)/%.rint,$(SHADER_DIR)/%.spv,$(RINT_SHADERS))
+RCALL_OBJECTS = $(patsubst $(SHADER_DIR)/%.rcall,$(SHADER_DIR)/%.spv,$(RCALL_SHADERS))
 
-SHADER_OBJECTS = $(VERT_OBJECTS) $(FRAG_OBJECTS) $(RAHIT_OBJECTS) $(RCHIT_OBJECTS) $(RMISS_OBJECTS) $(RGEN_OBJECTS)
-
-# Common GLSL file
-COMMON_GLSL = $(SHADER_DIR)/common.glsl
+SHADER_OBJECTS = $(VERT_OBJECTS) $(FRAG_OBJECTS) $(RAHIT_OBJECTS) $(RCHIT_OBJECTS) $(RMISS_OBJECTS) $(RGEN_OBJECTS) $(RINT_OBJECTS) $(RCALL_OBJECTS)
 
 # Default target: Boot the system!
 all:
@@ -231,20 +225,28 @@ $(SHADER_DIR)/%.spv: $(SHADER_DIR)/%.frag
 	@echo "Initializing fragment driver: $<"
 	$(GLSLC) $< -o $@ --target-env=vulkan1.3
 
-$(SHADER_DIR)/%.spv: $(SHADER_DIR)/%.rahit $(COMMON_GLSL)
+$(SHADER_DIR)/%.spv: $(SHADER_DIR)/%.rahit
 	@echo "Initializing anyhit driver: $<"
 	$(GLSLC) $< -o $@ --target-env=vulkan1.3
 
-$(SHADER_DIR)/%.spv: $(SHADER_DIR)/%.rchit $(COMMON_GLSL)
+$(SHADER_DIR)/%.spv: $(SHADER_DIR)/%.rchit
 	@echo "Initializing closesthit driver: $<"
 	$(GLSLC) $< -o $@ --target-env=vulkan1.3
 
-$(SHADER_DIR)/%.spv: $(SHADER_DIR)/%.rmiss $(COMMON_GLSL)
+$(SHADER_DIR)/%.spv: $(SHADER_DIR)/%.rmiss
 	@echo "Initializing miss driver: $<"
 	$(GLSLC) $< -o $@ --target-env=vulkan1.3
 
-$(SHADER_DIR)/%.spv: $(SHADER_DIR)/%.rgen $(COMMON_GLSL)
+$(SHADER_DIR)/%.spv: $(SHADER_DIR)/%.rgen
 	@echo "Initializing raygen driver: $<"
+	$(GLSLC) $< -o $@ --target-env=vulkan1.3
+
+$(SHADER_DIR)/%.spv: $(SHADER_DIR)/%.rint
+	@echo "Initializing intersection driver: $<"
+	$(GLSLC) $< -o $@ --target-env=vulkan1.3
+
+$(SHADER_DIR)/%.spv: $(SHADER_DIR)/%.rcall
+	@echo "Initializing callable driver: $<"
 	$(GLSLC) $< -o $@ --target-env=vulkan1.3
 
 # Copy shader files to bin/assets/shaders directory

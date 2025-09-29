@@ -5,30 +5,29 @@
 #extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
 
 // Intersection shader for procedural spheres in the AMOURANTH RTX engine
-// Computes ray-sphere intersections for custom geometry, ideal for game objects like coins or power-ups in a Mario-like game
-// Integrates with the Vulkan ray tracing pipeline, using a sphere buffer for geometry data
+// Handles firework particle geometry
 
-// Sphere geometry buffer (set = 0, binding = 7)
 layout(set = 0, binding = 7, scalar) readonly buffer SphereBuffer {
     vec4 spheres[]; // xyz = center, w = radius
 } sphereBuffer;
 
-// Hit attributes (barycentric coordinates, set to zero for spheres)
-layout(location = 0) hitAttributeEXT vec2 baryCoord;
+layout(push_constant) uniform PushConstants {
+    mat4 model;       // Object-to-world transform
+    mat4 view_proj;   // View * projection transform
+    vec4 energy;      // observable, potential, darkMatter, darkEnergy
+} pc;
 
-// Intersection shader entry point
-void mainIntersection() {
-    // Get sphere data based on instance custom index
-    int sphereID = gl_InstanceCustomIndexEXT;
+hitAttributeEXT vec2 attribs;
+
+void main() {
+    int sphereID = int(pc.energy.x);
     vec4 sphere = sphereBuffer.spheres[sphereID];
-    vec3 center = sphere.xyz;
+    vec3 center = (pc.model * vec4(sphere.xyz, 1.0)).xyz;
     float radius = sphere.w;
 
-    // Ray data
     vec3 rayOrigin = gl_WorldRayOriginEXT;
     vec3 rayDir = gl_WorldRayDirectionEXT;
 
-    // Ray-sphere intersection
     vec3 oc = rayOrigin - center;
     float a = dot(rayDir, rayDir);
     float b = 2.0 * dot(oc, rayDir);
@@ -38,12 +37,8 @@ void mainIntersection() {
     if (discriminant >= 0.0) {
         float t = (-b - sqrt(discriminant)) / (2.0 * a);
         if (t >= gl_RayTminEXT && t <= gl_RayTmaxEXT) {
-            // Set hit attributes (baryCoord not used for spheres, set for compatibility)
-            baryCoord = vec2(0.0, 0.0);
-
-            // Report intersection
-            gl_RayTmaxEXT = t;
-            reportIntersectionEXT(t, 0); // Hit kind 0 for spheres
+            attribs = vec2(0.0, 0.0);
+            reportIntersectionEXT(t, 0);
         }
     }
 }
