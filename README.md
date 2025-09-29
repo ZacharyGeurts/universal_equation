@@ -13,8 +13,9 @@ The universal_equation is two files.
 One in src and one in include. The rest is AMOURANTH RTX.  
 A ground up RTX engine for developers. Sorry NVidia 3000 series, too slow.  
 
-**Platform**: Currently Linux-only  
-If you have a problem or need assistance please open an issue.  
+**Platform**: Currently Linux-only  with SDL3 implementations for Windows, Mac and iOS, and even Android.  
+I expect RTX to stay, so I expect other platforms to eventually adopt with chips.  
+If you have a problem or need assistance please open an issue here on github.  
 
 Modular design. Modify with your favorite AI coding program.  
 This project uses an SDL3 backend for rendering (yay Vulkan), chosen from idiocy, ignorance, and patience.  
