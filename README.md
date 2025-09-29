@@ -161,6 +161,8 @@ The `UniversalEquation` models the universe as:
 
 ## Requirements
 - **OS**: Linux, (Windows and MacOS supported and untested) with Vulkan Drivers
+- **GPU** RTX 3060 Ti and higher, RX 6800 and up.
+- **CPU** "beefy" CPU - I like cores.
 - **Compiler**: `g++` with C++17 support.  
 - **Libraries**:  
   - **SDL3**: `libsdl3-dev` (may need to build from source if not available).  
