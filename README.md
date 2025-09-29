@@ -11,7 +11,7 @@ Climb in the blanket and have a look around.
 I think this proves the number 1 is real and 0 is not real.  
 The universal_equation is two files.  
 One in src and one in include. The rest is AMOURANTH RTX.  
-A ground up RTX engine for developers. Sorry NVidia 3050 series, too slow.  
+A ground up RTX engine for developers.  
 RTX 3060 Ti and higher, RX 6800 and up.  
 (or lower PushConstants to 128)
 
