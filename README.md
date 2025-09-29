@@ -13,6 +13,7 @@ The universal_equation is two files.
 One in src and one in include. The rest is AMOURANTH RTX.  
 A ground up RTX engine for developers. Sorry NVidia 3050 series, too slow.  
 RTX 3060 Ti and higher, RX 6800 and up.  
+(or lower PushConstants to 128)
 
 **Platform**: Currently Linux-only  with SDL3 implementations for Windows, Mac and iOS, and even Android.  
 I expect RTX to stay, so I expect other platforms to eventually adopt with chips.  
