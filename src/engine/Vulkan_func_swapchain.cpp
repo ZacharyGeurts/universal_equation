@@ -3,11 +3,10 @@
 #include <vector>
 #include <algorithm>
 #include <limits>
-#include <array>    // Added for std::array
-#include <cstdint>  // Added for uint32_t
-// This file handles swapchain creation, surface format selection, and framebuffer setup.
-// AMOURANTH RTX September 2025
-// Zachary Geurts 2025
+#include <array>
+#include <cstdint>
+#include <iostream>
+
 namespace VulkanInitializer {
 
     // Select a suitable surface format for the swapchain
@@ -30,10 +29,39 @@ namespace VulkanInitializer {
         return formats[0]; // Fallback to first available format
     }
 
+    // Validate queue family indices
+    void validateQueueFamilies(VkPhysicalDevice physicalDevice, VkSurfaceKHR surface, uint32_t graphicsFamily, uint32_t presentFamily) {
+        uint32_t queueFamilyCount = 0;
+        vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice, &queueFamilyCount, nullptr);
+        std::vector<VkQueueFamilyProperties> queueFamilies(queueFamilyCount);
+        vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice, &queueFamilyCount, queueFamilies.data());
+
+        bool graphicsValid = false;
+        bool presentValid = false;
+        for (uint32_t i = 0; i < queueFamilyCount; ++i) {
+            if (i == graphicsFamily && (queueFamilies[i].queueFlags & VK_QUEUE_GRAPHICS_BIT)) {
+                graphicsValid = true;
+            }
+            VkBool32 presentSupport = VK_FALSE;
+            vkGetPhysicalDeviceSurfaceSupportKHR(physicalDevice, i, surface, &presentSupport);
+            if (i == presentFamily && presentSupport) {
+                presentValid = true;
+            }
+        }
+        if (!graphicsValid || !presentValid) {
+            std::cerr << "Invalid queue family indices: graphicsFamily=" << graphicsFamily
+                      << ", presentFamily=" << presentFamily << std::endl;
+            throw std::runtime_error("Invalid queue family indices");
+        }
+    }
+
     // Create a swapchain and its associated images/views
     void createSwapchain(VkPhysicalDevice physicalDevice, VkDevice device, VkSurfaceKHR surface, VkSwapchainKHR& swapchain,
                          std::vector<VkImage>& swapchainImages, std::vector<VkImageView>& swapchainImageViews,
                          VkFormat& swapchainFormat, uint32_t graphicsFamily, uint32_t presentFamily, int width, int height) {
+        // Validate queue family indices
+        validateQueueFamilies(physicalDevice, surface, graphicsFamily, presentFamily);
+
         VkSurfaceCapabilitiesKHR capabilities;
         VkResult result = vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physicalDevice, surface, &capabilities);
         if (result != VK_SUCCESS) {
@@ -105,6 +133,7 @@ namespace VulkanInitializer {
             imageCount = capabilities.maxImageCount;
         }
 
+        std::array<uint32_t, 2> queueFamilyIndices = {graphicsFamily, presentFamily};
         VkSwapchainCreateInfoKHR createInfo = {
             .sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
             .pNext = nullptr,
@@ -118,7 +147,7 @@ namespace VulkanInitializer {
             .imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
             .imageSharingMode = (graphicsFamily != presentFamily) ? VK_SHARING_MODE_CONCURRENT : VK_SHARING_MODE_EXCLUSIVE,
             .queueFamilyIndexCount = (graphicsFamily != presentFamily) ? 2u : 0u,
-            .pQueueFamilyIndices = (graphicsFamily != presentFamily) ? std::array<uint32_t, 2>{graphicsFamily, presentFamily}.data() : nullptr,
+            .pQueueFamilyIndices = (graphicsFamily != presentFamily) ? queueFamilyIndices.data() : nullptr,
             .preTransform = capabilities.currentTransform,
             .compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
             .presentMode = selectedPresentMode,
