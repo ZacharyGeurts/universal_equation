@@ -1,82 +1,99 @@
-// renderMode8.cpp
+// src/modes/mode8.cpp
 // AMOURANTH RTX Engine - Render Mode 8 - September 2025
-// Renders 8 ray-traced orbiting spheres with amazeballs RTX effects, modulated by UniversalEquation::EnergyResult.
-// Uses observable for scale, darkEnergy for orbit speed, and energy values for color/emission.
-// Compatible with 256-byte PushConstants and Vulkan ray tracing pipeline.
+// Optimized for 30,000 orbs in dimension 8 with physics-based motion
 // Zachary Geurts, 2025
 
-#include "core.hpp"
-#include <vulkan/vulkan.h>
+#include "engine/core.hpp"
+#include "ue_init.hpp"
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
-#include "ue_init.hpp"
+#include <omp.h>
+
+const size_t kNumBalls = 20;
 
 void renderMode8(AMOURANTH* amouranth, [[maybe_unused]] uint32_t imageIndex, VkBuffer vertexBuffer, VkCommandBuffer commandBuffer,
                  VkBuffer indexBuffer, float zoomLevel, int width, int height, float wavePhase,
                  [[maybe_unused]] const std::vector<DimensionData>& cache, VkPipelineLayout pipelineLayout) {
-    // Initialize UniversalEquation for dynamic effects
-    UniversalEquation equation;
-    equation.setCurrentDimension(1); // Base on 1D for consistency
-    equation.setInfluence(1.0);
-    equation.advanceCycle();
-    EnergyResult energyData = equation.compute();
+    if (!amouranth || !vertexBuffer || !commandBuffer || !indexBuffer || !pipelineLayout) {
+        return;
+    }
 
-    // Standardized 256-byte PushConstants for ray tracing
-    struct PushConstants {
-        alignas(16) glm::mat4 model;       // 64 bytes: Model transformation matrix
-        alignas(16) glm::mat4 view_proj;   // 64 bytes: Combined view-projection matrix
-        alignas(16) glm::vec4 extra[8];    // 128 bytes: Energy values, orbit params, emission
-    } pushConstants = {};
-
-    // View-projection matrix: Perspective with zoom out
-    float aspectRatio = static_cast<float>(width) / height;
-    pushConstants.view_proj = glm::perspective(glm::radians(45.0f), aspectRatio, 0.1f, 100.0f);
-    pushConstants.view_proj = glm::translate(pushConstants.view_proj, glm::vec3(0.0f, 0.0f, -9.0f * zoomLevel));
-
-    // Bind vertex and index buffers (for BLAS construction)
+    // Bind vertex and index buffers
     VkDeviceSize offsets[] = {0};
     vkCmdBindVertexBuffers(commandBuffer, 0, 1, &vertexBuffer, offsets);
     vkCmdBindIndexBuffer(commandBuffer, indexBuffer, 0, VK_INDEX_TYPE_UINT32);
 
-    // Render 8 orbiting spheres
-    static std::mt19937 rng(static_cast<unsigned>(std::time(nullptr)));
-    static std::uniform_real_distribution<float> angleDist(0.0f, 2.0f * 3.1415926535f);
-    static std::vector<float> initialAngles(8);
-    if (initialAngles[0] == 0.0f) { // Initialize once
-        for (int i = 0; i < 8; ++i) {
-            initialAngles[i] = angleDist(rng);
-        }
+    // Initialize UniversalEquation
+    static UniversalEquation equation;
+    static bool initialized = false;
+    if (!initialized) {
+        equation.setCurrentDimension(8);
+        equation.setMode(8);
+        equation.setInfluence(2.5f);
+        equation.setDebug(false);
+        equation.initializeCalculator(amouranth);
+        equation.initializeBalls(1.2f, 0.12f, kNumBalls);
+        initialized = true;
     }
 
-    float orbitSpeed = 0.5f + 0.5f * static_cast<float>(energyData.darkEnergy); // Energy-driven speed
-    float orbitRadius = 2.0f + 0.5f * static_cast<float>(energyData.observable); // Energy-driven radius
+    // Update physics (boundary checks handled in updateBalls)
+    equation.advanceCycle();
+    equation.updateBalls(0.016f);
 
-    for (int i = 0; i < 8; ++i) {
-        float angle = initialAngles[i] + wavePhase * orbitSpeed + float(i) * 0.7853981634f; // 45° phase offset
-        glm::vec3 orbitPos(orbitRadius * cos(angle), orbitRadius * sin(angle), 0.0f);
+    // Update projected vertices
+    auto balls = equation.getBalls();
+    std::vector<glm::vec3> updatedVerts(balls.size()); // Declare updatedVerts
+#pragma omp parallel for
+    for (size_t i = 0; i < balls.size(); ++i) {
+        updatedVerts[i] = (equation.getSimulationTime() >= balls[i].startTime) ? balls[i].position : glm::vec3(0.0f);
+    }
+    equation.updateProjectedVertices(updatedVerts);
 
+    // Get energy data
+    EnergyResult energyData = equation.compute();
+
+    // Push constants
+    struct PushConstants {
+        alignas(16) glm::mat4 model;
+        alignas(16) glm::mat4 view_proj;
+        alignas(16) glm::vec4 extra[8];
+    } pushConstants = {};
+
+    // View-projection matrix
+    float aspectRatio = static_cast<float>(width) / height;
+    pushConstants.view_proj = glm::perspective(glm::radians(45.0f), aspectRatio, 0.1f, 100.0f);
+    pushConstants.view_proj = glm::translate(pushConstants.view_proj, glm::vec3(0.0f, 0.0f, -9.0f * zoomLevel));
+
+    // Common scale
+    float scale = 0.2f + 0.05f * sin(wavePhase) + 0.2f * static_cast<float>(energyData.observable);
+
+    // Draw orbs
+    uint32_t indexCount = amouranth->getSphereIndices().size();
+    if (indexCount == 0) {
+        return;
+    }
+    for (size_t i = 0; i < std::min(balls.size(), kNumBalls); ++i) {
+        if (equation.getSimulationTime() < balls[i].startTime) continue;
+        float rotationAngle = wavePhase + 0.5f * static_cast<float>(energyData.darkEnergy) + i * 0.05f;
+        glm::vec3 color = glm::vec3(
+            0.5f + 0.5f * sin(i * 0.1f + static_cast<float>(energyData.observable)),
+            0.5f + 0.5f * sin(i * 0.1f + 2.0f + static_cast<float>(energyData.potential)),
+            0.5f + 0.5f * sin(i * 0.1f + 4.0f + static_cast<float>(energyData.darkMatter))
+        );
         pushConstants.model = glm::mat4(1.0f);
-        float scale = 0.3f + 0.2f * sin(wavePhase + float(i)); // Pulsating scale
-        pushConstants.model = glm::translate(pushConstants.model, orbitPos);
         pushConstants.model = glm::scale(pushConstants.model, glm::vec3(scale));
-
-        // Energy-based properties
+        pushConstants.model = glm::rotate(pushConstants.model, rotationAngle, glm::vec3(0.0f, 0.0f, 1.0f));
+        pushConstants.model = glm::translate(pushConstants.model, balls[i].position);
         pushConstants.extra[0] = glm::vec4(
             static_cast<float>(energyData.observable),
-            static_cast<float>(energyData.potential) * (i + 1) / 8.0f, // Vary per object
-            static_cast<float>(energyData.darkMatter) * (i + 1) / 8.0f,
+            static_cast<float>(energyData.potential),
+            static_cast<float>(energyData.darkMatter),
             static_cast<float>(energyData.darkEnergy)
         );
-        pushConstants.extra[1] = glm::vec4(wavePhase, float(i) / 8.0f, 0.0f, 1.0f + 0.5f * sin(wavePhase)); // Phase, index, emission
-
-        // Push constants for current sphere
-        vkCmdPushConstants(commandBuffer, pipelineLayout,
-                           VK_SHADER_STAGE_RAYGEN_BIT | VK_SHADER_STAGE_CLOSEST_HIT_BIT | VK_SHADER_STAGE_ANY_HIT_BIT,
+        pushConstants.extra[1] = glm::vec4(rotationAngle, 0.0f, 0.0f, 0.0f);
+        pushConstants.extra[2] = glm::vec4(color, 1.0f);
+        vkCmdPushConstants(commandBuffer, pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
                            0, sizeof(PushConstants), &pushConstants);
-
-        // Ray tracing dispatch for each sphere (simplified; use instancing in practice)
-        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, rayTracingPipeline);
-        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, pipelineLayout, 0, 1, &descriptorSet, 0, nullptr);
-        vkCmdTraceRaysKHR(commandBuffer, &raygenSBT, &missSBT, &hitSBT, &anyHitSBT, width, height, 1);
+        vkCmdDrawIndexed(commandBuffer, indexCount, 1, 0, 0, 0);
     }
 }
