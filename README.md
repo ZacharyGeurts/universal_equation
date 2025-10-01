@@ -207,6 +207,26 @@ make -j4
 sudo make install
 cd ../..
 
+# Build and install SDL3_image from source
+git clone https://github.com/libsdl-org/SDL_image.git
+cd SDL_image
+mkdir build
+cd build
+cmake ..
+make -j4
+sudo make install
+cd ../..
+
+# Build and install SDL3_mixer from source
+git clone https://github.com/libsdl-org/SDL_mixer
+cd SDL_mixer
+mkdir build
+cd build
+cmake ..
+make -j4
+sudo make install
+cd ../..
+
 # Build the project
 git clone https://github.com/ZacharyGeurts/universal_equation
 cd universal_equation
