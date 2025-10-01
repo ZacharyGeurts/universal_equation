@@ -1,3 +1,4 @@
+// SDL3_init.hpp
 #ifndef SDL3_INIT_HPP
 #define SDL3_INIT_HPP
 
@@ -37,103 +38,136 @@
 #include <functional>
 #include <memory>
 #include <map>
-#include <future>
 #include <thread>
 #include <mutex>
 #include <condition_variable>
 #include <queue>
 #include <atomic>
 #include <fstream>
+#include <iostream>
 #include <sstream>
 #include <filesystem>
 #include "SDL3_window.hpp"
 #include "SDL3_vulkan.hpp"
-#include "SDL3_input.hpp"
 #include "SDL3_audio.hpp"
+#include "SDL3_font.hpp"
+#include "SDL3_input.hpp"
 
 namespace SDL3Initializer {
 
-    class SDL3Initializer {
-    public:
-        using ResizeCallback = std::function<void(int, int)>;
-        using AudioCallback = std::function<void(Uint8*, int)>;
-        using KeyboardCallback = std::function<void(const SDL_KeyboardEvent&)>;
-        using MouseButtonCallback = std::function<void(const SDL_MouseButtonEvent&)>;
-        using MouseMotionCallback = std::function<void(const SDL_MouseMotionEvent&)>;
-        using MouseWheelCallback = std::function<void(const SDL_MouseWheelEvent&)>;
-        using TextInputCallback = std::function<void(const SDL_TextInputEvent&)>;
-        using TouchCallback = std::function<void(const SDL_TouchFingerEvent&)>;
-        using GamepadButtonCallback = std::function<void(const SDL_GamepadButtonEvent&)>;
-        using GamepadAxisCallback = std::function<void(const SDL_GamepadAxisEvent&)>;
-        using GamepadConnectCallback = std::function<void(bool, SDL_JoystickID, SDL_Gamepad*)>;
+class SDL3Initializer {
+public:
+    using ResizeCallback = std::function<void(int, int)>;
+    using AudioCallback = std::function<void(Uint8*, int)>;
+    using KeyboardCallback = std::function<void(const SDL_KeyboardEvent&)>;
+    using MouseButtonCallback = std::function<void(const SDL_MouseButtonEvent&)>;
+    using MouseMotionCallback = std::function<void(const SDL_MouseMotionEvent&)>;
+    using MouseWheelCallback = std::function<void(const SDL_MouseWheelEvent&)>;
+    using TextInputCallback = std::function<void(const SDL_TextInputEvent&)>;
+    using TouchCallback = std::function<void(const SDL_TouchFingerEvent&)>;
+    using GamepadButtonCallback = std::function<void(const SDL_GamepadButtonEvent&)>;
+    using GamepadAxisCallback = std::function<void(const SDL_GamepadAxisEvent&)>;
+    using GamepadConnectCallback = std::function<void(bool, SDL_JoystickID, SDL_Gamepad*)>;
 
-        SDL3Initializer();
-        ~SDL3Initializer();
+    // Constructor: Initializes logging and prepares for SDL initialization
+    SDL3Initializer();
 
-        SDL3Initializer(const SDL3Initializer&) = delete;
-        SDL3Initializer& operator=(const SDL3Initializer&) = delete;
-        SDL3Initializer(SDL3Initializer&&) noexcept = default;
-        SDL3Initializer& operator=(SDL3Initializer&&) noexcept = default;
+    // Destructor: Cleans up SDL resources and render thread
+    ~SDL3Initializer();
 
-        void initialize(const char* title, int w, int h, Uint32 flags = SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE,
-                        bool rt = true, const std::string& fontPath = "assets/fonts/sf-plasmatica-open.ttf",
-                        bool enableValidation = true, bool preferNvidia = false);
+    // Delete copy constructor and assignment operator to prevent copying
+    SDL3Initializer(const SDL3Initializer&) = delete;
+    SDL3Initializer& operator=(const SDL3Initializer&) = delete;
 
-        void eventLoop(std::function<void()> render, ResizeCallback onResize = nullptr, bool exitOnClose = true,
-                       KeyboardCallback kb = nullptr, MouseButtonCallback mb = nullptr, MouseMotionCallback mm = nullptr,
-                       MouseWheelCallback mw = nullptr, TextInputCallback ti = nullptr, TouchCallback tc = nullptr,
-                       GamepadButtonCallback gb = nullptr, GamepadAxisCallback ga = nullptr, GamepadConnectCallback gc = nullptr);
+    // Allow move constructor and assignment for resource transfer
+    SDL3Initializer(SDL3Initializer&&) noexcept = default;
+    SDL3Initializer& operator=(SDL3Initializer&&) noexcept = default;
 
-        void cleanup();
+    // Initializes SDL subsystems, window, Vulkan, audio, font, and input
+    // @param title: Window title
+    // @param w: Window width
+    // @param h: Window height
+    // @param flags: SDL window flags (default: SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE)
+    // @param rt: Enable ray tracing (default: true)
+    // @param fontPath: Path to TTF font (default: "assets/fonts/sf-plasmatica-open.ttf")
+    // @param enableValidation: Enable Vulkan validation layers (default: true)
+    // @param preferNvidia: Prefer NVIDIA GPU for Vulkan (default: false)
+    void initialize(const char* title, int w, int h, Uint32 flags = SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE,
+                    bool rt = true, const std::string& fontPath = "assets/fonts/sf-plasmatica-open.ttf",
+                    bool enableValidation = true, bool preferNvidia = false);
 
-        SDL_Window* getWindow() const { return m_window.get(); }
-        VkInstance getVkInstance() const { return m_useVulkan ? m_instance.get() : VK_NULL_HANDLE; }
-        VkSurfaceKHR getVkSurface() const { return m_useVulkan ? m_surface.get() : VK_NULL_HANDLE; }
-        SDL_AudioDeviceID getAudioDevice() const { return m_audioDevice; }
-        const auto& getGamepads() const { std::lock_guard<std::mutex> lock(gamepadMutex); return m_gamepads; }
-        TTF_Font* getFont() const;
-        void exportLog(const std::string& filename) const;
-        std::vector<std::string> getVulkanExtensions() const;
-        bool isConsoleOpen() const { return m_consoleOpen; }
+    // Runs the main event loop, processing input and rendering
+    // @param render: Render callback
+    // @param onResize: Window resize callback
+    // @param exitOnClose: Exit on window close or quit events (default: true)
+    // @param kb: Keyboard callback
+    // @param mb: Mouse button callback
+    // @param mm: Mouse motion callback
+    // @param mw: Mouse wheel callback
+    // @param ti: Text input callback
+    // @param tc: Touch callback
+    // @param gb: Gamepad button callback
+    // @param ga: Gamepad axis callback
+    // @param gc: Gamepad connect callback
+    void eventLoop(std::function<void()> render, ResizeCallback onResize = nullptr, bool exitOnClose = true,
+                   KeyboardCallback kb = nullptr, MouseButtonCallback mb = nullptr, MouseMotionCallback mm = nullptr,
+                   MouseWheelCallback mw = nullptr, TextInputCallback ti = nullptr, TouchCallback tc = nullptr,
+                   GamepadButtonCallback gb = nullptr, GamepadAxisCallback ga = nullptr, GamepadConnectCallback gc = nullptr);
 
-    private:
-        std::unique_ptr<SDL_Window, SDLWindowDeleter> m_window;
-        std::unique_ptr<std::remove_pointer_t<VkInstance>, VulkanInstanceDeleter> m_instance;
-        std::unique_ptr<std::remove_pointer_t<VkSurfaceKHR>, VulkanSurfaceDeleter> m_surface;
-        SDL_AudioDeviceID m_audioDevice = 0;
-        SDL_AudioStream* m_audioStream = nullptr;
-        std::map<SDL_JoystickID, SDL_Gamepad*> m_gamepads;
-        mutable std::mutex gamepadMutex;
-        mutable TTF_Font* m_font = nullptr;
-        mutable std::future<TTF_Font*> m_fontFuture;
-        std::mutex renderMutex;
-        std::condition_variable renderCond;
-        std::atomic<bool> renderReady{false};
-        std::atomic<bool> stopRender{false};
-        std::thread renderThread;
-        std::queue<std::function<void()>> taskQueue;
-        std::mutex taskMutex;
-        std::condition_variable taskCond;
-        std::vector<std::thread> workerThreads;
-        std::atomic<bool> stopWorkers{false};
-        mutable std::ofstream logFile;
-        mutable std::stringstream logStream;
-        bool m_useVulkan;
-        ResizeCallback m_onResize;
-        KeyboardCallback m_kb;
-        MouseButtonCallback m_mb;
-        MouseMotionCallback m_mm;
-        MouseWheelCallback m_mw;
-        TextInputCallback m_ti;
-        TouchCallback m_tc;
-        GamepadButtonCallback m_gb;
-        GamepadAxisCallback m_ga;
-        GamepadConnectCallback m_gc;
-        bool m_consoleOpen = false;
+    // Cleans up SDL resources
+    void cleanup();
 
-        void logMessage(const std::string& message) const;
-    };
+    // Returns the SDL window
+    SDL_Window* getWindow() const { return m_window.get(); }
 
-}
+    // Returns the Vulkan instance
+    VkInstance getVkInstance() const { return m_useVulkan ? m_instance.get() : VK_NULL_HANDLE; }
+
+    // Returns the Vulkan surface
+    VkSurfaceKHR getVkSurface() const { return m_useVulkan ? m_surface.get() : VK_NULL_HANDLE; }
+
+    // Returns the audio device ID
+    SDL_AudioDeviceID getAudioDevice() const { return m_audioDevice; }
+
+    // Returns the map of connected gamepads
+    const std::map<SDL_JoystickID, SDL_Gamepad*>& getGamepads() const { return m_inputManager.getGamepads(); }
+
+    // Returns the loaded TTF font
+    TTF_Font* getFont() const { return m_fontManager.getFont(); }
+
+    // Exports logs to a file
+    // @param filename: Path to export the log
+    void exportLog(const std::string& filename) const;
+
+    // Returns the required Vulkan extensions
+    std::vector<std::string> getVulkanExtensions() const;
+
+    // Returns the console open state
+    bool isConsoleOpen() const { return m_consoleOpen; }
+
+private:
+    // Logs a message to console and file
+    // @param message: Message to log
+    void logMessage(const std::string& message) const;
+
+    std::unique_ptr<SDL_Window, SDLWindowDeleter> m_window; // SDL window
+    std::unique_ptr<std::remove_pointer_t<VkInstance>, VulkanInstanceDeleter> m_instance; // Vulkan instance
+    std::unique_ptr<std::remove_pointer_t<VkSurfaceKHR>, VulkanSurfaceDeleter> m_surface; // Vulkan surface
+    SDL_AudioDeviceID m_audioDevice = 0; // Audio device ID
+    SDL_AudioStream* m_audioStream = nullptr; // Audio stream
+    SDL3Font m_fontManager; // Font manager
+    SDL3Input m_inputManager; // Input manager
+    std::mutex renderMutex; // Mutex for render thread
+    std::condition_variable renderCond; // Condition variable for render thread
+    std::atomic<bool> renderReady{false}; // Flag for render readiness
+    std::atomic<bool> stopRender{false}; // Flag to stop render thread
+    std::thread renderThread; // Render thread
+    mutable std::ofstream logFile; // Log file stream
+    mutable std::stringstream logStream; // In-memory log stream
+    bool m_useVulkan; // Whether Vulkan is used
+    bool m_consoleOpen = false; // Console open state
+};
+
+} // namespace SDL3Initializer
 
 #endif // SDL3_INIT_HPP
