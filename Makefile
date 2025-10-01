@@ -218,35 +218,27 @@ $(MODES_BUILD_DIR)/%.o: $(MODES_SRC_DIR)/%.cpp
 
 # Compile shader files to SPIR-V (Vulkan 1.3 for ray tracing support)
 $(SHADER_DIR)/%.spv: $(SHADER_DIR)/%.vert
-	@echo "Initializing vertex driver: $<"
 	$(GLSLC) $< -o $@ --target-env=vulkan1.3
 
 $(SHADER_DIR)/%.spv: $(SHADER_DIR)/%.frag
-	@echo "Initializing fragment driver: $<"
 	$(GLSLC) $< -o $@ --target-env=vulkan1.3
 
 $(SHADER_DIR)/%.spv: $(SHADER_DIR)/%.rahit
-	@echo "Initializing anyhit driver: $<"
 	$(GLSLC) $< -o $@ --target-env=vulkan1.3
 
 $(SHADER_DIR)/%.spv: $(SHADER_DIR)/%.rchit
-	@echo "Initializing closesthit driver: $<"
 	$(GLSLC) $< -o $@ --target-env=vulkan1.3
 
 $(SHADER_DIR)/%.spv: $(SHADER_DIR)/%.rmiss
-	@echo "Initializing miss driver: $<"
 	$(GLSLC) $< -o $@ --target-env=vulkan1.3
 
 $(SHADER_DIR)/%.spv: $(SHADER_DIR)/%.rgen
-	@echo "Initializing raygen driver: $<"
 	$(GLSLC) $< -o $@ --target-env=vulkan1.3
 
 $(SHADER_DIR)/%.spv: $(SHADER_DIR)/%.rint
-	@echo "Initializing intersection driver: $<"
 	$(GLSLC) $< -o $@ --target-env=vulkan1.3
 
 $(SHADER_DIR)/%.spv: $(SHADER_DIR)/%.rcall
-	@echo "Initializing callable driver: $<"
 	$(GLSLC) $< -o $@ --target-env=vulkan1.3
 
 # Copy shader files to bin/assets/shaders directory
