@@ -10,7 +10,34 @@ Climb inside the blanket and have a look around.
 
 I think this proves the number 1 is real and 0 is not real.  
 The universal_equation is two files.  
-One in src and one in include. The rest is AMOURANTH RTX.  
+Grab the latest release if only interested in the Universal Equation.  
+Preset to the best theories 2025 has to offer.  
+It is a glorified calculator and you can set it to experimental theory.  
+
+## Usage Example for Data Scientists
+```
+#include "universal_equation.hpp"
+
+int main() {
+    // Initialize with custom parameters and logging
+    UniversalEquation eq(4, 3, 1.0, 0.01, 5.0, 0.0, 5.0, 0.0, 0.27, 0.68, 0.1, 0.5, 0.0, 0.5, 0.5, 2.0, 4.0, true, "output.log");
+    
+    // Compute for a range of dimensions
+    auto results = eq.computeBatch(1, 4);
+    
+    // Export results to CSV
+    eq.exportToCSV("simulation_results.csv", results);
+    
+    // Advance to next dimension and compute single result
+    eq.advanceCycle();
+    auto singleResult = eq.compute();
+    std::cout << singleResult.toString() << "\n";
+    
+    return 0;
+}
+```
+
+Built on AMOURANTH RTX.  
 A ground up RTX engine for developers.  
 RTX 3060 Ti and higher, RX 6800 and up.  
 (or lower PushConstants to 128)  
@@ -56,28 +83,6 @@ See the videos below for better quality and history.
 **Previous**: [Older WIP](https://github.com/ZacharyGeurts/universal_equation/blob/main/media/wip2.mov)  
 **Previous Previous**: [Older Version](https://github.com/user-attachments/assets/344232f5-e7b8-4485-af40-5a302873f88c)  
 
-## Usage Example for Data Scientists
-```
-#include "universal_equation.hpp"
-
-int main() {
-    // Initialize with custom parameters and logging
-    UniversalEquation eq(4, 3, 1.0, 0.01, 5.0, 0.0, 5.0, 0.0, 0.27, 0.68, 0.1, 0.5, 0.0, 0.5, 0.5, 2.0, 4.0, true, "output.log");
-    
-    // Compute for a range of dimensions
-    auto results = eq.computeBatch(1, 4);
-    
-    // Export results to CSV
-    eq.exportToCSV("simulation_results.csv", results);
-    
-    // Advance to next dimension and compute single result
-    eq.advanceCycle();
-    auto singleResult = eq.compute();
-    std::cout << singleResult.toString() << "\n";
-    
-    return 0;
-}
-```
 ## Features
 - **Interactive Controls**:  
   - **Key Bindings**:  
