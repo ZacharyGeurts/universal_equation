@@ -57,3 +57,9 @@ Application app("Dimensional Navigator", 1920, 1080);
 app.run();
 
 This approach reduces complexity and ensures proper resource initialization and cleanup.
+
+Acknowledgements
+SDL3 and Vulkan communities for robust APIs.
+OpenMP for thread-safe parallel processing.
+GLM for glm.
+GNU for GNU etc. Biggest unsung heroes.
