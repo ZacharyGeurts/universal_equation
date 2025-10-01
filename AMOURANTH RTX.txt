@@ -1,0 +1,50 @@
+AMOURANTH RTX Engine
+====================
+
+Version: September 2025
+Author: Zachary Geurts
+License: MIT (see LICENSE.txt for details)
+
+Overview
+--------
+AMOURANTH RTX is a high-performance, cross-platform game engine built for developers creating immersive, real-time 3D applications (e.g., Mario-like games). It leverages SDL3 for window and input management, Vulkan 1.3+ for rendering with ray tracing support, and OpenMP for thread-safe operations. The engine features a modular architecture with single-point initialization for SDL3 and Vulkan, streamlining setup and resource management. The core component, DimensionalNavigator, drives the rendering and logic for the Universal Equation project, with AMOURANTH handling advanced rendering modes and input processing.
+
+Key Features
+------------
+- Single-Point Initialization: Streamlined setup for SDL3 (window, input, Vulkan instance) and Vulkan (device, swapchain, ray tracing pipelines) via SDL3Initializer and VulkanInitializer classes, reducing boilerplate code.
+- Vulkan 1.3+ with Ray Tracing: Supports raygen, miss, closesthit, anyhit, intersection, and callable shaders for advanced rendering effects.
+- Cross-Platform Support: Compatible with Linux, macOS, Windows (via MinGW), and Android (via NDK).
+- Modular Input Handling: Managed via HandleInput class, supporting keyboard, mouse, touch, and gamepad inputs.
+- Thread-Safe Design: Utilizes OpenMP for parallel processing, ensuring efficient resource usage.
+- Font Rendering: Integrated SDL3_ttf for text rendering with customizable fonts.
+- Error Handling: Robust exception handling with std::runtime_error for reliable operation.
+- Optimized Resource Management: Fixed Vulkan validation issues (e.g., VUID-vkDestroyDevice-device-05137, VUID-vkQueueSubmit-pSignalSemaphores-00067) for clean resource cleanup and swapchain recreation.
+
+Directory Structure
+-------------------
+- src/: Core source files (main.cpp, handleinput.cpp, universal_equation.cpp)
+- src/engine/: Engine-specific source files
+  - src/engine/SDL3/: SDL3-related modules (SDL3_init.cpp, SDL3_audio.cpp, SDL3_Console.cpp, SDL3_input.cpp, SDL3_vulkan.cpp, SDL3_window.cpp)
+  - src/engine/Vulkan/: Vulkan-related modules (Vulkan_init.cpp, Vulkan_func.cpp, Vulkan_func_pipe.cpp, Vulkan_func_swapchain.cpp, Vulkan_RTX.cpp)
+  - src/modes/: Rendering mode implementations (mode1.cpp to mode9.cpp)
+- include/: Header files
+  - include/engine/SDL3/: SDL3 headers (SDL3_init.hpp, SDL3_audio.hpp, etc.)
+  - include/engine/Vulkan/: Vulkan headers (Vulkan_init.hpp, Vulkan_func.hpp, etc.)
+  - include/engine/core.hpp: Core engine definitions
+  - include/handleinput.hpp, main.hpp, universal_equation.hpp
+- shaders/: GLSL shaders for Vulkan (vertex, fragment, ray tracing)
+- fonts/: TTF font files for text rendering
+- build/: Compiled object files
+- bin/: Output executables and assets
+
+Dependencies
+------------
+- SDL3: Window and input management
+- Vulkan 1.3+: Graphics API with ray tracing support
+- SDL3_ttf: Font rendering
+- libX11-dev, libxcb (Linux): X11 support for windowing
+- libomp (macOS): OpenMP support
+- MinGW (Windows): Cross-compilation support
+- Android NDK (Android): ARM64 cross-compilation
+- fmt (Linux): Formatting library
+- glslc: Shader compiler for SPIR-V
