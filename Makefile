@@ -1,4 +1,4 @@
-# Operating System Boot-Inspired Makefile (September 2025)
+# Operating System Boot-Inspired Makefile (October 2025)
 # Builds the AMOURANTH RTX Engine for game developers (e.g., Mario-like games).
 # Supports cross-platform compilation for Linux, macOS, Windows (via MinGW), and Android (via NDK).
 # Compiles C++17 sources with SDL3, Vulkan 1.3+, and SDL_ttf dependencies.
@@ -8,14 +8,14 @@
 # Adds Android NDK cross-compilation support for ARM64.
 # Dependencies: SDL3, SDL_ttf, Vulkan 1.3+, libX11-dev (Linux), libomp (macOS), MinGW (Windows), Android NDK (Android).
 # Usage: make [all|clean|directories|shaders|objects|link|copy-assets]
-# Zachary Geurts, September 2025
+# Zachary Geurts 2025
 
 # Detect OS
 ifeq ($(OS),Windows_NT)
 	# Windows (MinGW)
 	UNAME_S := Windows
 	CXX ?= x86_64-w64-mingw32-g++
-	CXXFLAGS ?= -O3 -std=c++17 -Wall -Wextra -g -fopenmp -Iinclude
+	CXXFLAGS ?= -O3 -std=c++20 -Wall -Wextra -g -fopenmp -Iinclude
 	LDFLAGS ?= -lSDL3 -lvulkan -lSDL3_ttf -fopenmp -static-libgcc -static-libstdc++
 	EXE_SUFFIX ?= .exe
 	MKDIR ?= mkdir
@@ -28,7 +28,7 @@ else
 	ifeq ($(UNAME_S),Linux)
 	    # Linux
 	    CXX ?= g++
-	    CXXFLAGS ?= -fPIC -O3 -std=c++17 -Wall -Wextra -g -fopenmp -Iinclude -I/usr/include/fmt
+	    CXXFLAGS ?= -fPIC -O3 -std=c++20 -Wall -Wextra -g -fopenmp -Iinclude -I/usr/include/fmt
 	    LDFLAGS ?= -lSDL3 -lvulkan -lSDL3_ttf -lX11 -lxcb -fopenmp -lfmt
 	    EXE_SUFFIX ?=
 	    MKDIR ?= mkdir -p
@@ -40,7 +40,7 @@ else
 	ifeq ($(UNAME_S),Darwin)
 	    # macOS
 	    CXX ?= clang++
-	    CXXFLAGS ?= -O3 -std=c++17 -Wall -Wextra -g -Xclang -fopenmp -Iinclude -I/usr/local/include
+	    CXXFLAGS ?= -O3 -std=c++20 -Wall -Wextra -g -Xclang -fopenmp -Iinclude -I/usr/local/include
 	    LDFLAGS ?= -lSDL3 -lvulkan -lSDL3_ttf -lomp
 	    EXE_SUFFIX ?=
 	    MKDIR ?= mkdir -p
@@ -56,7 +56,7 @@ ifdef TARGET_OS
 	ifeq ($(TARGET_OS),Windows)
 	    UNAME_S := Windows
 	    CXX ?= x86_64-w64-mingw32-g++
-	    CXXFLAGS ?= -O3 -std=c++17 -Wall -Wextra -g -fopenmp -Iinclude
+	    CXXFLAGS ?= -O3 -std=c++20 -Wall -Wextra -g -fopenmp -Iinclude
 	    LDFLAGS ?= -lSDL3 -lvulkan -lSDL3_ttf -fopenmp -static-libgcc -static-libstdc++
 	    EXE_SUFFIX ?= .exe
 	    MKDIR ?= mkdir -p
@@ -68,7 +68,7 @@ ifdef TARGET_OS
 	ifeq ($(TARGET_OS),macOS)
 	    UNAME_S := Darwin
 	    CXX ?= clang++
-	    CXXFLAGS ?= -O3 -std=c++17 -Wall -Wextra -g -Xclang -fopenmp -Iinclude -I/usr/local/include
+	    CXXFLAGS ?= -O3 -std=c++20 -Wall -Wextra -g -Xclang -fopenmp -Iinclude -I/usr/local/include
 	    LDFLAGS ?= -lSDL3 -lvulkan -lSDL3_ttf -lomp
 	    EXE_SUFFIX ?=
 	    MKDIR ?= mkdir -p
@@ -80,7 +80,7 @@ ifdef TARGET_OS
 	ifeq ($(TARGET_OS),Linux)
 	    UNAME_S := Linux
 	    CXX ?= g++
-	    CXXFLAGS ?= -O3 -std=c++17 -Wall -Wextra -g -fopenmp -Iinclude
+	    CXXFLAGS ?= -O3 -std=c++20 -Wall -Wextra -g -fopenmp -Iinclude
 	    LDFLAGS ?= -lSDL3 -lvulkan -lSDL3_ttf -lX11 -lxcb -fopenmp
 	    EXE_SUFFIX ?=
 	    MKDIR ?= mkdir -p
@@ -99,7 +99,7 @@ ifdef TARGET_OS
 	    API_LEVEL ?= 33
 	    TOOLCHAIN = $(NDK_HOME)/toolchains/llvm/prebuilt/$(shell uname -s | tr A-Z a-z)-x86_64
 	    CXX = $(TOOLCHAIN)/bin/$(ARCH)-$(API_LEVEL)-clang++
-	    CXXFLAGS ?= -O3 -std=c++17 -Wall -Wextra -g -Iinclude -I$(NDK_HOME)/sysroot/usr/include -I$(NDK_HOME)/sysroot/usr/include/aarch64-linux-android
+	    CXXFLAGS ?= -O3 -std=c++20 -Wall -Wextra -g -Iinclude -I$(NDK_HOME)/sysroot/usr/include -I$(NDK_HOME)/sysroot/usr/include/aarch64-linux-android
 	    LDFLAGS ?= -L$(NDK_HOME)/sysroot/usr/lib/aarch64-linux-android/$(API_LEVEL) -lSDL3 -lvulkan -lSDL3_ttf -llog
 	    EXE_SUFFIX ?=
 	    MKDIR ?= mkdir -p
@@ -171,7 +171,7 @@ SHADER_OBJECTS = $(VERT_OBJECTS) $(FRAG_OBJECTS) $(RAHIT_OBJECTS) $(RCHIT_OBJECT
 
 # Default target: Boot the system!
 all:
-	@echo "=== SYSTEM BOOT SEQUENCE INITIATED (September 2025) ==="
+	@echo "=== SYSTEM BOOT SEQUENCE INITIATED (October 2025) ==="
 	@echo "Power On Self Test (POST): Checking hardware compatibility for $(UNAME_S)..."
 	@echo "BIOS initialized. Detecting peripherals..."
 	$(MAKE) directories
