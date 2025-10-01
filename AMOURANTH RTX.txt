@@ -3,7 +3,7 @@ AMOURANTH RTX Engine
 
 Version: September 2025
 Author: Zachary Geurts
-License: MIT (see LICENSE.txt for details)
+License: Commercial use requires license.
 
 Overview
 --------
@@ -48,3 +48,12 @@ Dependencies
 - Android NDK (Android): ARM64 cross-compilation
 - fmt (Linux): Formatting library
 - glslc: Shader compiler for SPIR-V
+
+Single-Point InitializationThe AMOURANTH RTX engine features single-point initialization for SDL3 and Vulkan, simplifying setup:SDL3Initializer (src/engine/SDL3_init.cpp): Initializes SDL3 window, input, and Vulkan instance/surface in one call. Handles event loops for all input types (keyboard, mouse, touch, gamepad).
+VulkanInitializer (src/engine/Vulkan_init.cpp): Sets up Vulkan device, swapchain, pipelines, and ray tracing resources in a single function. Manages buffers, shaders, and synchronization objects.
+Usage in main.cpp:
+
+Application app("Dimensional Navigator", 1920, 1080);
+app.run();
+
+This approach reduces complexity and ensures proper resource initialization and cleanup.
