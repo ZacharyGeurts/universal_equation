@@ -1,3 +1,4 @@
+AMOURANTH RTX © 2025 by Zachary Geurts is licensed under [CC BY-NC 4.0](https://creativecommons.org/licenses/by-nc/4.0)
 # Dimensional Navigator  🇺🇸  VS  🇷🇺  VS  🇸🇬  VS  🇨🇳  VS 🇬🇧  VS  🇫🇷  VS  🇲🇽 VS 🇰🇷  VS  🇫🇮  VS  🇯🇵  VS  🇨🇦  VS  🏴󠁧󠁢󠁳󠁣󠁴󠁿  VS  🇦🇺  ...  
 **Never condone violence, incorrectness, nor the new Oxford comma.**  
 https://x.com/i/grok?conversation=1970860339336999387  
