@@ -39,6 +39,7 @@ void renderMode9(AMOURANTH* amouranth, [[maybe_unused]] uint32_t imageIndex, VkB
     static std::mt19937 rng(static_cast<unsigned>(std::time(nullptr)));
     static std::uniform_real_distribution<float> dist(-2.0f, 2.0f);
     static std::uniform_real_distribution<float> colorDist(0.0f, 1.0f);
+    static std::uniform_real_distribution<float> delayDist(1.0f, 5.0f); // Random delay between 1 and 5 seconds
 
     // Instance buffer for ray tracing
     static std::vector<InstanceData> instanceBuffer(numFireworks * particlesPerFirework);
@@ -58,7 +59,8 @@ void renderMode9(AMOURANTH* amouranth, [[maybe_unused]] uint32_t imageIndex, VkB
     for (uint32_t i = 0; i < numFireworks; ++i) {
         if (startTimes[i] < 0.0f || wavePhase - startTimes[i] > lifetime) {
             centers[i] = glm::vec3(dist(rng), dist(rng), dist(rng) - 2.0f);
-            startTimes[i] = wavePhase;
+            // Stagger start times with a random delay between 1 and 5 seconds
+            startTimes[i] = wavePhase + delayDist(rng) - 1.0f; // Offset from current wavePhase
             for (uint32_t j = 0; j < particlesPerFirework; ++j) {
                 directions[i][j] = glm::sphericalRand(1.0f);
                 colors[i][j] = glm::vec3(colorDist(rng), colorDist(rng), colorDist(rng));
