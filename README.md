@@ -16,7 +16,7 @@ It is a glorified calculator and you can set it to experimental theory.
 Contributions are welcome!  
 Please submit pull requests or open issues on the repository.  
 Ensure code follows C++17 standards and includes proper error handling.  
-I am now a stickler for memory safety with the advent of AI coding.  
+I am now a stickler for OMP parallelization and memory safety with the advent of AI coding.  
 
 ## Usage Example for Data Scientists
 ```
