@@ -15,15 +15,16 @@ A ground up RTX engine for developers.
 RTX 3060 Ti and higher, RX 6800 and up.  
 (or lower PushConstants to 128)  
 
-**Platform**: Currently Linux-only  with implementations for Windows, Mac and iOS, and even Android.  
-It may build fine, I have untested so open a pull request if you get an OS working.  
+**Platform**: Currently Linux-only  with implementations for Windows, MacOS, and even iOS and Android.  
+It may build fine for non-Linux, I have untested so open a pull request if you get an OS working.  
 I expect RTX to stay, so I expect other platforms to eventually adopt with chips.  
 If you have a problem or need assistance please open an issue here on github.  
 
 Modular design. Modify with your favorite AI coding program.  
-This project uses an SDL3 backend for rendering (yay Vulkan), chosen from idiocy, ignorance, and patience.  
+This project uses an SDL3 Vulkan backend for rendering including a robust RTX pipeline.  
+Chosen from idiocy, ignorance, and patience.  
 I solved my math problem, so mostly progressing the engine.  
-This is current with research from 2025.
+This is current with research from 2025.  
 
 Software with free distribution can use all of this software without any restrictions or terms.  
 Commercial SDL3 and Vulkan development requires AMOURANTH RTX engine license.  
