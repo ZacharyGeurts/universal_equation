@@ -1,11 +1,12 @@
+// main.hpp
 #ifndef MAIN_HPP
 #define MAIN_HPP
 
-// make modes and set inputs in core.hpp
-
-// AMOURANTH RTX engine, Sep 2025 - Main Application class header.
+// AMOURANTH RTX Engine, Sep 2025 - Main Application class header.
 // Manages SDL3 window/input, Vulkan rendering, and engine logic (DimensionalNavigator, AMOURANTH).
 // Features: Thread-safe (OpenMP), memory-safe, error handling (std::runtime_error), Vulkan 1.2+ with ray tracing.
+// Input handling is managed via HandleInput (handleinput.hpp) for modularity.
+// Font handling is managed via SDL3Font (SDL3_font.hpp in SDL3Initializer).
 // Usage: Application app("Title", 1920, 1080); app.run();
 // Fixed: Updated initializeVulkan to avoid redundant sync object creation, resolving VUID-vkDestroyDevice-device-05137.
 // Fixed: Updated render to cycle semaphores/fences with currentFrame, resolving VUID-vkQueueSubmit-pSignalSemaphores-00067.
@@ -14,6 +15,8 @@
 // Fixed: Moved quad buffer destruction before VulkanInitializer::cleanupVulkan to resolve VUID-vkDestroyDevice-device-05137.
 // Fixed: Removed instance and surface destruction from VulkanInitializer::cleanupVulkan to avoid double destruction,
 // resolving VUID-vkDestroySurfaceKHR-instance-parameter.
+// Fixed: Marked methods as inline to resolve undefined reference linker errors.
+// Fixed: Integrated HandleInput for input processing, supporting all SDL3 input types.
 // Zachary Geurts, 2025
 
 #include <glm/glm.hpp>
@@ -25,12 +28,23 @@
 #include <iostream>
 #include <omp.h>
 #include <vector>
-#include "engine/SDL3_init.hpp" // single entry point o7
-#include "engine/Vulkan_init.hpp" // single entry point o7
-#include "engine/core.hpp" // AMOURANTH RTX 
+#include <map>
+#include <thread>
+#include <mutex>
+#include <condition_variable>
+#include <queue>
+#include <atomic>
+#include <fstream>
+#include <sstream>
+#include <filesystem>
+#include "engine/SDL3_init.hpp"
+#include "engine/Vulkan_init.hpp"
+#include "engine/core.hpp"
+#include "handleinput.hpp"
 
 class DimensionalNavigator;
 class AMOURANTH;
+class HandleInput;
 
 class Application {
 public:
@@ -52,7 +66,7 @@ public:
           inFlightFences_(), vertexBuffer_(VK_NULL_HANDLE), vertexBufferMemory_(VK_NULL_HANDLE),
           indexBuffer_(VK_NULL_HANDLE), indexBufferMemory_(VK_NULL_HANDLE),
           graphicsFamily_(UINT32_MAX), presentFamily_(UINT32_MAX), width_(width), height_(height),
-          amouranth_(nullptr) {
+          amouranth_(nullptr), input_(nullptr) {
         try {
             omp_set_num_threads(omp_get_max_threads());
             sdlInitializer_.initialize(title, width, height);
@@ -66,6 +80,8 @@ public:
 
             simulator_ = new DimensionalNavigator("Dimensional Navigator", width_, height_);
             amouranth_ = new AMOURANTH(simulator_);
+            input_ = new HandleInput(amouranth_, simulator_);
+            input_->setCallbacks(); // Set default input handlers
             initializeVulkan();
             amouranth_->setMode(9);
             amouranth_->updateCache();
@@ -83,7 +99,7 @@ public:
     Application(Application&&) = delete;
     Application& operator=(Application&&) = delete;
 
-    void run() {
+    inline void run() {
         sdlInitializer_.eventLoop(
             [this]() { render(); },
             [this](int w, int h) {
@@ -98,7 +114,15 @@ public:
                 }
             },
             true,
-            [this](const SDL_KeyboardEvent& key) { amouranth_->handleInput(key); }
+            input_->getKeyboardCallback(),
+            input_->getMouseButtonCallback(),
+            input_->getMouseMotionCallback(),
+            input_->getMouseWheelCallback(),
+            input_->getTextInputCallback(),
+            input_->getTouchCallback(),
+            input_->getGamepadButtonCallback(),
+            input_->getGamepadAxisCallback(),
+            input_->getGamepadConnectCallback()
         );
     }
 
@@ -150,8 +174,9 @@ private:
     uint32_t presentFamily_;
     int width_, height_;
     AMOURANTH* amouranth_;
+    HandleInput* input_;
 
-    void initializeVulkan() {
+    inline void initializeVulkan() {
         VulkanInitializer::initializeVulkan(
             vulkanInstance_, physicalDevice_, vulkanDevice_, surface_, graphicsQueue_, presentQueue_,
             graphicsFamily_, presentFamily_, swapchain_, swapchainImages_, swapchainImageViews_,
@@ -170,7 +195,7 @@ private:
             amouranth_->getQuadVertices(), amouranth_->getQuadIndices());
     }
 
-    void recreateSwapchain() {
+    inline void recreateSwapchain() {
         if (vulkanDevice_ != VK_NULL_HANDLE) {
             VkResult result = vkDeviceWaitIdle(vulkanDevice_);
             if (result != VK_SUCCESS) std::cerr << "vkDeviceWaitIdle failed: " << result << "\n";
@@ -252,7 +277,7 @@ private:
         initializeVulkan();
     }
 
-    void cleanup() {
+    inline void cleanup() {
         if (vulkanDevice_ != VK_NULL_HANDLE) {
             VkResult result = vkDeviceWaitIdle(vulkanDevice_);
             if (result != VK_SUCCESS) std::cerr << "vkDeviceWaitIdle failed: " << result << "\n";
@@ -299,8 +324,10 @@ private:
             sphereStagingBuffer_, sphereStagingBufferMemory_, indexStagingBuffer_, indexStagingBufferMemory_,
             vertShaderModule_, fragShaderModule_);
         sdlInitializer_.cleanup();
+        delete input_;
         delete amouranth_;
         delete simulator_;
+        input_ = nullptr;
         amouranth_ = nullptr;
         simulator_ = nullptr;
         window_ = nullptr;
@@ -329,7 +356,7 @@ private:
         inFlightFences_.clear();
     }
 
-    void render() {
+    inline void render() {
         static uint32_t currentFrame = 0;
         if (amouranth_->isUserCamActive()) return;
         amouranth_->update(0.016f);

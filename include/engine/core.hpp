@@ -1,10 +1,13 @@
+// core.hpp
 #ifndef CORE_HPP
 #define CORE_HPP
 
 // AMOURANTH RTX Engine Core September 2025
 // This header provides the core rendering and navigation components for the AMOURANTH RTX engine, designed as the primary
 // entry point for game developers building applications like 3D platformers (e.g., the next Mario).
-// Integrates Vulkan-based ray tracing and SDL for rendering, input handling, and text overlays.
+// Integrates Vulkan-based ray tracing and SDL for rendering.
+// Input handling is moved to handleinput.hpp for modularity.
+// Font handling is managed via SDL3Font in SDL3_font.hpp (SDL3Initializer).
 // Physics computations (e.g., dark energy, multidimensional phenomena) are handled in ue_init.hpp, allowing developers
 // to focus on gameplay and rendering features.
 // Standardized 256-byte PushConstants for both rasterization and ray tracing pipelines to support high-end RTX GPUs.
@@ -13,14 +16,13 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <SDL3/SDL.h>
-#include <SDL3_ttf/SDL_ttf.h>
 #include <string>
-#include <unordered_map>
 #include <vector>
 #include <vulkan/vulkan.h>
 #include <stdexcept>
 #include <cmath>
 #include "ue_init.hpp"
+#include "handleinput.hpp"
 
 // PushConstants for shader data, standardized to 256 bytes for rasterization and ray tracing
 struct PushConstants {
@@ -30,47 +32,10 @@ struct PushConstants {
 };
 static_assert(sizeof(PushConstants) == 256, "PushConstants size must be 256 bytes");
 
-// Platform-specific font path for text rendering
-#ifdef __ANDROID__
-#define FONT_PATH "fonts/sf-plasmatica-open.ttf"
-#elif defined(_WIN32) || defined(__WIN32__) || defined(WIN32) || defined(__NT__)
-#define FONT_PATH "assets\\fonts\\sf-plasmatica-open.ttf"
-#elif defined(__APPLE__) || defined(__MACH__)
-#define FONT_PATH "assets/fonts/sf-plasmatica-open.ttf"
-#else
-#define FONT_PATH "assets/fonts/sf-plasmatica-open.ttf"
-#endif
-
-// Structure for storing font glyph data for text rendering with SDL_ttf
-struct Glyph {
-    SDL_Texture* texture;     // Texture for the glyph
-    int width, height;       // Glyph dimensions
-    int advance;             // Horizontal advance for text layout
-    int offset_x, offset_y;  // Offset for positioning
-};
-
-// TextFont class for rendering text overlays (e.g., UI, debug info, or game HUD)
-class TextFont {
-public:
-    TextFont(SDL_Renderer* renderer, int char_width, int char_height);
-    ~TextFont();
-    void render_text(SDL_Renderer* renderer, const std::string& text, int x, int y, SDL_Color color);
-    void measure_text(const std::string& text, int& width, int& height) const;
-
-private:
-    bool load_font();
-    void free_glyphs();
-
-    std::unordered_map<char, Glyph> glyphs_;
-    SDL_Renderer* renderer_;
-    TTF_Font* font_ = nullptr;
-    int char_width_, char_height_;
-};
-
 // Forward declaration of DimensionalNavigator
 class DimensionalNavigator;
 
-// Core class of the AMOURANTH RTX engine, orchestrating rendering, input, and navigation for game development
+// Core class of the AMOURANTH RTX engine, orchestrating rendering and navigation for game development
 class AMOURANTH {
 public:
     static constexpr int kMaxRenderedDimensions = 9; // Maximum dimensions for rendering (configurable for gameplay)
@@ -79,7 +44,6 @@ public:
     void render(uint32_t imageIndex, VkBuffer vertexBuffer, VkCommandBuffer commandBuffer,
                 VkBuffer indexBuffer, VkPipelineLayout pipelineLayout);
     void update(float deltaTime);
-    void handleInput(const SDL_KeyboardEvent& key);
 
     // Adjust physics parameters using UniversalEquation (optional for physics-based gameplay)
     void adjustInfluence(double delta) {
@@ -102,6 +66,11 @@ public:
     void updateCache();
     void updateZoom(bool zoomIn);
     void setMode(int mode);
+    void togglePause() { isPaused_ = !isPaused_; }
+    void toggleUserCam() { isUserCamActive_ = !isUserCamActive_; }
+    void moveUserCam(float dx, float dy, float dz) {
+        userCamPos_ += glm::vec3(dx, dy, dz);
+    }
 
     void setCurrentDimension(int dimension) { ue_.setCurrentDimension(dimension); }
 
@@ -257,34 +226,6 @@ inline void AMOURANTH::update(float deltaTime) {
     }
 }
 
-inline void AMOURANTH::handleInput(const SDL_KeyboardEvent& key) {
-    if (key.type == SDL_EVENT_KEY_DOWN) {
-        switch (key.key) {
-            case SDLK_PLUS: case SDLK_KP_PLUS: updateZoom(true); break;
-            case SDLK_MINUS: case SDLK_KP_MINUS: updateZoom(false); break;
-            case SDLK_I: adjustInfluence(0.1); break;
-            case SDLK_O: adjustInfluence(-0.1); break;
-            case SDLK_J: adjustDarkMatter(0.1); break;
-            case SDLK_K: adjustDarkMatter(-0.1); break;
-            case SDLK_N: adjustDarkEnergy(0.1); break;
-            case SDLK_M: adjustDarkEnergy(-0.1); break;
-            case SDLK_P: isPaused_ = !isPaused_; break;
-            case SDLK_C: isUserCamActive_ = !isUserCamActive_; break;
-            case SDLK_W: if (isUserCamActive_) userCamPos_.z -= 0.1f; break;
-            case SDLK_S: if (isUserCamActive_) userCamPos_.z += 0.1f; break;
-            case SDLK_A: if (isUserCamActive_) userCamPos_.x -= 0.1f; break;
-            case SDLK_D: if (isUserCamActive_) userCamPos_.x += 0.1f; break;
-            case SDLK_Q: if (isUserCamActive_) userCamPos_.y += 0.1f; break;
-            case SDLK_E: if (isUserCamActive_) userCamPos_.y -= 0.1f; break;
-            case SDLK_1: case SDLK_2: case SDLK_3: case SDLK_4: case SDLK_5:
-            case SDLK_6: case SDLK_7: case SDLK_8: case SDLK_9:
-                mode_ = key.key - SDLK_0;
-                simulator_->setMode(mode_); // WOOF
-                break;
-        }
-    }
-}
-
 inline void AMOURANTH::updateCache() {
     auto result = ue_.compute();
     for (size_t i = 0; i < cache_.size(); ++i) {
@@ -349,83 +290,6 @@ inline void AMOURANTH::initializeCalculator() {
         cache_[i].potential = 0.0;
         cache_[i].darkMatter = 0.0;
         cache_[i].darkEnergy = 0.0;
-    }
-}
-
-inline TextFont::TextFont(SDL_Renderer* renderer, int char_width, int char_height)
-    : renderer_(renderer), char_width_(char_width), char_height_(char_height) {
-    if (!load_font()) {
-        throw std::runtime_error("Failed to load font");
-    }
-}
-
-inline TextFont::~TextFont() {
-    free_glyphs();
-    if (font_) {
-        TTF_CloseFont(font_);
-        font_ = nullptr;
-    }
-}
-
-inline bool TextFont::load_font() {
-    font_ = TTF_OpenFont(FONT_PATH, char_height_);
-    if (!font_) {
-        return false;
-    }
-    SDL_Color white = {255, 255, 255, 255};
-    for (char c = 32; c <= 126; ++c) {
-        SDL_Surface* surface = TTF_RenderGlyph_Solid(font_, c, white);
-        if (!surface) continue;
-        Glyph glyph;
-        glyph.texture = SDL_CreateTextureFromSurface(renderer_, surface);
-        if (!glyph.texture) {
-            SDL_DestroySurface(surface);
-            continue;
-        }
-        glyph.width = surface->w;
-        glyph.height = surface->h;
-        TTF_GetGlyphMetrics(font_, c, nullptr, nullptr, nullptr, nullptr, &glyph.advance);
-        glyph.offset_x = 0;
-        glyph.offset_y = 0;
-        glyphs_[c] = glyph;
-        SDL_DestroySurface(surface);
-    }
-    return true;
-}
-
-inline void TextFont::free_glyphs() {
-    for (auto& pair : glyphs_) {
-        if (pair.second.texture) {
-            SDL_DestroyTexture(pair.second.texture);
-            pair.second.texture = nullptr;
-        }
-    }
-    glyphs_.clear();
-}
-
-inline void TextFont::render_text(SDL_Renderer* renderer, const std::string& text, int x, int y, SDL_Color color) {
-    int current_x = x;
-    for (char c : text) {
-        auto it = glyphs_.find(c);
-        if (it == glyphs_.end()) continue;
-        const Glyph& glyph = it->second;
-        SDL_SetTextureColorMod(glyph.texture, color.r, color.g, color.b);
-        SDL_SetTextureAlphaMod(glyph.texture, color.a);
-        SDL_FRect dst = {static_cast<float>(current_x + glyph.offset_x), static_cast<float>(y + glyph.offset_y),
-                         static_cast<float>(glyph.width), static_cast<float>(glyph.height)};
-        SDL_RenderTexture(renderer, glyph.texture, nullptr, &dst);
-        current_x += glyph.advance;
-    }
-}
-
-inline void TextFont::measure_text(const std::string& text, int& width, int& height) const {
-    width = 0;
-    height = char_height_;
-    for (char c : text) {
-        auto it = glyphs_.find(c);
-        if (it != glyphs_.end()) {
-            width += it->second.advance;
-        }
     }
 }
 
