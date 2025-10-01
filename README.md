@@ -9,9 +9,8 @@ My take? There are infinite dimensions, and there is no bottom or top to existen
 Climb inside the blanket and have a look around.  
 
 I think this proves the number 1 is real and 0 is not real.  
-The universal_equation is two files.  
+The universal_equation is two files and current with the best research up through 2025.  
 Grab the latest release if only interested in the Universal Equation.  
-Preset to the best theories 2025 has to offer.  
 It is a glorified calculator and you can set it to experimental theory.  
 
 ## Usage Example for Data Scientists
@@ -70,8 +69,7 @@ If you have a problem or need assistance please open an issue here on github.
 Modular design. Modify with your favorite AI coding program.  
 This project uses an SDL3 Vulkan backend for rendering including a robust RTX pipeline.  
 Chosen from idiocy, ignorance, and patience.  
-I solved my math problem, so mostly progressing the engine.  
-This is current with research from 2025.  
+I solved my math problem, so mostly progressing the engine. 
 
 Software with free distribution can use all of this software without any restrictions or terms.  
 Commercial SDL3 and Vulkan development requires AMOURANTH RTX engine license.  
