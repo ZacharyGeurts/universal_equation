@@ -20,6 +20,26 @@ It is a glorified calculator and you can set it to experimental theory.
 
 int main() {
     // Initialize with custom parameters and logging
+    /* UniversalEquation(
+            int maxDimensions = 11,
+            int mode = 3,
+            double influence = 1.0,
+            double weak = 0.01,
+            double collapse = 5.0,
+            double twoD = 0.0,
+            double threeDInfluence = 5.0,
+            double oneDPermeation = 0.0,
+            double darkMatterStrength = 0.27,
+            double darkEnergyStrength = 0.68,
+            double alpha = 0.1,
+            double beta = 0.5,
+            double carrollFactor = 0.0,
+            double meanFieldApprox = 0.5,
+            double asymCollapse = 0.5,
+            double perspectiveTrans = 2.0,
+            double perspectiveFocal = 4.0,
+            bool debug = false
+        ); */
     UniversalEquation eq(4, 3, 1.0, 0.01, 5.0, 0.0, 5.0, 0.0, 0.27, 0.68, 0.1, 0.5, 0.0, 0.5, 0.5, 2.0, 4.0, true, "output.log");
     
     // Compute for a range of dimensions
