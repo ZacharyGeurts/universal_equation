@@ -5,8 +5,8 @@ https://x.com/i/status/1970892773109776716
 Welcome friends. God Bless.  
 Stay tuned for version 2.0. Starting line.  
 I will hold at 1.9 until I can present 20 dimensions.  
-My take? There are infinite and there is no bottom or top to existence.  
-Climb in the blanket and have a look around.  
+My take? There are infinite dimensions, and there is no bottom or top to existence.  
+Climb inside the blanket and have a look around.  
 
 I think this proves the number 1 is real and 0 is not real.  
 The universal_equation is two files.  
