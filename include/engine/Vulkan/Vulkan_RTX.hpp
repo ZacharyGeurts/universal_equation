@@ -4,7 +4,9 @@
 // AMOURANTH RTX Engine - September 2025
 // Core header for ray tracing (RTX) pipeline management.
 // Manages pipeline, descriptors, and rendering commands for hybrid rendering.
-// Requires Vulkan 1.2+ with VK_KHR_ray_tracing_pipeline, VK_KHR_acceleration_structure, and optional VK_KHR_ray_tracing_maintenance1.
+// Supports triangle-based geometry (quads as 2 triangles, spheres as ~32,000 triangles).
+// Requires Vulkan 1.2+ with VK_KHR_ray_tracing_pipeline, VK_KHR_acceleration_structure,
+// and optional VK_KHR_ray_tracing_maintenance1 for compaction.
 // Author: Zachary Geurts, 2025
 
 #include <vulkan/vulkan.h>
@@ -68,7 +70,9 @@ public:
     VulkanDescriptorSet(VkDevice device, VkDescriptorPool pool, VkDescriptorSet handle = VK_NULL_HANDLE)
         : device_(device), pool_(pool), handle_(handle) {}
     ~VulkanDescriptorSet() {
-        if (handle_ != VK_NULL_HANDLE) vkFreeDescriptorSets(device_, pool_, 1, &handle_);
+        if (handle_ != VK_NULL_HANDLE) {
+            vkFreeDescriptorSets(device_, pool_, 1, &handle_);
+        }
     }
     VulkanDescriptorSet(const VulkanDescriptorSet&) = delete;
     VulkanDescriptorSet& operator=(const VulkanDescriptorSet&) = delete;
@@ -78,7 +82,9 @@ public:
     }
     VulkanDescriptorSet& operator=(VulkanDescriptorSet&& other) noexcept {
         if (this != &other) {
-            if (handle_ != VK_NULL_HANDLE) vkFreeDescriptorSets(device_, pool_, 1, &handle_);
+            if (handle_ != VK_NULL_HANDLE) {
+                vkFreeDescriptorSets(device_, pool_, 1, &handle_);
+            }
             device_ = other.device_;
             pool_ = other.pool_;
             handle_ = other.handle_;
@@ -125,6 +131,7 @@ private:
     } \
 } while (0)
 
+// Shader binding table structure
 struct SBT {
     VulkanResource<VkBuffer_T*, vkDestroyBuffer> buffer;
     VulkanResource<VkDeviceMemory, vkFreeMemory> memory;
@@ -135,6 +142,7 @@ struct SBT {
     SBT(VkDevice device) : buffer(device, VK_NULL_HANDLE), memory(device, VK_NULL_HANDLE) {}
 };
 
+// Descriptor binding indices
 enum class DescriptorBindings : uint32_t {
     TLAS = 0,
     StorageImage = 1,
@@ -143,6 +151,7 @@ enum class DescriptorBindings : uint32_t {
     DimensionDataSSBO = 4
 };
 
+// Shader feature flags
 enum class ShaderFeatures : uint32_t {
     None = 0,
     AnyHit = 1 << 0,
@@ -155,8 +164,7 @@ class VulkanRTX {
 private:
     VkDevice device_ = VK_NULL_HANDLE;
     std::vector<std::string> shaderPaths_;
-    std::vector<DimensionData> dimensionCache_;
-    std::vector<uint32_t> primitiveCounts_; // Store primitive counts for compaction
+    std::vector<uint32_t> primitiveCounts_; // Store primitive counts for BLAS
     VulkanResource<VkDescriptorSetLayout, vkDestroyDescriptorSetLayout> dsLayout_;
     VulkanResource<VkDescriptorPool, vkDestroyDescriptorPool> dsPool_;
     VulkanDescriptorSet ds_;
@@ -191,7 +199,7 @@ public:
         "assets/shaders/any_hit.spv", "assets/shaders/intersection.spv", "assets/shaders/callable.spv"
     });
 
-    // Initialization methods
+    // Initialize RTX pipeline with geometries and optional dimension cache
     void initializeRTX(
         VkPhysicalDevice physicalDevice, VkCommandPool commandPool, VkQueue graphicsQueue,
         const std::vector<std::tuple<VkBuffer_T*, VkBuffer_T*, uint32_t, uint32_t, uint64_t>>& geometries,
@@ -199,22 +207,32 @@ public:
         const std::vector<DimensionData>& dimensionCache = {}
     );
 
+    // Update RTX pipeline with new geometries and dimension cache
     void updateRTX(
         VkPhysicalDevice physicalDevice, VkCommandPool commandPool, VkQueue graphicsQueue,
         const std::vector<std::tuple<VkBuffer_T*, VkBuffer_T*, uint32_t, uint32_t, uint64_t>>& geometries,
         const std::vector<DimensionData>& dimensionCache
     );
 
+    // Compact BLAS if supported (requires VK_KHR_ray_tracing_maintenance1)
     void compactAccelerationStructures(VkPhysicalDevice physicalDevice, VkCommandPool commandPool, VkQueue queue);
 
+    // Update descriptor sets with camera, material, and dimension buffers
     void updateDescriptors(VkBuffer_T* cameraBuffer, VkBuffer_T* materialBuffer, VkBuffer_T* dimensionBuffer);
+
+    // Create storage image for ray tracing output
     void createStorageImage(VkPhysicalDevice physicalDevice, VkExtent2D extent, VkFormat format,
                            VkImage& image, VkImageView& imageView, VkDeviceMemory& memory);
+
+    // Record ray tracing commands with push constants for model transformations
     void recordRayTracingCommands(VkCommandBuffer cmdBuffer, VkExtent2D extent, VkImage outputImage,
                                  VkImageView outputImageView, const PushConstants& pc,
                                  VkAccelerationStructureKHR_T* tlas = VK_NULL_HANDLE);
-    void denoiseImage(VkCommandBuffer cmdBuffer, VkImage inputImage, VkImage outputImage);
 
+    // Denoise image using compute shader (16x16 dispatch grid for 1920x1080)
+    void denoiseImage(VkCommandBuffer cmdBuffer, VkImageView inputImageView, VkImageView outputImageView);
+
+    // Getters
     VkPipeline getPipeline() const { return rtPipeline_.get(); }
     VkPipelineLayout getPipelineLayout() const { return rtPipelineLayout_.get(); }
     const SBT& getSBT() const { return sbt_; }
@@ -240,15 +258,13 @@ private:
     void loadShadersAsync(std::vector<VkShaderModule>& modules, const std::vector<std::string>& paths);
     void buildShaderGroups(std::vector<VkRayTracingShaderGroupCreateInfoKHR>& groups,
                            const std::vector<VkPipelineShaderStageCreateInfo>& stages);
-
-    // Private initialization methods
     void createBottomLevelAS(
         VkPhysicalDevice physicalDevice, VkCommandPool commandPool, VkQueue queue,
         const std::vector<std::tuple<VkBuffer_T*, VkBuffer_T*, uint32_t, uint32_t, uint64_t>>& geometries
     );
     void createTopLevelAS(
         VkPhysicalDevice physicalDevice, VkCommandPool commandPool, VkQueue queue,
-        const std::vector<std::tuple<VkAccelerationStructureKHR_T*, glm::mat<4, 4, float, glm::packed_highp>>>& instances
+        const std::vector<std::tuple<VkAccelerationStructureKHR_T*, glm::mat4>>& instances
     );
 };
 
