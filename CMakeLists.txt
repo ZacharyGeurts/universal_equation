@@ -5,13 +5,12 @@
 # Builds SPIR-V shaders for Vulkan ray tracing and rasterization.
 # Copies assets (fonts, textures, objects, materials, scenes, audio, scripts) and moves SPIR-V shaders to platform-specific output directories (bin/Linux/, bin/Windows/).
 # Creates source directories if they don't exist.
-# Supports native Linux builds (GCC/Clang) and cross-compilation for Windows (MinGW) on Linux.
-# Dependencies: SDL3, Vulkan SDK, glslc, SDL3_ttf, SDL3_image, SDL3_mixer, fmt, spdlog, GLM, OpenMP, FreeType, HarfBuzz, X11, Xext, Xrandr, Xcursor, Xi, Xss.
+# Supports native Linux builds (GCC/Clang) and native Windows builds (MSVC or MinGW).
+# Dependencies: SDL3, Vulkan SDK, glslc, SDL3_ttf, SDL3_image, SDL3_mixer, fmt, spdlog, GLM, OpenMP, FreeType, HarfBuzz, X11 (Linux only), Xext (Linux only), Xrandr (Linux only), Xcursor (Linux only), Xi (Linux only), Xss (Linux only).
 # Usage: mkdir build && cd build && cmake .. && cmake --build .
-# For Windows cross-compilation: cmake .. -DCMAKE_TOOLCHAIN_FILE=/path/to/mingw-toolchain.cmake
 # Zachary Geurts 2025
 
-cmake_minimum_required(VERSION 3.20)
+cmake_minimum_required(VERSION 3.10)
 project(AMOURANTH_RTX LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
@@ -28,19 +27,14 @@ else()
 endif()
 
 # Platform check (RTX-only: Linux/Windows)
-if(NOT WIN32)
-    if(APPLE)
-        message(FATAL_ERROR "macOS not supported (RTX-only: Linux/Windows).")
-    endif()
+if(WIN32)
+    set(IS_WINDOWS TRUE)
+    set(IS_LINUX FALSE)
+elseif(UNIX AND NOT APPLE)
     set(IS_LINUX TRUE)
-endif()
-set(IS_WINDOWS WIN32)
-
-# Check for cross-compilation (Windows target on Linux)
-if(CMAKE_CROSSCOMPILING AND IS_LINUX)
-    set(BUILD_WINDOWS TRUE)
+    set(IS_WINDOWS FALSE)
 else()
-    set(BUILD_WINDOWS FALSE)
+    message(FATAL_ERROR "Only Linux and Windows are supported (RTX-only).")
 endif()
 
 # Create source directories if they don't exist
@@ -70,28 +64,27 @@ foreach(DIR ${SOURCE_DIRS})
 endforeach()
 
 # Find Vulkan
-if(IS_LINUX AND NOT BUILD_WINDOWS)
+if(IS_LINUX)
     find_library(VULKAN_LIBRARY NAMES vulkan vulkan-1 HINTS /usr/lib/x86_64-linux-gnu)
     find_path(VULKAN_INCLUDE_DIR NAMES vulkan/vulkan.h HINTS /usr/include)
 else()
-    find_library(VULKAN_LIBRARY NAMES vulkan-1 HINTS /usr/x86_64-w64-mingw32/lib)
-    find_path(VULKAN_INCLUDE_DIR NAMES vulkan/vulkan.h HINTS /usr/x86_64-w64-mingw32/include)
+    find_library(VULKAN_LIBRARY NAMES vulkan-1)
+    find_path(VULKAN_INCLUDE_DIR NAMES vulkan/vulkan.h)
 endif()
 if(NOT VULKAN_LIBRARY OR NOT VULKAN_INCLUDE_DIR)
-    message(FATAL_ERROR "Vulkan not found. Install libvulkan-dev for Linux or MinGW-w64 Vulkan for Windows. Ensure Vulkan SDK is installed.")
+    message(FATAL_ERROR "Vulkan not found. Install libvulkan-dev for Linux or Vulkan SDK for Windows.")
 endif()
-find_program(GLSLC glslc HINTS /usr/bin REQUIRED)
+find_program(GLSLC glslc REQUIRED)
 if(NOT GLSLC)
     message(FATAL_ERROR "glslc not found. Install Vulkan SDK (vulkan-tools).")
 endif()
 
 # Find core dependencies
 find_package(PkgConfig REQUIRED)
-find_package(SDL3 REQUIRED)
 find_package(OpenMP REQUIRED)
 find_package(Freetype REQUIRED)
 
-# Check for fmt, spdlog, glm, and harfbuzz using pkg-config for Linux
+# Check for fmt, spdlog, glm, and harfbuzz using pkg-config
 pkg_check_modules(FMT REQUIRED fmt)
 pkg_check_modules(SPDLOG REQUIRED spdlog)
 pkg_check_modules(GLM REQUIRED glm)
@@ -100,8 +93,9 @@ pkg_check_modules(HarfBuzz REQUIRED harfbuzz)
 # Ensure spdlog uses external fmt to avoid conflicts
 set(SPDLOG_FMT_EXTERNAL ON CACHE BOOL "Use external fmt library for spdlog")
 
-# SDL extensions and X11-related (Linux only)
-if(IS_LINUX AND NOT BUILD_WINDOWS)
+# Linux-specific dependencies
+if(IS_LINUX)
+    find_package(SDL3 REQUIRED)
     pkg_check_modules(SDL3_ttf REQUIRED sdl3-ttf)
     pkg_check_modules(SDL3_image REQUIRED sdl3-image)
     pkg_check_modules(SDL3_mixer REQUIRED sdl3-mixer)
@@ -114,22 +108,20 @@ if(IS_LINUX AND NOT BUILD_WINDOWS)
     pkg_check_modules(XCB REQUIRED xcb)
 endif()
 
-# Windows-specific dependency checks
-if(BUILD_WINDOWS)
-    find_library(WIN_SDL3_LIBRARY NAMES SDL3 HINTS /usr/x86_64-w64-mingw32/lib)
-    find_library(WIN_FMT_LIBRARY NAMES fmt HINTS /usr/x86_64-w64-mingw32/lib)
-    find_library(WIN_SPDLOG_LIBRARY NAMES spdlog HINTS /usr/x86_64-w64-mingw32/lib)
-    find_library(WIN_GLM_LIBRARY NAMES glm HINTS /usr/x86_64-w64-mingw32/lib)
-    find_library(WIN_FREETYPE_LIBRARY NAMES freetype HINTS /usr/x86_64-w64-mingw32/lib)
-    find_library(WIN_HARFBUZZ_LIBRARY NAMES harfbuzz HINTS /usr/x86_64-w64-mingw32/lib)
-    find_library(WIN_SDL3_TTF_LIBRARY NAMES SDL3_ttf HINTS /usr/x86_64-w64-mingw32/lib)
-    find_library(WIN_SDL3_IMAGE_LIBRARY NAMES SDL3_image HINTS /usr/x86_64-w64-mingw32/lib)
-    find_library(WIN_SDL3_MIXER_LIBRARY NAMES SDL3_mixer HINTS /usr/x86_64-w64-mingw32/lib)
-    find_library(WIN_OPENMP_LIBRARY NAMES gomp HINTS /usr/x86_64-w64-mingw32/lib)
-
-    foreach(LIB WIN_SDL3_LIBRARY WIN_FMT_LIBRARY WIN_SPDLOG_LIBRARY WIN_GLM_LIBRARY WIN_FREETYPE_LIBRARY WIN_HARFBUZZ_LIBRARY WIN_SDL3_TTF_LIBRARY WIN_SDL3_IMAGE_LIBRARY WIN_SDL3_MIXER_LIBRARY WIN_OPENMP_LIBRARY)
+# Windows-specific dependencies
+if(IS_WINDOWS)
+    find_package(SDL3 REQUIRED)
+    find_library(SDL3_TTF_LIBRARY NAMES SDL3_ttf REQUIRED)
+    find_library(SDL3_IMAGE_LIBRARY NAMES SDL3_image REQUIRED)
+    find_library(SDL3_MIXER_LIBRARY NAMES SDL3_mixer REQUIRED)
+    find_library(WIN_FMT_LIBRARY NAMES fmt REQUIRED)
+    find_library(WIN_SPDLOG_LIBRARY NAMES spdlog REQUIRED)
+    find_library(WIN_GLM_LIBRARY NAMES glm REQUIRED)
+    find_library(WIN_HARFBUZZ_LIBRARY NAMES harfbuzz REQUIRED)
+    find_library(WIN_OPENMP_LIBRARY NAMES gomp libgomp REQUIRED)
+    foreach(LIB VULKAN_LIBRARY SDL3_TTF_LIBRARY SDL3_IMAGE_LIBRARY SDL3_MIXER_LIBRARY WIN_FMT_LIBRARY WIN_SPDLOG_LIBRARY WIN_GLM_LIBRARY FREETYPE_LIBRARIES WIN_HARFBUZZ_LIBRARY WIN_OPENMP_LIBRARY)
         if(NOT ${LIB})
-            message(FATAL_ERROR "Missing Windows dependency: ${LIB}. Install MinGW-w64 versions with: sudo apt install mingw-w64-x86-64-dev libvulkan-dev libsdl3-dev libfreetype-dev libharfbuzz-dev libfmt-dev libspdlog-dev libglm-dev, or build SDL3_ttf, SDL3_image, SDL3_mixer from source for MinGW-w64.")
+            message(FATAL_ERROR "Missing Windows dependency: ${LIB}. Ensure SDL3, SDL3_ttf, SDL3_image, SDL3_mixer, fmt, spdlog, glm, freetype, harfbuzz, and OpenMP are installed.")
         else()
             message(STATUS "Found Windows dependency: ${${LIB}}")
         endif()
@@ -154,7 +146,7 @@ set(AUDIO_DIR ${ASSET_DIR}/audio)
 set(SCRIPT_DIR ${ASSET_DIR}/scripts)
 
 # Collect sources
-file(GLOB SOURCES RECURSIVE
+file(GLOB SOURCES
     "${SRC_DIR}/*.cpp"
     "${ENGINE_SRC_DIR}/*.cpp"
     "${SDL3_SRC_DIR}/*.cpp"
@@ -172,7 +164,7 @@ if(NOT SOURCES)
         "${SDL3_SRC_DIR}/SDL3_Console.cpp"
         "${SDL3_SRC_DIR}/SDL3_audio.cpp"
         "${SDL3_SRC_DIR}/SDL3_image.cpp"
-        "${SRC_DIR}/SDL3_input.cpp"
+        "${SDL3_SRC_DIR}/SDL3_input.cpp"
         "${SDL3_SRC_DIR}/SDL3_vulkan.cpp"
         "${SDL3_SRC_DIR}/SDL3_window.cpp"
         "${VULKAN_SRC_DIR}/Vulkan_func.cpp"
@@ -193,7 +185,7 @@ if(NOT SOURCES)
 endif()
 
 # Debugging: List source directories and files
-message(STATUS "Source directories: ${SRC_DIR}, ${ENGINE_SRC_DIR}, ${SDL3_SRC_DIR}, ${VULKAN_SRC_DIR}, ${MODES_SRC_DIR}")
+message(STATUS "Source directories: ${SRC_DIR}, ${ENGINE_SRC_DIR}, ${SDLQUID_SRC_DIR}, ${VULKAN_SRC_DIR}, ${MODES_SRC_DIR}")
 message(STATUS "Found source files: ${SOURCES}")
 
 # Check for key source files
@@ -226,83 +218,87 @@ set(WINDOWS_AUDIO_OUT_DIR ${WINDOWS_ASSET_OUT_DIR}/audio)
 set(LINUX_SCRIPT_OUT_DIR ${LINUX_ASSET_OUT_DIR}/scripts)
 set(WINDOWS_SCRIPT_OUT_DIR ${WINDOWS_ASSET_OUT_DIR}/scripts)
 
-# Create Linux executable
-add_executable(amouranth_engine_linux ${SOURCES})
-set_target_properties(amouranth_engine_linux PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY ${LINUX_BIN_DIR}
-    OUTPUT_NAME "Navigator"
-)
-target_include_directories(amouranth_engine_linux PRIVATE
-    ${INCLUDE_DIR}
-    ${VULKAN_INCLUDE_DIR}
-    ${FREETYPE_INCLUDE_DIRS}
-    ${HarfBuzz_INCLUDE_DIRS}
-    ${FMT_INCLUDE_DIRS}
-    ${SPDLOG_INCLUDE_DIRS}
-    ${GLM_INCLUDE_DIRS}
-    ${SDL3_ttf_INCLUDE_DIRS}
-    ${SDL3_image_INCLUDE_DIRS}
-    ${SDL3_mixer_INCLUDE_DIRS}
-    ${X11_INCLUDE_DIRS}
-    ${XEXT_INCLUDE_DIRS}
-    ${XRANDR_INCLUDE_DIRS}
-    ${XCURSOR_INCLUDE_DIRS}
-    ${XI_INCLUDE_DIRS}
-    ${XSS_INCLUDE_DIRS}
-    ${XCB_INCLUDE_DIRS}
-)
-target_link_libraries(amouranth_engine_linux PRIVATE
-    ${VULKAN_LIBRARY}
-    SDL3::SDL3
-    ${FMT_LIBRARIES}
-    ${SPDLOG_LIBRARIES}
-    ${GLM_LIBRARIES}
-    OpenMP::OpenMP_CXX
-    Freetype::Freetype
-    ${HarfBuzz_LIBRARIES}
-    ${X11_LIBRARIES}
-    ${XEXT_LIBRARIES}
-    ${XRANDR_LIBRARIES}
-    ${XCURSOR_LIBRARIES}
-    ${XI_LIBRARIES}
-    ${XSS_LIBRARIES}
-    ${XCB_LIBRARIES}
-    ${SDL3_ttf_LIBRARIES}
-    ${SDL3_image_LIBRARIES}
-    ${SDL3_mixer_LIBRARIES}
-)
-target_compile_options(amouranth_engine_linux PRIVATE -fPIC)
+# Create executable
+if(IS_LINUX)
+    add_executable(amouranth_engine ${SOURCES})
+    set_target_properties(amouranth_engine PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY ${LINUX_BIN_DIR}
+        OUTPUT_NAME "Navigator"
+    )
+    target_include_directories(amouranth_engine PRIVATE
+        ${INCLUDE_DIR}
+        ${VULKAN_INCLUDE_DIR}
+        ${FREETYPE_INCLUDE_DIRS}
+        ${HarfBuzz_INCLUDE_DIRS}
+        ${FMT_INCLUDE_DIRS}
+        ${SPDLOG_INCLUDE_DIRS}
+        ${GLM_INCLUDE_DIRS}
+        ${SDL3_ttf_INCLUDE_DIRS}
+        ${SDL3_image_INCLUDE_DIRS}
+        ${SDL3_mixer_INCLUDE_DIRS}
+        ${X11_INCLUDE_DIRS}
+        ${XEXT_INCLUDE_DIRS}
+        ${XRANDR_INCLUDE_DIRS}
+        ${XCURSOR_INCLUDE_DIRS}
+        ${XI_INCLUDE_DIRS}
+        ${XSS_INCLUDE_DIRS}
+        ${XCB_INCLUDE_DIRS}
+    )
+    target_link_libraries(amouranth_engine PRIVATE
+        ${VULKAN_LIBRARY}
+        SDL3::SDL3
+        ${FMT_LIBRARIES}
+        ${SPDLOG_LIBRARIES}
+        ${GLM_LIBRARIES}
+        OpenMP::OpenMP_CXX
+        Freetype::Freetype
+        ${HarfBuzz_LIBRARIES}
+        ${X11_LIBRARIES}
+        ${XEXT_LIBRARIES}
+        ${XRANDR_LIBRARIES}
+        ${XCURSOR_LIBRARIES}
+        ${XI_LIBRARIES}
+        ${XSS_LIBRARIES}
+        ${XCB_LIBRARIES}
+        ${SDL3_ttf_LIBRARIES}
+        ${SDL3_image_LIBRARIES}
+        ${SDL3_mixer_LIBRARIES}
+    )
+    target_compile_options(amouranth_engine PRIVATE -fPIC)
+endif()
 
-# Create Windows executable (cross-compilation)
-if(BUILD_WINDOWS)
-    add_executable(amouranth_engine_windows ${SOURCES})
-    set_target_properties(amouranth_engine_windows PROPERTIES
+if(IS_WINDOWS)
+    add_executable(amouranth_engine ${SOURCES})
+    set_target_properties(amouranth_engine PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY ${WINDOWS_BIN_DIR}
         OUTPUT_NAME "Navigator"
         SUFFIX ".exe"
     )
-    target_include_directories(amouranth_engine_windows PRIVATE
+    target_include_directories(amouranth_engine PRIVATE
         ${INCLUDE_DIR}
         ${VULKAN_INCLUDE_DIR}
-        /usr/x86_64-w64-mingw32/include
-        /usr/x86_64-w64-mingw32/include/SDL3
-        /usr/x86_64-w64-mingw32/include/freetype2
-        /usr/x86_64-w64-mingw32/include/harfbuzz
+        ${FREETYPE_INCLUDE_DIRS}
+        ${HarfBuzz_INCLUDE_DIRS}
+        ${FMT_INCLUDE_DIRS}
+        ${SPDLOG_INCLUDE_DIRS}
+        ${GLM_INCLUDE_DIRS}
     )
-    target_link_libraries(amouranth_engine_windows PRIVATE
+    target_link_libraries(amouranth_engine PRIVATE
         ${VULKAN_LIBRARY}
-        ${WIN_SDL3_LIBRARY}
+        SDL3::SDL3
+        ${SDL3_TTF_LIBRARY}
+        ${SDL3_IMAGE_LIBRARY}
+        ${SDL3_MIXER_LIBRARY}
         ${WIN_FMT_LIBRARY}
         ${WIN_SPDLOG_LIBRARY}
         ${WIN_GLM_LIBRARY}
-        ${WIN_OPENMP_LIBRARY}
-        ${WIN_FREETYPE_LIBRARY}
+        Freetype::Freetype
         ${WIN_HARFBUZZ_LIBRARY}
-        ${WIN_SDL3_TTF_LIBRARY}
-        ${WIN_SDL3_IMAGE_LIBRARY}
-        ${WIN_SDL3_MIXER_LIBRARY}
+        ${WIN_OPENMP_LIBRARY}
+        -static-libgcc
+        -static-libstdc++
+        -mwindows
     )
-    target_link_options(amouranth_engine_windows PRIVATE -static-libgcc -static-libstdc++)
 endif()
 
 # Shader compilation
@@ -328,26 +324,26 @@ endforeach()
 
 if(SHADER_OUTPUTS)
     add_custom_target(shaders DEPENDS ${SHADER_OUTPUTS})
-    add_dependencies(amouranth_engine_linux shaders)
-    if(BUILD_WINDOWS)
-        add_dependencies(amouranth_engine_windows shaders)
-    endif()
+    add_dependencies(amouranth_engine shaders)
 endif()
 
 # Create output directories
-set(OUTPUT_DIRS
-    "${LINUX_BIN_DIR}"
-    "${LINUX_ASSET_OUT_DIR}"
-    "${LINUX_SHADER_OUT_DIR}"
-    "${LINUX_FONT_OUT_DIR}"
-    "${LINUX_TEXTURE_OUT_DIR}"
-    "${LINUX_OBJECT_OUT_DIR}"
-    "${LINUX_MATERIAL_OUT_DIR}"
-    "${LINUX_SCENE_OUT_DIR}"
-    "${LINUX_AUDIO_OUT_DIR}"
-    "${LINUX_SCRIPT_OUT_DIR}"
-)
-if(BUILD_WINDOWS)
+set(OUTPUT_DIRS "")
+if(IS_LINUX)
+    list(APPEND OUTPUT_DIRS
+        "${LINUX_BIN_DIR}"
+        "${LINUX_ASSET_OUT_DIR}"
+        "${LINUX_SHADER_OUT_DIR}"
+        "${LINUX_FONT_OUT_DIR}"
+        "${LINUX_TEXTURE_OUT_DIR}"
+        "${LINUX_OBJECT_OUT_DIR}"
+        "${LINUX_MATERIAL_OUT_DIR}"
+        "${LINUX_SCENE_OUT_DIR}"
+        "${LINUX_AUDIO_OUT_DIR}"
+        "${LINUX_SCRIPT_OUT_DIR}"
+    )
+endif()
+if(IS_WINDOWS)
     list(APPEND OUTPUT_DIRS
         "${WINDOWS_BIN_DIR}"
         "${WINDOWS_ASSET_OUT_DIR}"
@@ -374,23 +370,22 @@ foreach(DIR ${OUTPUT_DIRS})
         VERBATIM
     )
 endforeach()
-add_dependencies(amouranth_engine_linux directories)
-if(BUILD_WINDOWS)
-    add_dependencies(amouranth_engine_windows directories)
-endif()
+add_dependencies(amouranth_engine directories)
 
 # Post-build moves for shaders
 foreach(SHADER_OUTPUT ${SHADER_OUTPUTS})
     get_filename_component(SHADER_NAME ${SHADER_OUTPUT} NAME)
-    add_custom_command(TARGET amouranth_engine_linux POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E echo "Moving ${SHADER_OUTPUT} to ${LINUX_SHADER_OUT_DIR}/${SHADER_NAME}"
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different ${SHADER_OUTPUT} ${LINUX_SHADER_OUT_DIR}/${SHADER_NAME}
-        COMMENT "Copying shader ${SHADER_NAME} to Linux"
-        DEPENDS shaders
-        VERBATIM
-    )
-    if(BUILD_WINDOWS)
-        add_custom_command(TARGET amouranth_engine_windows POST_BUILD
+    if(IS_LINUX)
+        add_custom_command(TARGET amouranth_engine POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E echo "Moving ${SHADER_OUTPUT} to ${LINUX_SHADER_OUT_DIR}/${SHADER_NAME}"
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different ${SHADER_OUTPUT} ${LINUX_SHADER_OUT_DIR}/${SHADER_NAME}
+            COMMENT "Copying shader ${SHADER_NAME} to Linux"
+            DEPENDS shaders
+            VERBATIM
+        )
+    endif()
+    if(IS_WINDOWS)
+        add_custom_command(TARGET amouranth_engine POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E echo "Moving ${SHADER_OUTPUT} to ${WINDOWS_SHADER_OUT_DIR}/${SHADER_NAME}"
             COMMAND ${CMAKE_COMMAND} -E copy_if_different ${SHADER_OUTPUT} ${WINDOWS_SHADER_OUT_DIR}/${SHADER_NAME}
             COMMENT "Copying shader ${SHADER_NAME} to Windows"
@@ -421,18 +416,20 @@ foreach(ASSET_TYPE ${ASSET_TYPES})
     string(REPLACE "," ";" EXTENSION_LIST ${EXTENSIONS})
     
     foreach(EXT ${EXTENSION_LIST})
-        file(GLOB ASSET_FILES "${SRC_DIR}/${EXT}")
+        file(GLOB ASSET_FILES "${SRC_DIR}/${TYPE_NAME}/${EXT}")
         if(NOT ASSET_FILES)
-            message(STATUS "No ${TYPE_NAME} files found in ${SRC_DIR} for extension ${EXT}")
+            message(STATUS "No ${TYPE_NAME} files found in ${SRC_DIR}/${TYPE_NAME} for extension ${EXT}")
         else()
-            add_custom_command(TARGET amouranth_engine_linux POST_BUILD
-                COMMAND ${CMAKE_COMMAND} -E copy_if_different ${ASSET_FILES} ${LINUX_OUT_DIR}/
-                COMMAND ${CMAKE_COMMAND} -E echo "Copied ${TYPE_NAME} files to ${LINUX_OUT_DIR}"
-                COMMENT "Copying ${TYPE_NAME} files to ${LINUX_OUT_DIR}"
-                VERBATIM
-            )
-            if(BUILD_WINDOWS)
-                add_custom_command(TARGET amouranth_engine_windows POST_BUILD
+            if(IS_LINUX)
+                add_custom_command(TARGET amouranth_engine POST_BUILD
+                    COMMAND ${CMAKE_COMMAND} -E copy_if_different ${ASSET_FILES} ${LINUX_OUT_DIR}/
+                    COMMAND ${CMAKE_COMMAND} -E echo "Copied ${TYPE_NAME} files to ${LINUX_OUT_DIR}"
+                    COMMENT "Copying ${TYPE_NAME} files to ${LINUX_OUT_DIR}"
+                    VERBATIM
+                )
+            endif()
+            if(IS_WINDOWS)
+                add_custom_command(TARGET amouranth_engine POST_BUILD
                     COMMAND ${CMAKE_COMMAND} -E copy_if_different ${ASSET_FILES} ${WINDOWS_OUT_DIR}/
                     COMMAND ${CMAKE_COMMAND} -E echo "Copied ${TYPE_NAME} files to ${WINDOWS_OUT_DIR}"
                     COMMENT "Copying ${TYPE_NAME} files to ${WINDOWS_OUT_DIR}"
@@ -444,10 +441,7 @@ foreach(ASSET_TYPE ${ASSET_TYPES})
 endforeach()
 
 # Custom targets
-add_custom_target(build-all DEPENDS amouranth_engine_linux)
-if(BUILD_WINDOWS)
-    add_dependencies(build-all amouranth_engine_windows)
-endif()
+add_custom_target(build-all DEPENDS amouranth_engine)
 
 add_custom_target(project-clean
     COMMAND ${CMAKE_COMMAND} -E remove_directory ${BIN_DIR}
