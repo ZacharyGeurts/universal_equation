@@ -4,7 +4,7 @@
 
 // AMOURANTH RTX Engine, Sep 2025 - Main Application class header.
 // Manages SDL3 window/input, Vulkan rendering, and engine logic (DimensionalNavigator, AMOURANTH).
-// Features: Thread-safe (OpenMP), memory-safe, error handling (std::runtime_error), Vulkan 1.2+ with ray tracing.
+// Features: Thread-safe (OpenMP, mutexes), memory-safe, error handling (std::runtime_error), Vulkan 1.2+ with ray tracing.
 // Input handling is managed via HandleInput (handleinput.hpp) for modularity.
 // Font handling is managed via SDL3Font (SDL3_font.hpp in SDL3Initializer).
 // Usage: Application app("Title", 1920, 1080); app.run();
@@ -17,6 +17,7 @@
 // resolving VUID-vkDestroySurfaceKHR-instance-parameter.
 // Fixed: Marked methods as inline to resolve undefined reference linker errors.
 // Fixed: Integrated HandleInput for input processing, supporting all SDL3 input types.
+// Updated: Added mutexes for thread-safe access to shared resources and Vulkan objects, excluding recreateSwapchain to avoid resizing freezes.
 // Zachary Geurts, 2025
 
 #include <glm/glm.hpp>
@@ -175,6 +176,8 @@ private:
     int width_, height_;
     AMOURANTH* amouranth_;
     HandleInput* input_;
+    std::mutex resourceMutex_; // Protects shared simulation/rendering data
+    std::mutex vulkanMutex_;   // Protects Vulkan resource access
 
     inline void initializeVulkan() {
         VulkanInitializer::initializeVulkan(
@@ -278,6 +281,8 @@ private:
     }
 
     inline void cleanup() {
+        std::lock_guard<std::mutex> vulkanLock(vulkanMutex_);
+        std::lock_guard<std::mutex> resourceLock(resourceMutex_);
         if (vulkanDevice_ != VK_NULL_HANDLE) {
             VkResult result = vkDeviceWaitIdle(vulkanDevice_);
             if (result != VK_SUCCESS) std::cerr << "vkDeviceWaitIdle failed: " << result << "\n";
@@ -359,11 +364,17 @@ private:
     inline void render() {
         static uint32_t currentFrame = 0;
         if (amouranth_->isUserCamActive()) return;
-        amouranth_->update(0.016f);
+        {
+            std::lock_guard<std::mutex> lock(resourceMutex_);
+            amouranth_->update(0.016f);
+        }
         uint32_t imageCount = static_cast<uint32_t>(swapchainImages_.size());
 
-        vkWaitForFences(vulkanDevice_, 1, &inFlightFences_[currentFrame], VK_TRUE, UINT64_MAX);
-        vkResetFences(vulkanDevice_, 1, &inFlightFences_[currentFrame]);
+        {
+            std::lock_guard<std::mutex> vulkanLock(vulkanMutex_);
+            vkWaitForFences(vulkanDevice_, 1, &inFlightFences_[currentFrame], VK_TRUE, UINT64_MAX);
+            vkResetFences(vulkanDevice_, 1, &inFlightFences_[currentFrame]);
+        }
 
         uint32_t imageIndex;
         VkResult result = vkAcquireNextImageKHR(vulkanDevice_, swapchain_, UINT64_MAX, imageAvailableSemaphores_[currentFrame], VK_NULL_HANDLE, &imageIndex);
@@ -381,7 +392,10 @@ private:
         };
         vkCmdBeginRenderPass(commandBuffers_[imageIndex], &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
         vkCmdBindPipeline(commandBuffers_[imageIndex], VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_);
-        amouranth_->render(imageIndex, vertexBuffer_, commandBuffers_[imageIndex], indexBuffer_, pipelineLayout_);
+        {
+            std::lock_guard<std::mutex> lock(resourceMutex_);
+            amouranth_->render(imageIndex, vertexBuffer_, commandBuffers_[imageIndex], indexBuffer_, pipelineLayout_);
+        }
         vkCmdEndRenderPass(commandBuffers_[imageIndex]);
         if (vkEndCommandBuffer(commandBuffers_[imageIndex]) != VK_SUCCESS) throw std::runtime_error("Failed to end command buffer");
 
@@ -390,7 +404,10 @@ private:
             VK_STRUCTURE_TYPE_SUBMIT_INFO, nullptr, 1, &imageAvailableSemaphores_[currentFrame], waitStages,
             1, &commandBuffers_[imageIndex], 1, &renderFinishedSemaphores_[currentFrame]
         };
-        if (vkQueueSubmit(graphicsQueue_, 1, &submitInfo, inFlightFences_[currentFrame]) != VK_SUCCESS) throw std::runtime_error("Failed to submit queue");
+        {
+            std::lock_guard<std::mutex> vulkanLock(vulkanMutex_);
+            if (vkQueueSubmit(graphicsQueue_, 1, &submitInfo, inFlightFences_[currentFrame]) != VK_SUCCESS) throw std::runtime_error("Failed to submit queue");
+        }
 
         VkPresentInfoKHR presentInfo = {
             VK_STRUCTURE_TYPE_PRESENT_INFO_KHR, nullptr, 1, &renderFinishedSemaphores_[currentFrame], 1, &swapchain_, &imageIndex, nullptr
