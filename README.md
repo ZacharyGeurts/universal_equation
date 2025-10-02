@@ -10,7 +10,6 @@ My take? There are infinite dimensions, and there is no bottom or top to existen
 Climb inside the blanket and have a look around.  
 
 I think this proves the number 1 is real and 0 is not real.  
-The universal_equation is two files and current with the best research up through 2025.  
 Grab the latest release if only interested in the Universal Equation.  
 It is a glorified calculator and you can set it to experimental theory.  
 
@@ -19,6 +18,7 @@ Please submit pull requests or open issues on the repository.
 Ensure code follows C++17 standards and includes proper error handling.  
 I am now a stickler for OMP parallelization and memory safety with the advent of AI coding.  
 
+## The universal_equation is two files and current with the best research up through 2025.  
 ## Usage Example for Data Scientists
 ```
 #include "universal_equation.hpp"
