@@ -260,8 +260,10 @@ cd ../..
 # Build the project
 git clone https://github.com/ZacharyGeurts/universal_equation
 cd universal_equation
-make -j4
-cd bin/Linux
+mkdir build && cd build
+cmake ..
+make
+cd bin
 ./Navigator
 ```
 
