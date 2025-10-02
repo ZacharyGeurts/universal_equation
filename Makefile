@@ -17,7 +17,7 @@ ifeq ($(OS),Windows_NT)
 	UNAME_S := Windows
 	CXX ?= x86_64-w64-mingw32-g++
 	CXXFLAGS ?= -O3 -std=c++17 -Wall -Wextra -g -fopenmp -Iinclude
-	LDFLAGS ?= -lSDL3 -lvulkan -lSDL3_ttf -fopenmp -static-libgcc -static-libstdc++
+	LDFLAGS ?= -lSDL3 -lvulkan -lSDL3_ttf -lSDL3_image -fopenmp -static-libgcc -static-libstdc++
 	EXE_SUFFIX ?= .exe
 	MKDIR ?= mkdir
 	CP ?= copy
@@ -30,7 +30,7 @@ else
 	    # Linux
 	    CXX ?= g++
 	    CXXFLAGS ?= -fPIC -O3 -std=c++17 -Wall -Wextra -g -fopenmp -Iinclude -I/usr/include/fmt
-	    LDFLAGS ?= -lSDL3 -lvulkan -lSDL3_ttf -lX11 -lxcb -fopenmp -lfmt
+	    LDFLAGS ?= -lSDL3 -lvulkan -lSDL3_ttf -lSDL3_image -lX11 -lxcb -fopenmp -lfmt
 	    EXE_SUFFIX ?=
 	    MKDIR ?= mkdir -p
 	    CP ?= cp
@@ -42,7 +42,7 @@ else
 	    # macOS
 	    CXX ?= clang++
 	    CXXFLAGS ?= -O3 -std=c++17 -Wall -Wextra -g -Xclang -fopenmp -Iinclude -I/usr/local/include
-	    LDFLAGS ?= -lSDL3 -lvulkan -lSDL3_ttf -lomp
+	    LDFLAGS ?= -lSDL3 -lvulkan -lSDL3_ttf -lSDL3_image -lomp
 	    EXE_SUFFIX ?=
 	    MKDIR ?= mkdir -p
 	    CP ?= cp
@@ -58,7 +58,7 @@ ifdef TARGET_OS
 	    UNAME_S := Windows
 	    CXX ?= x86_64-w64-mingw32-g++
 	    CXXFLAGS ?= -O3 -std=c++17 -Wall -Wextra -g -fopenmp -Iinclude
-	    LDFLAGS ?= -lSDL3 -lvulkan -lSDL3_ttf -fopenmp -static-libgcc -static-libstdc++
+	    LDFLAGS ?= -lSDL3 -lvulkan -lSDL3_ttf -lSDL3_image -fopenmp -static-libgcc -static-libstdc++
 	    EXE_SUFFIX ?= .exe
 	    MKDIR ?= mkdir -p
 	    CP ?= cp
@@ -70,7 +70,7 @@ ifdef TARGET_OS
 	    UNAME_S := Darwin
 	    CXX ?= clang++
 	    CXXFLAGS ?= -O3 -std=c++17 -Wall -Wextra -g -Xclang -fopenmp -Iinclude -I/usr/local/include
-	    LDFLAGS ?= -lSDL3 -lvulkan -lSDL3_ttf -lomp
+	    LDFLAGS ?= -lSDL3 -lvulkan -lSDL3_ttf -lSDL3_image -lomp
 	    EXE_SUFFIX ?=
 	    MKDIR ?= mkdir -p
 	    CP ?= cp
@@ -82,7 +82,7 @@ ifdef TARGET_OS
 	    UNAME_S := Linux
 	    CXX ?= g++
 	    CXXFLAGS ?= -O3 -std=c++17 -Wall -Wextra -g -fopenmp -Iinclude
-	    LDFLAGS ?= -lSDL3 -lvulkan -lSDL3_ttf -lX11 -lxcb -fopenmp
+	    LDFLAGS ?= -lSDL3 -lvulkan -lSDL3_ttf -lSDL3_image -lX11 -lxcb -fopenmp
 	    EXE_SUFFIX ?=
 	    MKDIR ?= mkdir -p
 	    CP ?= cp
@@ -101,7 +101,7 @@ ifdef TARGET_OS
 	    TOOLCHAIN = $(NDK_HOME)/toolchains/llvm/prebuilt/$(shell uname -s | tr A-Z a-z)-x86_64
 	    CXX = $(TOOLCHAIN)/bin/$(ARCH)-$(API_LEVEL)-clang++
 	    CXXFLAGS ?= -O3 -std=c++17 -Wall -Wextra -g -Iinclude -I$(NDK_HOME)/sysroot/usr/include -I$(NDK_HOME)/sysroot/usr/include/aarch64-linux-android
-	    LDFLAGS ?= -L$(NDK_HOME)/sysroot/usr/lib/aarch64-linux-android/$(API_LEVEL) -lSDL3 -lvulkan -lSDL3_ttf -llog
+	    LDFLAGS ?= -L$(NDK_HOME)/sysroot/usr/lib/aarch64-linux-android/$(API_LEVEL) -lSDL3 -lvulkan -lSDL3_ttf -lSDL3_image -llog
 	    EXE_SUFFIX ?=
 	    MKDIR ?= mkdir -p
 	    CP ?= cp
@@ -172,7 +172,7 @@ SHADER_OBJECTS = $(VERT_OBJECTS) $(FRAG_OBJECTS) $(RAHIT_OBJECTS) $(RCHIT_OBJECT
 
 # Default target: Boot the system!
 all:
-	@echo "=== SYSTEM BOOT SEQUENCE INITIATED (September 2025) ==="
+	@echo "=== SYSTEM BOOT SEQUENCE INITIATED (October 2025) ==="
 	@echo "Power On Self Test (POST): Checking hardware compatibility for $(UNAME_S)..."
 	@echo "BIOS initialized. Detecting peripherals..."
 	$(MAKE) directories
