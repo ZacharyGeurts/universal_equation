@@ -69,14 +69,29 @@ foreach(DIR ${SOURCE_DIRS})
     endif()
 endforeach()
 
+# Find Vulkan
+if(IS_LINUX AND NOT BUILD_WINDOWS)
+    find_library(VULKAN_LIBRARY NAMES vulkan vulkan-1 HINTS /usr/lib/x86_64-linux-gnu)
+    find_path(VULKAN_INCLUDE_DIR NAMES vulkan/vulkan.h HINTS /usr/include)
+else()
+    find_library(VULKAN_LIBRARY NAMES vulkan-1 HINTS /usr/x86_64-w64-mingw32/lib)
+    find_path(VULKAN_INCLUDE_DIR NAMES vulkan/vulkan.h HINTS /usr/x86_64-w64-mingw32/include)
+endif()
+if(NOT VULKAN_LIBRARY OR NOT VULKAN_INCLUDE_DIR)
+    message(FATAL_ERROR "Vulkan not found. Install libvulkan-dev for Linux or MinGW-w64 Vulkan for Windows. Ensure Vulkan SDK is installed.")
+endif()
+find_program(GLSLC glslc HINTS /usr/bin REQUIRED)
+if(NOT GLSLC)
+    message(FATAL_ERROR "glslc not found. Install Vulkan SDK (vulkan-tools).")
+endif()
+
 # Find core dependencies
-find_package(Vulkan REQUIRED)
 find_package(PkgConfig REQUIRED)
 find_package(SDL3 REQUIRED)
 find_package(OpenMP REQUIRED)
 find_package(Freetype REQUIRED)
 
-# Check for fmt, spdlog, glm, and harfbuzz using pkg-config
+# Check for fmt, spdlog, glm, and harfbuzz using pkg-config for Linux
 pkg_check_modules(FMT REQUIRED fmt)
 pkg_check_modules(SPDLOG REQUIRED spdlog)
 pkg_check_modules(GLM REQUIRED glm)
@@ -99,9 +114,26 @@ if(IS_LINUX AND NOT BUILD_WINDOWS)
     pkg_check_modules(XCB REQUIRED xcb)
 endif()
 
-find_program(GLSLC glslc HINTS ${Vulkan_INCLUDE_DIRS}/../bin REQUIRED)
-if(NOT GLSLC)
-    message(FATAL_ERROR "glslc not found. Install Vulkan SDK.")
+# Windows-specific dependency checks
+if(BUILD_WINDOWS)
+    find_library(WIN_SDL3_LIBRARY NAMES SDL3 HINTS /usr/x86_64-w64-mingw32/lib)
+    find_library(WIN_FMT_LIBRARY NAMES fmt HINTS /usr/x86_64-w64-mingw32/lib)
+    find_library(WIN_SPDLOG_LIBRARY NAMES spdlog HINTS /usr/x86_64-w64-mingw32/lib)
+    find_library(WIN_GLM_LIBRARY NAMES glm HINTS /usr/x86_64-w64-mingw32/lib)
+    find_library(WIN_FREETYPE_LIBRARY NAMES freetype HINTS /usr/x86_64-w64-mingw32/lib)
+    find_library(WIN_HARFBUZZ_LIBRARY NAMES harfbuzz HINTS /usr/x86_64-w64-mingw32/lib)
+    find_library(WIN_SDL3_TTF_LIBRARY NAMES SDL3_ttf HINTS /usr/x86_64-w64-mingw32/lib)
+    find_library(WIN_SDL3_IMAGE_LIBRARY NAMES SDL3_image HINTS /usr/x86_64-w64-mingw32/lib)
+    find_library(WIN_SDL3_MIXER_LIBRARY NAMES SDL3_mixer HINTS /usr/x86_64-w64-mingw32/lib)
+    find_library(WIN_OPENMP_LIBRARY NAMES gomp HINTS /usr/x86_64-w64-mingw32/lib)
+
+    foreach(LIB WIN_SDL3_LIBRARY WIN_FMT_LIBRARY WIN_SPDLOG_LIBRARY WIN_GLM_LIBRARY WIN_FREETYPE_LIBRARY WIN_HARFBUZZ_LIBRARY WIN_SDL3_TTF_LIBRARY WIN_SDL3_IMAGE_LIBRARY WIN_SDL3_MIXER_LIBRARY WIN_OPENMP_LIBRARY)
+        if(NOT ${LIB})
+            message(FATAL_ERROR "Missing Windows dependency: ${LIB}. Install MinGW-w64 versions with: sudo apt install mingw-w64-x86-64-dev libvulkan-dev libsdl3-dev libfreetype-dev libharfbuzz-dev libfmt-dev libspdlog-dev libglm-dev, or build SDL3_ttf, SDL3_image, SDL3_mixer from source for MinGW-w64.")
+        else()
+            message(STATUS "Found Windows dependency: ${${LIB}}")
+        endif()
+    endforeach()
 endif()
 
 # Directories
@@ -140,7 +172,7 @@ if(NOT SOURCES)
         "${SDL3_SRC_DIR}/SDL3_Console.cpp"
         "${SDL3_SRC_DIR}/SDL3_audio.cpp"
         "${SDL3_SRC_DIR}/SDL3_image.cpp"
-        "${SDL3_SRC_DIR}/SDL3_input.cpp"
+        "${SRC_DIR}/SDL3_input.cpp"
         "${SDL3_SRC_DIR}/SDL3_vulkan.cpp"
         "${SDL3_SRC_DIR}/SDL3_window.cpp"
         "${VULKAN_SRC_DIR}/Vulkan_func.cpp"
@@ -202,6 +234,7 @@ set_target_properties(amouranth_engine_linux PROPERTIES
 )
 target_include_directories(amouranth_engine_linux PRIVATE
     ${INCLUDE_DIR}
+    ${VULKAN_INCLUDE_DIR}
     ${FREETYPE_INCLUDE_DIRS}
     ${HarfBuzz_INCLUDE_DIRS}
     ${FMT_INCLUDE_DIRS}
@@ -219,7 +252,7 @@ target_include_directories(amouranth_engine_linux PRIVATE
     ${XCB_INCLUDE_DIRS}
 )
 target_link_libraries(amouranth_engine_linux PRIVATE
-    Vulkan::Vulkan
+    ${VULKAN_LIBRARY}
     SDL3::SDL3
     ${FMT_LIBRARIES}
     ${SPDLOG_LIBRARIES}
@@ -250,24 +283,24 @@ if(BUILD_WINDOWS)
     )
     target_include_directories(amouranth_engine_windows PRIVATE
         ${INCLUDE_DIR}
-        ${FREETYPE_INCLUDE_DIRS}
-        ${HarfBuzz_INCLUDE_DIRS}
-        ${FMT_INCLUDE_DIRS}
-        ${SPDLOG_INCLUDE_DIRS}
-        ${GLM_INCLUDE_DIRS}
+        ${VULKAN_INCLUDE_DIR}
+        /usr/x86_64-w64-mingw32/include
+        /usr/x86_64-w64-mingw32/include/SDL3
+        /usr/x86_64-w64-mingw32/include/freetype2
+        /usr/x86_64-w64-mingw32/include/harfbuzz
     )
     target_link_libraries(amouranth_engine_windows PRIVATE
-        Vulkan::Vulkan
-        SDL3::SDL3
-        ${FMT_LIBRARIES}
-        ${SPDLOG_LIBRARIES}
-        ${GLM_LIBRARIES}
-        OpenMP::OpenMP_CXX
-        Freetype::Freetype
-        ${HarfBuzz_LIBRARIES}
-        SDL3_ttf
-        SDL3_image
-        SDL3_mixer
+        ${VULKAN_LIBRARY}
+        ${WIN_SDL3_LIBRARY}
+        ${WIN_FMT_LIBRARY}
+        ${WIN_SPDLOG_LIBRARY}
+        ${WIN_GLM_LIBRARY}
+        ${WIN_OPENMP_LIBRARY}
+        ${WIN_FREETYPE_LIBRARY}
+        ${WIN_HARFBUZZ_LIBRARY}
+        ${WIN_SDL3_TTF_LIBRARY}
+        ${WIN_SDL3_IMAGE_LIBRARY}
+        ${WIN_SDL3_MIXER_LIBRARY}
     )
     target_link_options(amouranth_engine_windows PRIVATE -static-libgcc -static-libstdc++)
 endif()
@@ -394,12 +427,14 @@ foreach(ASSET_TYPE ${ASSET_TYPES})
         else()
             add_custom_command(TARGET amouranth_engine_linux POST_BUILD
                 COMMAND ${CMAKE_COMMAND} -E copy_if_different ${ASSET_FILES} ${LINUX_OUT_DIR}/
+                COMMAND ${CMAKE_COMMAND} -E echo "Copied ${TYPE_NAME} files to ${LINUX_OUT_DIR}"
                 COMMENT "Copying ${TYPE_NAME} files to ${LINUX_OUT_DIR}"
                 VERBATIM
             )
             if(BUILD_WINDOWS)
                 add_custom_command(TARGET amouranth_engine_windows POST_BUILD
                     COMMAND ${CMAKE_COMMAND} -E copy_if_different ${ASSET_FILES} ${WINDOWS_OUT_DIR}/
+                    COMMAND ${CMAKE_COMMAND} -E echo "Copied ${TYPE_NAME} files to ${WINDOWS_OUT_DIR}"
                     COMMENT "Copying ${TYPE_NAME} files to ${WINDOWS_OUT_DIR}"
                     VERBATIM
                 )
