@@ -122,7 +122,7 @@ set(AUDIO_DIR ${ASSET_DIR}/audio)
 set(SCRIPT_DIR ${ASSET_DIR}/scripts)
 
 # Collect sources
-file(GLOB_RECURSIVE SOURCES
+file(GLOB SOURCES RECURSIVE
     "${SRC_DIR}/*.cpp"
     "${ENGINE_SRC_DIR}/*.cpp"
     "${SDL3_SRC_DIR}/*.cpp"
