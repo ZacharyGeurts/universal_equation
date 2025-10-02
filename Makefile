@@ -1,4 +1,5 @@
-# Operating System Boot-Inspired Makefile (September 2025)
+# AMOURANTH RTX © 2025 by Zachary Geurts gzac5314@gmail.com is licensed under CC BY-NC 4.0
+# Operating System Boot-Inspired Makefile (October 2025)
 # Builds the AMOURANTH RTX Engine for game developers (e.g., Mario-like games).
 # Supports cross-platform compilation for Linux, macOS, Windows (via MinGW), and Android (via NDK).
 # Compiles C++17 sources with SDL3, Vulkan 1.3+, and SDL_ttf dependencies.
@@ -8,7 +9,7 @@
 # Adds Android NDK cross-compilation support for ARM64.
 # Dependencies: SDL3, SDL_ttf, Vulkan 1.3+, libX11-dev (Linux), libomp (macOS), MinGW (Windows), Android NDK (Android).
 # Usage: make [all|clean|directories|shaders|objects|link|copy-assets]
-# Zachary Geurts, September 2025
+# Zachary Geurts 2025
 
 # Detect OS
 ifeq ($(OS),Windows_NT)
