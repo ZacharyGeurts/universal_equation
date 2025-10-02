@@ -1,0 +1,26 @@
+// shaders/anyhit.rahit
+#version 460
+#extension GL_EXT_ray_tracing : require
+#extension GL_EXT_nonuniform_qualifier : enable
+
+// Hit attributes (remove layout qualifier)
+hitAttributeEXT vec2 attribs;
+
+// Material buffer (simplified; assumes opacity per instance)
+struct Material {
+    vec3 albedo;
+    float opacity;
+};
+layout(binding = 3, set = 0) buffer Materials {
+    Material materials[];
+} materialBuffer;
+
+void main() {
+    // Get material (using instance index)
+    Material mat = materialBuffer.materials[gl_InstanceCustomIndexEXT];
+
+    // Simple alpha test (ignores attributes for demo)
+    if (mat.opacity < 0.5) {
+        ignoreIntersectionEXT; // Remove parentheses for correct syntax
+    }
+}

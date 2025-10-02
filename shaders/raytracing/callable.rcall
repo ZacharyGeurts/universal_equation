@@ -1,0 +1,54 @@
+#version 460
+#extension GL_EXT_ray_tracing : require
+#extension GL_EXT_nonuniform_qualifier : require
+#extension GL_EXT_scalar_block_layout : require
+
+// Callable shader for firework material computation in the AMOURANTH RTX engine
+// Computes glowing, sparkling colors for particles
+
+layout(push_constant) uniform PushConstants {
+    mat4 model;       // Object-to-world transform
+    mat4 view_proj;   // View * projection transform
+    vec4 energy;      // observable, potential, darkMatter, darkEnergy
+} pc;
+
+struct HitInfo {
+    vec3 hitPoint;
+    vec3 normal;
+    vec3 color;
+    float ior;
+    float transparency;
+};
+
+layout(set = 0, binding = 1) readonly buffer MaterialBuffer {
+    vec4 colors[];
+} materials;
+
+layout(set = 0, binding = 2) readonly buffer IORBuffer {
+    float iors[];
+} iors;
+
+layout(set = 0, binding = 3) readonly buffer TransparencyBuffer {
+    float transparencies[];
+} transparencies;
+
+layout(location = 2) callableDataEXT HitInfo callableHitInfo;
+
+void main() {
+    int matID = int(pc.energy.x);
+    vec3 albedo = materials.colors[matID].rgb;
+
+    vec3 p = callableHitInfo.hitPoint * 2.0;
+    float checker = mod(floor(p.x) + floor(p.y) + floor(p.z), 2.0);
+    albedo = mix(albedo, albedo * 0.5, checker);
+
+    // Add sparkling effect
+    float sparkle = sin(pc.energy.w * 5.0 + dot(p, vec3(1.0))) * 0.5 + 0.5;
+    albedo += vec3(sparkle) * 0.3;
+
+    albedo *= clamp(pc.energy.w, 0.0, 1.0);
+
+    callableHitInfo.color = albedo;
+    callableHitInfo.ior = iors.iors[matID];
+    callableHitInfo.transparency = transparencies.transparencies[matID];
+}
