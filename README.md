@@ -1,4 +1,4 @@
-AMOURANTH RTX © 2025 by Zachary Geurts is licensed under [CC BY-NC 4.0](https://creativecommons.org/licenses/by-nc/4.0)
+AMOURANTH RTX © 2025 by Zachary Geurts gzac5314@gmail.com is licensed under [CC BY-NC 4.0](https://creativecommons.org/licenses/by-nc/4.0)
 # Dimensional Navigator  🇺🇸  VS  🇷🇺  VS  🇸🇬  VS  🇨🇳  VS 🇬🇧  VS  🇫🇷  VS  🇲🇽 VS 🇰🇷  VS  🇫🇮  VS  🇯🇵  VS  🇨🇦  VS  🏴󠁧󠁢󠁳󠁣󠁴󠁿  VS  🇦🇺  ...  
 **Never condone violence, incorrectness, nor the new Oxford comma.**  
 https://x.com/i/grok?conversation=1970860339336999387  
@@ -125,7 +125,7 @@ This is **not free (as in freedom) software**. It is provided for **educational 
 - **Restrictions**: You may not sell unlicensed software or require any compensation from users.  
 - **Distribution**: Projects using UE code must be distributed freely (no cost).  
 - **Commercial use of AMOURANTH RTX engine requires license**  
-- **Distribution**: https://www.twitch.tv/amouranth for AMOURANTH RTX engine license  
+- **Distribution**: gzac5314@gmail.com for AMOURANTH RTX engine license  
 - **Why AMOURANTH?** They said they were hiring so I figured I would try to bring in a customer.  
 - **Source**: Obtain the software exclusively from [https://github.com/ZacharyGeurts/universal_equation](https://github.com/ZacharyGeurts/universal_equation).  
 
