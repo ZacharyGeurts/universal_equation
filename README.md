@@ -211,60 +211,8 @@ Run `sudo ./vulkansdk`
 
 ## Build Instructions
 ```bash
-# Update package lists and install base dependencies
-sudo apt install -y git g++ libglm-dev libfreetype-dev libasound2-dev libpulse-dev
-sudo apt install -y libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev
-sudo apt install -y libxss-dev libomp-dev libfreetype6 libharfbuzz-dev  libspdlog-dev
-sudo apt install -y libfmt-dev
-
-# Build and install SDL3 from source
-git clone https://github.com/libsdl-org/SDL.git
-cd SDL
-mkdir build
-cd build
-cmake ..
-make
-sudo make install
-cd ../..
-
-# Build and install SDL3_ttf from source
-git clone https://github.com/libsdl-org/SDL_ttf.git
-cd SDL_ttf
-mkdir build
-cd build
-cmake ..
-make -j4
-sudo make install
-cd ../..
-
-# Build and install SDL3_image from source
-git clone https://github.com/libsdl-org/SDL_image.git
-cd SDL_image
-mkdir build
-cd build
-cmake ..
-make -j4
-sudo make install
-cd ../..
-
-# Build and install SDL3_mixer from source
-git clone https://github.com/libsdl-org/SDL_mixer
-cd SDL_mixer
-mkdir build
-cd build
-cmake ..
-make -j4
-sudo make install
-cd ../..
-
-# Build the project
-git clone https://github.com/ZacharyGeurts/universal_equation
-cd universal_equation
-mkdir build && cd build
-cmake ..
-make
-cd bin
-./Navigator
+sudo ./depends.sh
+./linux
 ```
 
 # UniversalEquation Class Overview
