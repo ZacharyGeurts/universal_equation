@@ -10,6 +10,7 @@ My take? There are infinite dimensions, and there is no bottom or top to existen
 Climb inside the blanket and have a look around.  
 
 I think this proves the number 1 is real and 0 is not real.  
+The universal_equation is two files and current with the best research up through 2025.  
 Grab the latest release if only interested in the Universal Equation.  
 It is a glorified calculator and you can set it to experimental theory.  
 
@@ -18,7 +19,6 @@ Please submit pull requests or open issues on the repository.
 Ensure code follows C++17 standards and includes proper error handling.  
 I am now a stickler for OMP parallelization and memory safety with the advent of AI coding.  
 
-## The universal_equation is two files and current with the best research up through 2025.  
 ## Usage Example for Data Scientists
 ```
 #include "universal_equation.hpp"
@@ -211,8 +211,60 @@ Run `sudo ./vulkansdk`
 
 ## Build Instructions
 ```bash
-sudo ./depends.sh
-./linux
+# Update package lists and install base dependencies
+sudo apt install -y git g++ libglm-dev libfreetype-dev libasound2-dev libpulse-dev
+sudo apt install -y libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev
+sudo apt install -y libxss-dev libomp-dev libfreetype6 libharfbuzz-dev  libspdlog-dev
+sudo apt install -y libfmt-dev
+
+# Build and install SDL3 from source
+git clone https://github.com/libsdl-org/SDL.git
+cd SDL
+mkdir build
+cd build
+cmake ..
+make
+sudo make install
+cd ../..
+
+# Build and install SDL3_ttf from source
+git clone https://github.com/libsdl-org/SDL_ttf.git
+cd SDL_ttf
+mkdir build
+cd build
+cmake ..
+make -j4
+sudo make install
+cd ../..
+
+# Build and install SDL3_image from source
+git clone https://github.com/libsdl-org/SDL_image.git
+cd SDL_image
+mkdir build
+cd build
+cmake ..
+make -j4
+sudo make install
+cd ../..
+
+# Build and install SDL3_mixer from source
+git clone https://github.com/libsdl-org/SDL_mixer
+cd SDL_mixer
+mkdir build
+cd build
+cmake ..
+make -j4
+sudo make install
+cd ../..
+
+# Build the project
+git clone https://github.com/ZacharyGeurts/universal_equation
+cd universal_equation
+mkdir build && cd build
+cmake ..
+make
+cd bin
+./Navigator
 ```
 
 # UniversalEquation Class Overview

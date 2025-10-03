@@ -1,13 +1,14 @@
 # AMOURANTH RTX © 2025 by Zachary Geurts gzac5314@gmail.com is licensed under CC BY-NC 4.0
 # CMake Build System (October 2025)
-# Builds the AMOURANTH RTX Engine for game developers (RTX-only: Linux & Windows).
+# Builds the AMOURANTH RTX Engine for game developers (RTX-only: Linux native, Windows cross-compilation).
 # Compiles C++17 sources with SDL3, Vulkan 1.3+, SDL_ttf, SDL3_image, SDL3_mixer, fmt, spdlog, GLM, OpenMP, FreeType, and HarfBuzz dependencies.
 # Builds SPIR-V shaders for Vulkan ray tracing and rasterization.
 # Copies assets (fonts, textures, objects, materials, scenes, audio, scripts) and moves SPIR-V shaders to platform-specific output directories (bin/Linux/, bin/Windows/).
 # Creates source directories if they don't exist.
-# Supports native Linux builds (GCC/Clang) and native Windows builds (MSVC or MinGW).
-# Dependencies: SDL3, Vulkan SDK, glslc, SDL3_ttf, SDL3_image, SDL3_mixer, fmt, spdlog, GLM, OpenMP, FreeType, HarfBuzz, X11 (Linux only), Xext (Linux only), Xrandr (Linux only), Xcursor (Linux only), Xi (Linux only), Xss (Linux only).
+# Supports native Linux builds (GCC/Clang) and cross-compilation for Windows (MinGW64).
+# Dependencies: SDL3, Vulkan SDK, glslc, SDL3_ttf, SDL3_image, SDL3_mixer, fmt, spdlog, GLM, OpenMP, FreeType, HarfBuzz, X11, Xext, Xrandr, Xcursor, Xi, Xss.
 # Usage: mkdir build && cd build && cmake .. && cmake --build .
+# For cross-compilation: mkdir build-win && cd build-win && cmake .. -DCMAKE_TOOLCHAIN_FILE=../toolchain-mingw64.cmake && cmake --build .
 # Zachary Geurts 2025
 
 cmake_minimum_required(VERSION 3.10)
@@ -19,22 +20,23 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 # Global options
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
-if(MSVC)
-    add_compile_options(/W4 /O2)
-    add_link_options(/INCREMENTAL:NO)
-else()
-    add_compile_options(-Wall -Wextra -O3 -g)
+add_compile_options(-Wall -Wextra -O3 -g)
+
+# Platform check (Linux host only for native and cross-compilation)
+if(NOT CMAKE_HOST_SYSTEM_NAME STREQUAL "Linux")
+    message(FATAL_ERROR "Native builds and cross-compilation are only supported on Linux host systems. Use cross-compilation for Windows.")
 endif()
 
-# Platform check (RTX-only: Linux/Windows)
-if(WIN32)
+# Cross-compilation setup for Windows
+if(CMAKE_CROSSCOMPILING)
+    if(NOT MINGW)
+        message(FATAL_ERROR "Cross-compilation requires MinGW64 toolchain.")
+    endif()
     set(IS_WINDOWS TRUE)
     set(IS_LINUX FALSE)
-elseif(UNIX AND NOT APPLE)
+else()
     set(IS_LINUX TRUE)
     set(IS_WINDOWS FALSE)
-else()
-    message(FATAL_ERROR "Only Linux and Windows are supported (RTX-only).")
 endif()
 
 # Create source directories if they don't exist
@@ -64,15 +66,10 @@ foreach(DIR ${SOURCE_DIRS})
 endforeach()
 
 # Find Vulkan
-if(IS_LINUX)
-    find_library(VULKAN_LIBRARY NAMES vulkan vulkan-1 HINTS /usr/lib/x86_64-linux-gnu)
-    find_path(VULKAN_INCLUDE_DIR NAMES vulkan/vulkan.h HINTS /usr/include)
-else()
-    find_library(VULKAN_LIBRARY NAMES vulkan-1)
-    find_path(VULKAN_INCLUDE_DIR NAMES vulkan/vulkan.h)
-endif()
+find_library(VULKAN_LIBRARY NAMES vulkan vulkan-1 HINTS /usr/lib/x86_64-linux-gnu)
+find_path(VULKAN_INCLUDE_DIR NAMES vulkan/vulkan.h HINTS /usr/include)
 if(NOT VULKAN_LIBRARY OR NOT VULKAN_INCLUDE_DIR)
-    message(FATAL_ERROR "Vulkan not found. Install libvulkan-dev for Linux or Vulkan SDK for Windows.")
+    message(FATAL_ERROR "Vulkan not found. Install libvulkan-dev for Linux.")
 endif()
 find_program(GLSLC glslc REQUIRED)
 if(NOT GLSLC)
@@ -83,17 +80,13 @@ endif()
 find_package(PkgConfig REQUIRED)
 find_package(OpenMP REQUIRED)
 find_package(Freetype REQUIRED)
-
-# Check for fmt, spdlog, glm, and harfbuzz using pkg-config
 pkg_check_modules(FMT REQUIRED fmt)
 pkg_check_modules(SPDLOG REQUIRED spdlog)
 pkg_check_modules(GLM REQUIRED glm)
 pkg_check_modules(HarfBuzz REQUIRED harfbuzz)
-
-# Ensure spdlog uses external fmt to avoid conflicts
 set(SPDLOG_FMT_EXTERNAL ON CACHE BOOL "Use external fmt library for spdlog")
 
-# Linux-specific dependencies
+# Linux-specific dependencies (for native builds)
 if(IS_LINUX)
     find_package(SDL3 REQUIRED)
     pkg_check_modules(SDL3_ttf REQUIRED sdl3-ttf)
@@ -108,9 +101,9 @@ if(IS_LINUX)
     pkg_check_modules(XCB REQUIRED xcb)
 endif()
 
-# Windows-specific dependencies
+# Windows cross-compilation dependencies (MinGW64)
 if(IS_WINDOWS)
-    find_package(SDL3 REQUIRED)
+    find_library(SDL3_LIBRARY NAMES SDL3 REQUIRED)
     find_library(SDL3_TTF_LIBRARY NAMES SDL3_ttf REQUIRED)
     find_library(SDL3_IMAGE_LIBRARY NAMES SDL3_image REQUIRED)
     find_library(SDL3_MIXER_LIBRARY NAMES SDL3_mixer REQUIRED)
@@ -119,11 +112,11 @@ if(IS_WINDOWS)
     find_library(WIN_GLM_LIBRARY NAMES glm REQUIRED)
     find_library(WIN_HARFBUZZ_LIBRARY NAMES harfbuzz REQUIRED)
     find_library(WIN_OPENMP_LIBRARY NAMES gomp libgomp REQUIRED)
-    foreach(LIB VULKAN_LIBRARY SDL3_TTF_LIBRARY SDL3_IMAGE_LIBRARY SDL3_MIXER_LIBRARY WIN_FMT_LIBRARY WIN_SPDLOG_LIBRARY WIN_GLM_LIBRARY FREETYPE_LIBRARIES WIN_HARFBUZZ_LIBRARY WIN_OPENMP_LIBRARY)
+    foreach(LIB VULKAN_LIBRARY SDL3_LIBRARY SDL3_TTF_LIBRARY SDL3_IMAGE_LIBRARY SDL3_MIXER_LIBRARY WIN_FMT_LIBRARY WIN_SPDLOG_LIBRARY WIN_GLM_LIBRARY FREETYPE_LIBRARIES WIN_HARFBUZZ_LIBRARY WIN_OPENMP_LIBRARY)
         if(NOT ${LIB})
-            message(FATAL_ERROR "Missing Windows dependency: ${LIB}. Ensure SDL3, SDL3_ttf, SDL3_image, SDL3_mixer, fmt, spdlog, glm, freetype, harfbuzz, and OpenMP are installed.")
+            message(FATAL_ERROR "Missing MinGW64 dependency: ${LIB}. Ensure SDL3, SDL3_ttf, SDL3_image, SDL3_mixer, fmt, spdlog, glm, freetype, harfbuzz, and OpenMP are installed for MinGW64.")
         else()
-            message(STATUS "Found Windows dependency: ${${LIB}}")
+            message(STATUS "Found MinGW64 dependency: ${${LIB}}")
         endif()
     endforeach()
 endif()
@@ -185,7 +178,7 @@ if(NOT SOURCES)
 endif()
 
 # Debugging: List source directories and files
-message(STATUS "Source directories: ${SRC_DIR}, ${ENGINE_SRC_DIR}, ${SDLQUID_SRC_DIR}, ${VULKAN_SRC_DIR}, ${MODES_SRC_DIR}")
+message(STATUS "Source directories: ${SRC_DIR}, ${ENGINE_SRC_DIR}, ${SDL3_SRC_DIR}, ${VULKAN_SRC_DIR}, ${MODES_SRC_DIR}")
 message(STATUS "Found source files: ${SOURCES}")
 
 # Check for key source files
@@ -285,7 +278,7 @@ if(IS_WINDOWS)
     )
     target_link_libraries(amouranth_engine PRIVATE
         ${VULKAN_LIBRARY}
-        SDL3::SDL3
+        ${SDL3_LIBRARY}
         ${SDL3_TTF_LIBRARY}
         ${SDL3_IMAGE_LIBRARY}
         ${SDL3_MIXER_LIBRARY}
@@ -328,36 +321,28 @@ if(SHADER_OUTPUTS)
 endif()
 
 # Create output directories
-set(OUTPUT_DIRS "")
-if(IS_LINUX)
-    list(APPEND OUTPUT_DIRS
-        "${LINUX_BIN_DIR}"
-        "${LINUX_ASSET_OUT_DIR}"
-        "${LINUX_SHADER_OUT_DIR}"
-        "${LINUX_FONT_OUT_DIR}"
-        "${LINUX_TEXTURE_OUT_DIR}"
-        "${LINUX_OBJECT_OUT_DIR}"
-        "${LINUX_MATERIAL_OUT_DIR}"
-        "${LINUX_SCENE_OUT_DIR}"
-        "${LINUX_AUDIO_OUT_DIR}"
-        "${LINUX_SCRIPT_OUT_DIR}"
-    )
-endif()
-if(IS_WINDOWS)
-    list(APPEND OUTPUT_DIRS
-        "${WINDOWS_BIN_DIR}"
-        "${WINDOWS_ASSET_OUT_DIR}"
-        "${WINDOWS_SHADER_OUT_DIR}"
-        "${WINDOWS_FONT_OUT_DIR}"
-        "${WINDOWS_TEXTURE_OUT_DIR}"
-        "${WINDOWS_OBJECT_OUT_DIR}"
-        "${WINDOWS_MATERIAL_OUT_DIR}"
-        "${WINDOWS_SCENE_OUT_DIR}"
-        "${WINDOWS_AUDIO_OUT_DIR}"
-        "${WINDOWS_SCRIPT_OUT_DIR}"
-    )
-endif()
-
+set(OUTPUT_DIRS
+    "${LINUX_BIN_DIR}"
+    "${LINUX_ASSET_OUT_DIR}"
+    "${LINUX_SHADER_OUT_DIR}"
+    "${LINUX_FONT_OUT_DIR}"
+    "${LINUX_TEXTURE_OUT_DIR}"
+    "${LINUX_OBJECT_OUT_DIR}"
+    "${LINUX_MATERIAL_OUT_DIR}"
+    "${LINUX_SCENE_OUT_DIR}"
+    "${LINUX_AUDIO_OUT_DIR}"
+    "${LINUX_SCRIPT_OUT_DIR}"
+    "${WINDOWS_BIN_DIR}"
+    "${WINDOWS_ASSET_OUT_DIR}"
+    "${WINDOWS_SHADER_OUT_DIR}"
+    "${WINDOWS_FONT_OUT_DIR}"
+    "${WINDOWS_TEXTURE_OUT_DIR}"
+    "${WINDOWS_OBJECT_OUT_DIR}"
+    "${WINDOWS_MATERIAL_OUT_DIR}"
+    "${WINDOWS_SCENE_OUT_DIR}"
+    "${WINDOWS_AUDIO_OUT_DIR}"
+    "${WINDOWS_SCRIPT_OUT_DIR}"
+)
 add_custom_target(directories
     COMMAND ${CMAKE_COMMAND} -E echo "Creating output directories"
     VERBATIM
