@@ -20,53 +20,11 @@ Ensure code follows C++17 standards and includes proper error handling.
 I am now a stickler for OMP parallelization and memory safety with the advent of AI coding.  
 
 ## The universal_equation is two files and current with the best research up through 2025.  
-## Usage Example for Data Scientists
-```
-#include "universal_equation.hpp"
 
-int main() {
-    // Initialize with custom parameters and logging
-    /* UniversalEquation(
-            int maxDimensions = 11,
-            int mode = 3,
-            double influence = 1.0,
-            double weak = 0.01,
-            double collapse = 5.0,
-            double twoD = 0.0,
-            double threeDInfluence = 5.0,
-            double oneDPermeation = 0.0,
-            double darkMatterStrength = 0.27,
-            double darkEnergyStrength = 0.68,
-            double alpha = 0.1,
-            double beta = 0.5,
-            double carrollFactor = 0.0,
-            double meanFieldApprox = 0.5,
-            double asymCollapse = 0.5,
-            double perspectiveTrans = 2.0,
-            double perspectiveFocal = 4.0,
-            bool debug = false
-        ); */
-    UniversalEquation eq(4, 3, 1.0, 0.01, 5.0, 0.0, 5.0, 0.0, 0.27, 0.68, 0.1, 0.5, 0.0, 0.5, 0.5, 2.0, 4.0, true, "output.log");
-    
-    // Compute for a range of dimensions
-    auto results = eq.computeBatch(1, 4);
-    
-    // Export results to CSV
-    eq.exportToCSV("simulation_results.csv", results);
-    
-    // Advance to next dimension and compute single result
-    eq.advanceCycle();
-    auto singleResult = eq.compute();
-    std::cout << singleResult.toString() << "\n";
-    
-    return 0;
-}
-```
 
-Built on AMOURANTH RTX.  
+## Built on AMOURANTH RTX.  
 A ground up RTX engine for developers.  
 RTX 3060 Ti and higher, RX 6800 and up.  
-(or lower PushConstants to 128)  
 
 **Platform**: Currently Linux-only  with implementations for Windows, MacOS, and even iOS and Android.  
 It may build fine for non-Linux, I have untested so open a pull request if you get an OS working.  
