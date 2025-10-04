@@ -28,6 +28,9 @@ DEPENDENCIES=(
     libxcursor-dev
     libxi-dev
     libxss-dev
+    libvulkan-dev
+    vulkan-tools
+    libtbb-dev
     libomp-dev
     libfreetype6
     libspdlog-dev
@@ -39,9 +42,9 @@ DEPENDENCIES=(
     libpng-dev
     libcairo2-dev
     libpixman-1-dev
-    texinfo
-    wine
+    libharfbuzz-dev
     pkg-config
+    cmake
     ninja-build
     python3
     python3-setuptools
@@ -49,43 +52,18 @@ DEPENDENCIES=(
     autoconf
     automake
     libtool
+    libgmp-dev
+    libmpfr-dev
+    libmpc-dev
+    libsdl3-dev
+    libsdl3-ttf-dev
+    libsdl3-image-dev
+    libsdl3-mixer-dev
 )
 
 # Install dependencies
 echo "Installing dependencies..."
 apt install -y "${DEPENDENCIES[@]}"
-
-# Remove any existing Meson installation to avoid conflicts
-echo "Removing any existing Meson installation..."
-apt remove -y meson || true
-rm -f /usr/local/bin/meson || true
-
-# Clean up existing meson directory
-echo "Cleaning up existing meson directory..."
-sudo rm -rf meson
-
-# Build Meson from source
-echo "Building Meson 1.4.0 from source..."
-git clone https://github.com/mesonbuild/meson.git
-cd meson
-git checkout 1.4.0 || echo "Error: Failed to checkout Meson 1.4.0 tag."
-python3 setup.py build
-sudo python3 setup.py install
-cd ..
-
-# Verify Meson version
-echo "Verifying Meson version..."
-if ! command -v meson >/dev/null 2>&1; then
-    echo "Error: Meson is not installed or not in PATH."
-    exit 1
-fi
-MESON_VERSION=$(meson --version)
-if [[ "$(printf '%s\n1.4.0' "$MESON_VERSION" | sort -V | head -n1)" == "1.4.0" ]]; then
-    echo "Meson version $MESON_VERSION is installed."
-else
-    echo "Error: Meson version $MESON_VERSION is installed, but >= 1.4.0 is required."
-    exit 1
-fi
 
 # Verify installation of dependencies
 echo "Verifying installed dependencies..."
@@ -119,12 +97,60 @@ else
     exit 1
 fi
 
+# Verify Vulkan SDK (glslc)
+echo "Verifying Vulkan SDK..."
+if command -v glslc >/dev/null 2>&1; then
+    echo "glslc is installed."
+else
+    echo "Error: glslc is not installed. Please install vulkan-tools."
+    exit 1
+fi
+
 # Verify nproc
 echo "Verifying nproc..."
 if command -v nproc >/dev/null 2>&1; then
     echo "nproc is installed."
 else
     echo "Error: nproc is not installed."
+    exit 1
+fi
+
+# Install fmt 11.0.2 from source
+echo "Installing fmt 11.0.2 from source..."
+git clone https://github.com/fmtlib/fmt.git || true
+cd fmt
+git checkout 11.0.2 || echo "Error: Failed to checkout fmt 11.0.2 tag."
+mkdir -p build && cd build
+cmake -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=ON ..
+make -j$(nproc)
+sudo make install
+cd ../..
+
+# Install spdlog with external fmt
+echo "Installing spdlog 1.14.1 with external fmt..."
+git clone https://github.com/gabime/spdlog.git || true
+cd spdlog
+git checkout v1.14.1 || echo "Error: Failed to checkout spdlog v1.14.1 tag."
+mkdir -p build && cd build
+cmake -DCMAKE_BUILD_TYPE=Release -DSPDLOG_FMT_EXTERNAL=ON ..
+make -j$(nproc)
+sudo make install
+cd ../..
+
+# Verify fmt and spdlog versions
+echo "Verifying fmt and spdlog versions..."
+FMT_VERSION=$(pkg-config --modversion fmt)
+if [[ "$(printf '%s\n11.0.2' "$FMT_VERSION" | sort -V | head -n1)" == "11.0.2" ]]; then
+    echo "fmt version $FMT_VERSION is installed."
+else
+    echo "Error: fmt version $FMT_VERSION is installed, but >= 11.0.2 is required."
+    exit 1
+fi
+SPDLOG_VERSION=$(pkg-config --modversion spdlog)
+if [[ "$(printf '%s\n1.14.1' "$SPDLOG_VERSION" | sort -V | head -n1)" == "1.14.1" ]]; then
+    echo "spdlog version $SPDLOG_VERSION is installed."
+else
+    echo "Error: spdlog version $SPDLOG_VERSION is installed, but >= 1.14.1 is required."
     exit 1
 fi
 
