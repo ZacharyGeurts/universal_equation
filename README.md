@@ -16,7 +16,7 @@ It is a glorified calculator and you can set it to experimental theory.
 
 Contributions are welcome!  
 Please submit pull requests or open issues on the repository.  
-Ensure code follows C++17 standards and includes proper error handling.  
+Ensure code follows C++20 standards and includes proper error handling.  
 I am now a stickler for OMP parallelization and memory safety with the advent of AI coding.  
 
 ## The universal_equation is three files and current with the best research up through 2025.  
@@ -67,18 +67,6 @@ See the videos below for better quality and history.
 **Previous**: [Older WIP](https://github.com/ZacharyGeurts/universal_equation/blob/main/media/wip2.mov)  
 **Previous Previous**: [Older Version](https://github.com/user-attachments/assets/344232f5-e7b8-4485-af40-5a302873f88c)  
 
-## Features
-- **Interactive Controls**:  
-  - **Key Bindings**:  
-    - `UP`/`DOWN`: Increase/decrease influence (`kInfluence_`) by 0.1.  
-    - `LEFT`/`RIGHT`: Decrease/increase dark matter strength (`kDarkMatter_`) by 0.05.  
-    - `PAGEUP`/`PAGEDOWN`: Increase/decrease dark energy scale (`kDarkEnergy_`) by 0.05.  
-    - `1` to `9`: Switch to rendering modes 1D through 9D.  
-    - `F` toggle Fullscreen  
-    - `P` toggle Pause  
-    - `M` toggle Mute  
-    - `A`/`Z`: Zoom in/out (adjusts `zoomLevel_` between 0.01 and 20.0).  
-- **Data Logging**: Outputs dimensional data (dimension, observable, potential, dark matter, dark energy) to the console for debugging.  
 
 ## Licensing
 This is **not free (as in freedom) software**. It is provided for **educational purposes only**.  
@@ -139,109 +127,3 @@ Philosophically, it describes how broad (big) and specific (small) approaches to
 In systems theory, it reflects how macro-level patterns (big) and micro-level components (small) in a complex system both manifest its infinite complexity or emergent behavior.  
 
 Both interpretations are true and non-paradoxical because "big" and "small" are complementary perspectives that converge on the same infinite property (truth or complexity). They draw inspiration from the UniversalEquation code’s ability to model interactions across scales, producing a unified outcome, and are grounded in reality-based frameworks (philosophy and systems theory).  
-
-### Conceptual Model
-The `UniversalEquation` models the universe as:  
-- **1D (God)**: An infinite, wave-like base permeating all dimensions, acting as a universal fountain of influence, akin to an omnipresent radio wave.  
-- **2D**: The boundary of a cosmic bubble, enclosing higher dimensions and strongly interacting with 1D and 3D.  
-- **3D to 9D**: Nested dimensions, each permeating the one below (e.g., 4D influences 3D, 3D influences 2D), with interactions decaying exponentially.  
-- **4D**: Time.  
-- **5D**: Heaven1, Weak force on 3D, strong on 4D.  
-- **Dark Matter**: Stabilizes interactions, amplifying pulsing effects, especially in higher dimensions.  
-- **Dark Energy**: Drives dimensional expansion, increasing effective distances between dimensions.
-- **Code** Estimates are you can do up to 20-30 dimensions.  
-
-## Requirements
-- **OS**: Linux, (Windows and MacOS supported and untested) with Vulkan Drivers
-- **GPU** RTX 3060 Ti and higher, RX 6800 and up.
-- **CPU** "beefy" CPU - I like cores.
-- **Compiler**: `g++` with C++17 support.  
-- **Libraries**:  
-  - **SDL3**: `libsdl3-dev` (may need to build from source if not available).  
-  - **SDL3_ttf**: `libsdl3-ttf-dev` (may need to build from source if not available).  
-  - **Vulkan**: `libvulkan-dev`, `vulkan-tools` (for validation layers).  
-  - **GLM**: `libglm-dev`.  
-- **Shader Compiler**: `glslc` (from Vulkan SDK).  
-
-
-## Vulkan SDK  
-Get the tarball from [LunarG](https://vulkan.lunarg.com/)  
-Run `sudo ./vulkansdk`  
-**Make sure file permission is set to executable `chmod +x vulkansdk`**  
-
-## Build Instructions
-```bash
-sudo ./depends.sh
-./linux
-```
-
-# UniversalEquation Class Overview
-
-The `UniversalEquation` class is a C++ implementation designed to simulate quantum-like interactions within n-dimensional hypercube lattices, addressing fundamental challenges in quantum mechanics and theoretical physics. It incorporates advanced features such as the Carroll-Schrödinger ultra-relativistic limit, deterministic asymmetric collapse for the measurement problem, mean-field approximations for many-body systems, and perspective projection for visualization of high-dimensional structures. The class is thread-safe, parallelized with OpenMP, and optimized for integration with Vulkan-based rendering via a `DimensionalNavigator` for visualizing energy distributions and vertices.
-
-## Key Features
-
-### 1. **Simulation of N-Dimensional Quantum-Like Interactions**
-- Models interactions in hypercube lattices with dimensions from 1 to 20.
-- Uses a vertex-based approach to represent n-dimensional hypercubes, with each vertex having coordinates of ±1.
-- Computes energy components: observable energy, potential energy, dark matter-like effects, and dark energy-like effects.
-
-### 2. **Addressing Schrödinger Challenges**
-- **Carroll-Schrödinger Ultra-Relativistic Limit**: Implements a `carrollFactor` to modulate time-like terms in a flat-space approximation, addressing ultra-relativistic behavior inspired by recent theoretical work.
-- **Deterministic Asymmetric Collapse**: Introduces an asymmetric collapse term (`asymCollapse`) inspired by 2025 MDPI research, providing a deterministic approach to the quantum measurement problem.
-- **Mean-Field Approximation**: Reduces computational complexity of many-body interactions using a `meanFieldApprox` parameter, based on 2025 arXiv advancements.
-- **Perspective Projection**: Projects n-dimensional vertices into 3D for visualization using techniques from Noll (1967), controlled by `perspectiveTrans` and `perspectiveFocal`.
-
-### 3. **Thread-Safe and Parallelized**
-- Utilizes `std::atomic` for thread-safe parameter updates and `std::mutex` for protecting shared resources.
-- Leverages OpenMP for parallel computation of vertex interactions, energy calculations, and initialization, optimizing performance for high-dimensional simulations.
-
-### 4. **Vulkan Integration**
-- Designed to work with a `DimensionalNavigator` class for real-time rendering of energy distributions and projected vertices using Vulkan shaders.
-- Outputs energy results and projected vertices as uniforms or buffers for visualization.
-
-### 5. **Robust Parameter Management**
-- Parameters are clamped to physically meaningful ranges to ensure numerical stability.
-- Includes retry logic for memory allocation failures, automatically reducing dimensionality if resources are insufficient.
-
-## Core Components
-
-### Constructor
-- Initializes the simulation with parameters controlling dimensionality, interaction strengths, and physical effects.
-- Clamps inputs to safe ranges (e.g., `maxDimensions` between 1 and 20, `influence` between 0 and 10).
-- Initializes n-cube vertices and precomputes trigonometric values for efficiency.
-
-### Key Methods
-- **compute()**: Calculates energy components (`EnergyResult` struct) including observable, potential, dark matter, and dark energy contributions, incorporating Carroll limit, asymmetric collapse, and perspective modulation.
-- **initializeCalculator(DimensionalNavigator*)**: Links the simulation to a Vulkan-based renderer for visualization.
-- **updateCache()**: Updates and returns cached simulation data (`DimensionData` struct) for rendering or analysis.
-- **computeInteraction(int, double)**, **computePermeation(int)**, **computeDarkEnergy(double)**, **computeCollapse()**: Helper methods for computing interaction strengths, permeation factors, dark energy contributions, and collapse terms.
-
-### Data Structures
-- **EnergyResult**: Stores computed energies (`observable`, `potential`, `darkMatter`, `darkEnergy`) with a `toString()` method for debugging.
-- **DimensionInteraction**: Represents vertex interactions with `vertexIndex`, `distance`, and `strength`.
-- **DimensionData**: Caches simulation state for rendering or analysis, including dimension and energy components.
-
-## Applications
-- **Quantum Physics Simulation**: Models quantum-like interactions in high-dimensional spaces, useful for theoretical physics research.
-- **Data Visualization**: Projects n-dimensional data into 3D for visualization, aiding data scientists in understanding complex systems.
-- **Theoretical Modeling**: Tests hypotheses related to dark matter, dark energy, and quantum measurement in a controlled simulation environment.
-- **High-Performance Computing**: Leverages parallelization for large-scale simulations, suitable for cluster or GPU-based computations.
-
-## Limitations
-- High-dimensional simulations (d > 10) may require significant memory due to exponential vertex growth (2^d vertices).
-- Level-of-Detail (LOD) reduction is applied for d > 6 to manage performance, which may reduce precision.
-
-## Notes
-- The class is designed for researchers and data scientists interested in quantum mechanics, high-dimensional geometry, and computational physics.
-- Debug mode provides detailed logging for diagnostics, but may impact performance in large simulations.
-
-This implementation provides a robust, flexible framework for exploring complex physical systems in n-dimensional spaces, with practical applications in both theoretical research and visualization.
-
-
-```cpp
-UniversalEquation(int maxDimensions, int mode, double influence, double weak, double collapse,
-                 double twoD, double threeDInfluence, double oneDPermeation, double darkMatterStrength,
-                 double darkEnergyStrength, double alpha, double beta, double carrollFactor,
-                 double meanFieldApprox, double asymCollapse, double perspectiveTrans,
-                 double perspectiveFocal, bool debug);
