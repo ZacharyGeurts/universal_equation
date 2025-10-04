@@ -19,7 +19,8 @@ Please submit pull requests or open issues on the repository.
 Ensure code follows C++17 standards and includes proper error handling.  
 I am now a stickler for OMP parallelization and memory safety with the advent of AI coding.  
 
-## The universal_equation is two files and current with the best research up through 2025.  
+## The universal_equation is three files and current with the best research up through 2025.  
+All files are modular for AI updates.  
 
 
 ## Built on AMOURANTH RTX.  
