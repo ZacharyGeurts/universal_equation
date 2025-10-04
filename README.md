@@ -7,9 +7,7 @@ AMOURANTH RTX © 2025 by Zachary Geurts gzac5314@gmail.com is licensed under [CC
 https://x.com/i/grok?conversation=1970860339336999387  
 https://x.com/i/status/1970892773109776716  
 Welcome friends. God Bless.  
-Stay tuned for version 2.0. Starting line.  
-I will hold at 1.9 until I can present 20 dimensions.  
-My take? There are infinite dimensions, and there is no bottom or top to existence.  
+My take? There there is no bottom, side or top to existence.  
 Climb inside the blanket and have a look around.  
 
 I think this proves the number 1 is real and 0 is not real.  
