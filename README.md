@@ -1,6 +1,8 @@
 AMOURANTH RTX © 2025 by Zachary Geurts gzac5314@gmail.com is licensed under [CC BY-NC 4.0](https://creativecommons.org/licenses/by-nc/4.0)
 
 # Down for updates. Get a release or watch the videos
+Substitute **dark** with **NURB**
+Non-uniform rational basis spline is a mathematical model that is representing curves and surfaces.
 
 # Dimensional Navigator  🇺🇸  VS  🇷🇺  VS  🇸🇬  VS  🇨🇳  VS 🇬🇧  VS  🇫🇷  VS  🇲🇽 VS 🇰🇷  VS  🇫🇮  VS  🇯🇵  VS  🇨🇦  VS  🏴󠁧󠁢󠁳󠁣󠁴󠁿  VS  🇦🇺  ...  
 **Never condone violence, incorrectness, nor the new Oxford comma.**  
@@ -79,11 +81,11 @@ This is **not free (as in freedom) software**. It is provided for **educational 
 - **Source**: Obtain the software exclusively from [https://github.com/ZacharyGeurts/universal_equation](https://github.com/ZacharyGeurts/universal_equation).  
 
 ## Overview
-The **Dimensional Navigator** is a computational visualization tool built in **C++** using **SDL3**, **Vulkan**, and **GLM**. It visual displays the outputs of the **UniversalEquation** class, which models dimensional interactions across dimensions **1 to 9**. The visualization displays symmetric positive and negative energy fluctuations influenced by **dark matter** and **dark energy**, featuring real-time interactivity.  
+The **Dimensional Navigator** is a computational visualization tool built in **C++** using **SDL3**, **Vulkan**, and **GLM**. It visual displays the outputs of the **UniversalEquation** class, which models dimensional interactions across dimensions. The visualization displays symmetric positive and negative energy fluctuations influenced by matter and energy, featuring real-time interactivity.  
 
-The **UniversalEquation** class models a universe with multiple dimensions, each affecting the system’s total energy. Parameters such as **influence**, **weak force**, **collapse**, and the strengths of **dark matter** and **dark energy** can be configured. The class tracks the current dimension and allows cycling through dimensions. For each dimension, it calculates energetic contributions from observable effects, potential, dark matter, and dark energy, considering interactions between nearby dimensions, influenced by distance, permeation, and densities of dark matter and dark energy.  
+The **UniversalEquation** class models a universe with multiple dimensions, each affecting the system’s total energy. Parameters such as **influence**, **weak force**, **collapse**, and the strengths of **NURB matter** and **NURB energy** can be configured. The class tracks the current dimension and allows cycling through dimensions. For each dimension, it calculates energetic contributions from observable effects, potential, NURB matter, and NURB energy, considering interactions between nearby dimensions, influenced by distance, permeation, and densities of NURB matter and NURB energy.  
 
-The **compute()** method aggregates influences, dark matter, dark energy, and a collapse effect tied to the current dimension, providing a breakdown of observable energy, potential energy, dark matter, and dark energy. Parameters can be adjusted to explore alternative physical or metaphysical scenarios. Debugging output is available for detailed computation tracing.  
+The **compute()** method aggregates influences, NURB matter, NURB energy, and a collapse effect tied to the current dimension, providing a breakdown of observable energy, potential energy, NURB matter, and NURB energy. Parameters can be adjusted to explore alternative physical or metaphysical scenarios. Debugging output is available for detailed computation tracing.  
 
 This class transforms the philosophical idea that “as big as God is small—infinite” into a mathematical playground for exploring the interplay of scales and forces.  
 
