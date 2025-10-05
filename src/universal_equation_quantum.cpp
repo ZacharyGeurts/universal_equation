@@ -14,12 +14,19 @@
 // Copyright Zachary Geurts 2025 (powered by Grok with Heisenberg swagger) - "Science B*!"
 
 #include "universal_equation.hpp"
+#include <numbers>
 #include <cmath>
 #include <algorithm>
 #include <stdexcept>
 #include <iostream>
 #include <mutex>
 #include <omp.h>
+#include <glm/glm.hpp>
+
+// Helper: Safe division to prevent NaN/Inf
+inline long double safe_div(long double a, long double b) {
+    return (b != 0.0L && !std::isnan(b) && !std::isinf(b)) ? a / b : 0.0L;
+}
 
 // Computes NURBS basis function
 long double UniversalEquation::computeNURBSBasis(int i, int p, long double u, const std::vector<long double>& knots) const {
@@ -33,10 +40,10 @@ long double UniversalEquation::computeNURBSBasis(int i, int p, long double u, co
     long double denom2 = knots[i + p + 1] - knots[i + 1];
     long double term1 = 0.0L, term2 = 0.0L;
     if (denom1 > 1e-15L) {
-        term1 = ((u - knots[i]) / denom1) * computeNURBSBasis(i, p - 1, u, knots);
+        term1 = safe_div((u - knots[i]), denom1) * computeNURBSBasis(i, p - 1, u, knots);
     }
     if (denom2 > 1e-15L) {
-        term2 = ((knots[i + p + 1] - u) / denom2) * computeNURBSBasis(i + 1, p - 1, u, knots);
+        term2 = safe_div((knots[i + p + 1] - u), denom2) * computeNURBSBasis(i + 1, p - 1, u, knots);
     }
     long double result = term1 + term2;
     if (std::isnan(result) || std::isinf(result)) {
@@ -62,7 +69,7 @@ long double UniversalEquation::evaluateNURBS(long double u, const std::vector<lo
         num += basis * weights[i] * controlPoints[i];
         denom += basis * weights[i];
     }
-    long double result = (denom > 1e-15L) ? num / denom : 0.0L;
+    long double result = safe_div(num, denom);
     if (std::isnan(result) || std::isinf(result)) {
         if (debug_) {
             std::lock_guard<std::mutex> lock(debugMutex_);
@@ -101,7 +108,7 @@ std::vector<long double> UniversalEquation::computeVectorPotential(int vertexInd
     long double charge = vertexSpins_[vertexIndex] * 2.0L;
     std::vector<long double> vecPot(std::min(3, currentDimension_.load()), 0.0L);
     for (int k = 0; k < std::min(3, currentDimension_.load()); ++k) {
-        vecPot[k] = charge * vertex[k] / (1.0L + std::max(distance, 1e-15L));
+        vecPot[k] = safe_div(charge * vertex[k], (1.0L + std::max(distance, 1e-15L)));
     }
     return vecPot;
 }
@@ -114,7 +121,7 @@ std::vector<long double> UniversalEquation::computeEMField(int vertexIndex) cons
     std::vector<long double> field(std::min(3, currentDimension_.load()), 0.0L);
     long double phase = omega_ * currentDimension_.load();
     for (int k = 0; k < std::min(3, currentDimension_.load()); ++k) {
-        field[k] = emFieldStrength_.load() * std::cos(phase + k * M_PIl / 3.0L);
+        field[k] = emFieldStrength_.load() * std::cos(phase + k * std::numbers::pi_v<long double> / 3.0L);
     }
     return field;
 }
@@ -131,7 +138,7 @@ long double UniversalEquation::computeLorentzFactor(int vertexIndex) const {
     }
     momentumMag = std::sqrt(std::max(momentumMag, 0.0L));
     long double v = std::min(momentumMag, 0.999L);
-    long double result = 1.0L / std::sqrt(1.0L - v * v);
+    long double result = safe_div(1.0L, std::sqrt(1.0L - v * v));
     if (std::isnan(result) || std::isinf(result)) {
         if (debug_) {
             std::lock_guard<std::mutex> lock(debugMutex_);
@@ -204,7 +211,7 @@ long double UniversalEquation::computeInteraction(int vertexIndex, long double d
         modifier *= threeDInfluence_.load();
     }
     long double lorentzFactor = computeLorentzFactor(vertexIndex);
-    long double adjustedDistance = distance / std::max(lorentzFactor, 1e-15L);
+    long double adjustedDistance = safe_div(distance, std::max(lorentzFactor, 1e-15L));
     auto vecPot = computeVectorPotential(vertexIndex, adjustedDistance);
     long double vecPotMag = 0.0L;
     for (const auto& v : vecPot) {
@@ -225,7 +232,7 @@ long double UniversalEquation::computeInteraction(int vertexIndex, long double d
         recoilTerm += p * p;
     }
     recoilTerm = std::sqrt(std::max(recoilTerm, 0.0L)) * 0.1L;
-    long double result = influence_.load() * (1.0L / (denom * (1.0L + adjustedDistance))) * modifier *
+    long double result = influence_.load() * safe_div(1.0L, (denom * (1.0L + adjustedDistance))) * modifier *
                         (1.0L + spinTerm) * (1.0L + fieldMag) * vecPotMag * overlapFactor * (1.0L + recoilTerm);
     if (std::isnan(result) || std::isinf(result)) {
         if (debug_) {
@@ -270,9 +277,9 @@ UniversalEquation::EnergyResult UniversalEquation::compute() const {
             long double sumScale = 0.0L;
             #pragma omp parallel for schedule(dynamic) reduction(+:sumScale)
             for (size_t i = 0; i < localInteractions.size(); ++i) {
-                sumScale += perspectiveFocal_.load() / (perspectiveFocal_.load() + localInteractions[i].distance);
+                sumScale += safe_div(perspectiveFocal_.load(), (perspectiveFocal_.load() + localInteractions[i].distance));
             }
-            avgScale = sumScale / localInteractions.size();
+            avgScale = safe_div(sumScale, static_cast<long double>(localInteractions.size()));
         }
         std::lock_guard<std::mutex> lock(projMutex_);
         avgProjScale_ = avgScale;
@@ -308,8 +315,8 @@ UniversalEquation::EnergyResult UniversalEquation::compute() const {
                 }
                 fieldMag = std::sqrt(std::max(fieldMag, 0.0L));
                 long double GodWaveAmp = computeGodWaveAmplitude(interaction.vertexIndex, interaction.distance);
-                long double mfScale = 1.0L - meanFieldApprox_.load() * (1.0L / std::max(1.0L, static_cast<long double>(localInteractions.size())));
-                long double renorm = 1.0L / (1.0L + renormFactor_.load() * interactionSum);
+                long double mfScale = 1.0L - meanFieldApprox_.load() * safe_div(1.0L, std::max(1.0L, static_cast<long double>(localInteractions.size())));
+                long double renorm = safe_div(1.0L, (1.0L + renormFactor_.load() * interactionSum));
                 interactionSum += influence * safeExp(-alpha_.load() * interaction.distance) * permeation * nurbMatter * mfScale * renorm;
                 totalNurbMatter += nurbMatter * influence * permeation * mfScale * renorm;
                 totalNurbEnergy += nurbEnergy * influence * permeation * mfScale * renorm;
@@ -337,8 +344,8 @@ UniversalEquation::EnergyResult UniversalEquation::compute() const {
                 }
                 fieldMag = std::sqrt(std::max(fieldMag, 0.0L));
                 long double GodWaveAmp = computeGodWaveAmplitude(interaction.vertexIndex, interaction.distance);
-                long double mfScale = 1.0L - meanFieldApprox_.load() * (1.0L / std::max(1.0L, static_cast<long double>(localInteractions.size())));
-                long double renorm = 1.0L / (1.0L + renormFactor_.load() * interactionSum);
+                long double mfScale = 1.0L - meanFieldApprox_.load() * safe_div(1.0L, std::max(1.0L, static_cast<long double>(localInteractions.size())));
+                long double renorm = safe_div(1.0L, (1.0L + renormFactor_.load() * interactionSum));
                 interactionSum += influence * safeExp(-alpha_.load() * interaction.distance) * permeation * nurbMatter * mfScale * renorm;
                 totalNurbMatter += nurbMatter * influence * permeation * mfScale * renorm;
                 totalNurbEnergy += nurbEnergy * influence * permeation * mfScale * renorm;
@@ -349,8 +356,8 @@ UniversalEquation::EnergyResult UniversalEquation::compute() const {
             }
         }
         long double totalInfluence = interactionSum + totalNurbMatter + totalNurbEnergy + totalSpinEnergy +
-                                     totalMomentumEnergy + totalFieldEnergy + totalGodWaveEnergy;
-        long double normFactor = (totalInfluence > 0.0L) ? totalCharge_ / totalInfluence : 1.0L;
+                                    totalMomentumEnergy + totalFieldEnergy + totalGodWaveEnergy;
+        long double normFactor = (totalInfluence > 0.0L) ? safe_div(totalCharge_, totalInfluence) : 1.0L;
         interactionSum *= normFactor;
         totalNurbMatter *= normFactor;
         totalNurbEnergy *= normFactor;
@@ -393,7 +400,7 @@ long double UniversalEquation::computePermeation(int vertexIndex) const {
         vertexMagnitude += vertex[i] * vertex[i];
     }
     vertexMagnitude = std::sqrt(std::max(vertexMagnitude, 0.0L));
-    long double result = 1.0L + beta_.load() * vertexMagnitude / std::max(1, currentDimension_.load());
+    long double result = 1.0L + beta_.load() * safe_div(vertexMagnitude, std::max(1, currentDimension_.load()));
     if (std::isnan(result) || std::isinf(result)) {
         if (debug_) {
             std::lock_guard<std::mutex> lock(debugMutex_);
@@ -407,15 +414,15 @@ long double UniversalEquation::computePermeation(int vertexIndex) const {
 // Computes collapse term
 long double UniversalEquation::computeCollapse() const {
     if (currentDimension_.load() == 1) return 0.0L;
-    long double phase = static_cast<long double>(currentDimension_.load()) / (2 * maxDimensions_);
+    long double phase = safe_div(static_cast<long double>(currentDimension_.load()), (2 * maxDimensions_));
     std::lock_guard<std::mutex> lock(mutex_);
     if (cachedCos_.empty()) {
         throw std::runtime_error("cachedCos_ is empty");
     }
-    long double osc = std::abs(cachedCos_[static_cast<size_t>(2.0L * M_PIl * phase * cachedCos_.size()) % cachedCos_.size()]);
+    long double osc = std::abs(cachedCos_[static_cast<size_t>(2.0L * std::numbers::pi_v<long double> * phase * cachedCos_.size()) % cachedCos_.size()]);
     long double symCollapse = collapse_.load() * currentDimension_.load() * safeExp(-beta_.load() * (currentDimension_.load() - 1)) * (0.8L * osc + 0.2L);
-    long double vertexFactor = static_cast<long double>(nCubeVertices_.size() % 10) / 10.0L;
-    long double asymTerm = asymCollapse_.load() * std::sin(M_PIl * phase + osc + vertexFactor) * safeExp(-alpha_.load() * phase);
+    long double vertexFactor = safe_div(static_cast<long double>(nCubeVertices_.size() % 10), 10.0L);
+    long double asymTerm = asymCollapse_.load() * std::sin(std::numbers::pi_v<long double> * phase + osc + vertexFactor) * safeExp(-alpha_.load() * phase);
     long double result = std::max(0.0L, symCollapse + asymTerm);
     if (std::isnan(result) || std::isinf(result)) {
         if (debug_) {
@@ -429,13 +436,13 @@ long double UniversalEquation::computeCollapse() const {
 
 // Updates interactions
 void UniversalEquation::updateInteractions() const {
-    std::lock_guard<std::mutex> lock(mutex_);
+    // NO LOCK: mutex_ is held by caller (evolveTimeStep, getInteractions, etc.)
     interactions_.clear();
     {
         std::lock_guard<std::mutex> lock(projMutex_);
         projectedVerts_.clear();
     }
-    int d = currentDimension_.load();
+    size_t d = static_cast<size_t>(currentDimension_.load());
     uint64_t numVertices = std::min(static_cast<uint64_t>(1ULL << d), maxVertices_);
     numVertices = std::min(numVertices, static_cast<uint64_t>(1ULL << 10)); // Cap vertices
     if (d > 6) {
@@ -443,84 +450,61 @@ void UniversalEquation::updateInteractions() const {
         if (lodFactor == 0) lodFactor = 1;
         numVertices = std::min(numVertices / lodFactor, static_cast<uint64_t>(1024));
     }
-    interactions_.reserve(numVertices - 1);
-    {
-        std::lock_guard<std::mutex> lock(projMutex_);
-        projectedVerts_.reserve(numVertices);
+
+    // Per-thread local storage for interactions and projections
+    std::vector<std::vector<DimensionInteraction>> localInteractions(omp_get_max_threads());
+    std::vector<std::vector<glm::vec3>> localProjected(omp_get_max_threads());
+    for (int t = 0; t < omp_get_max_threads(); ++t) {
+        localInteractions[t].reserve((numVertices - 1) / omp_get_max_threads() + 1);
+        localProjected[t].reserve((numVertices - 1) / omp_get_max_threads() + 1);
     }
-    if (nCubeVertices_.empty()) {
-        throw std::runtime_error("nCubeVertices_ is empty");
+
+    // Compute reference vertex projection
+    std::vector<long double> referenceVertex(d, 0.0L);
+    for (size_t i = 0; i < numVertices && i < nCubeVertices_.size(); ++i) {
+        for (size_t j = 0; j < d; ++j) {
+            referenceVertex[j] += nCubeVertices_[i][j];
+        }
     }
-    const auto& referenceVertex = nCubeVertices_[0];
+    for (size_t j = 0; j < d; ++j) {
+        referenceVertex[j] = safe_div(referenceVertex[j], static_cast<long double>(numVertices));
+    }
     long double trans = perspectiveTrans_.load();
     long double focal = perspectiveFocal_.load();
-    int depthIdx = d - 1;
+    if (std::isnan(trans) || std::isinf(trans)) trans = 2.0L;
+    if (std::isnan(focal) || std::isinf(focal)) focal = 4.0L;
+    size_t depthIdx = d > 0 ? d - 1 : 0;
     long double depthRef = referenceVertex[depthIdx] + trans;
     if (depthRef <= 0.0L) depthRef = 0.001L;
-    long double scaleRef = focal / depthRef;
-    long double projRef[3] = {0.0L, 0.0L, 0.0L};
-    int projDim = std::min(3, d - 1);
-    for (int k = 0; k < projDim; ++k) {
-        projRef[k] = referenceVertex[k] * scaleRef;
+    long double scaleRef = safe_div(focal, depthRef);
+    glm::vec3 projRefVec(0.0f);
+    size_t projDim = std::min<size_t>(3, d);
+    for (size_t k = 0; k < projDim; ++k) {
+        projRefVec[k] = static_cast<float>(referenceVertex[k] * scaleRef);
     }
-    glm::vec3 projRefVec(static_cast<float>(projRef[0]), static_cast<float>(projRef[1]), static_cast<float>(projRef[2]));
     {
         std::lock_guard<std::mutex> lock(projMutex_);
         projectedVerts_.push_back(projRefVec);
     }
-    if (numVertices > 1000) {
-        #pragma omp parallel
-        {
-            std::vector<DimensionInteraction> localInteractions;
-            std::vector<glm::vec3> localProjected;
-            localInteractions.reserve((numVertices - 1) / omp_get_num_threads() + 1);
-            localProjected.reserve((numVertices - 1) / omp_get_num_threads() + 1);
-            #pragma omp for schedule(dynamic)
-            for (uint64_t i = 1; i < numVertices; ++i) {
-                const auto& v = nCubeVertices_[i];
-                long double depthI = v[depthIdx] + trans;
-                if (depthI <= 0.0L) depthI = 0.001L;
-                long double scaleI = focal / depthI;
-                long double projI[3] = {0.0L, 0.0L, 0.0L};
-                for (int k = 0; k < projDim; ++k) {
-                    projI[k] = v[k] * scaleI;
-                }
-                long double distSq = 0.0L;
-                for (int k = 0; k < 3; ++k) {
-                    long double diff = projI[k] - projRef[k];
-                    distSq += diff * diff;
-                }
-                long double distance = std::sqrt(std::max(distSq, 0.0L));
-                if (d == 1) {
-                    distance = std::fabs(v[0] - referenceVertex[0]);
-                }
-                long double strength = computeInteraction(static_cast<int>(i), distance);
-                auto vecPot = computeVectorPotential(static_cast<int>(i), distance);
-                long double GodWaveAmp = computeGodWaveAmplitude(static_cast<int>(i), distance);
-                localInteractions.emplace_back(static_cast<int>(i), distance, strength, vecPot, GodWaveAmp);
-                glm::vec3 projIVec(static_cast<float>(projI[0]), static_cast<float>(projI[1]), static_cast<float>(projI[2]));
-                localProjected.push_back(projIVec);
-            }
-            #pragma omp critical
-            {
-                interactions_.insert(interactions_.end(), localInteractions.begin(), localInteractions.end());
-                std::lock_guard<std::mutex> lock(projMutex_);
-                projectedVerts_.insert(projectedVerts_.end(), localProjected.begin(), localProjected.end());
-            }
-        }
-    } else {
+
+    // Parallel compute interactions and projections
+    #pragma omp parallel
+    {
+        int thread_id = omp_get_thread_num();
+        #pragma omp for schedule(dynamic)
         for (uint64_t i = 1; i < numVertices; ++i) {
+            if (i >= nCubeVertices_.size()) continue;
             const auto& v = nCubeVertices_[i];
             long double depthI = v[depthIdx] + trans;
             if (depthI <= 0.0L) depthI = 0.001L;
-            long double scaleI = focal / depthI;
+            long double scaleI = safe_div(focal, depthI);
             long double projI[3] = {0.0L, 0.0L, 0.0L};
-            for (int k = 0; k < projDim; ++k) {
+            for (size_t k = 0; k < projDim; ++k) {
                 projI[k] = v[k] * scaleI;
             }
             long double distSq = 0.0L;
             for (int k = 0; k < 3; ++k) {
-                long double diff = projI[k] - projRef[k];
+                long double diff = projI[k] - projRefVec[k];
                 distSq += diff * diff;
             }
             long double distance = std::sqrt(std::max(distSq, 0.0L));
@@ -530,14 +514,19 @@ void UniversalEquation::updateInteractions() const {
             long double strength = computeInteraction(static_cast<int>(i), distance);
             auto vecPot = computeVectorPotential(static_cast<int>(i), distance);
             long double GodWaveAmp = computeGodWaveAmplitude(static_cast<int>(i), distance);
-            interactions_.emplace_back(static_cast<int>(i), distance, strength, vecPot, GodWaveAmp);
+            localInteractions[thread_id].emplace_back(static_cast<int>(i), distance, strength, vecPot, GodWaveAmp);
             glm::vec3 projIVec(static_cast<float>(projI[0]), static_cast<float>(projI[1]), static_cast<float>(projI[2]));
-            {
-                std::lock_guard<std::mutex> lock(projMutex_);
-                projectedVerts_.push_back(projIVec);
-            }
+            localProjected[thread_id].push_back(projIVec);
+        }
+        #pragma omp critical
+        {
+            interactions_.insert(interactions_.end(), localInteractions[thread_id].begin(), localInteractions[thread_id].end());
+            std::lock_guard<std::mutex> lock(projMutex_);
+            projectedVerts_.insert(projectedVerts_.end(), localProjected[thread_id].begin(), localProjected[thread_id].end());
         }
     }
+
+    // Special case for dimension 3 (vertices 2 and 4)
     if (d == 3) {
         for (int adj : {2, 4}) {
             size_t vertexIndex = static_cast<size_t>(adj - 1);
@@ -547,14 +536,14 @@ void UniversalEquation::updateInteractions() const {
                 const auto& v = nCubeVertices_[vertexIndex];
                 long double depthI = v[depthIdx] + trans;
                 if (depthI <= 0.0L) depthI = 0.001L;
-                long double scaleI = focal / depthI;
+                long double scaleI = safe_div(focal, depthI);
                 long double projI[3] = {0.0L, 0.0L, 0.0L};
-                for (int k = 0; k < projDim; ++k) {
+                for (size_t k = 0; k < projDim; ++k) {
                     projI[k] = v[k] * scaleI;
                 }
                 long double distSq = 0.0L;
                 for (int k = 0; k < 3; ++k) {
-                    long double diff = projI[k] - projRef[k];
+                    long double diff = projI[k] - projRefVec[k];
                     distSq += diff * diff;
                 }
                 long double distance = std::sqrt(std::max(distSq, 0.0L));
@@ -570,5 +559,12 @@ void UniversalEquation::updateInteractions() const {
             }
         }
     }
-    needsUpdate_ = false;
+
+    needsUpdate_.store(false);
+
+    if (debug_) {
+        std::lock_guard<std::mutex> lock(debugMutex_);
+        std::cout << "[DEBUG] Updated " << interactions_.size() << " interactions, projected " << projectedVerts_.size()
+                  << " vertices, avgProjScale=" << avgProjScale_ << "\n";
+    }
 }
