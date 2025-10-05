@@ -60,19 +60,6 @@ enum class ShaderFeatures : uint32_t {
 
 class VulkanRTX {
 public:
-    // Vulkan extension function pointers
-    PFN_vkGetBufferDeviceAddress vkGetBufferDeviceAddressFunc;
-    PFN_vkGetAccelerationStructureDeviceAddressKHR vkGetASDeviceAddressFunc;
-    PFN_vkCreateAccelerationStructureKHR vkCreateASFunc;
-    PFN_vkCmdBuildAccelerationStructuresKHR vkCmdBuildASFunc;
-    PFN_vkGetAccelerationStructureBuildSizesKHR vkGetASBuildSizesFunc;
-    PFN_vkCmdTraceRaysKHR vkCmdTraceRaysKHR;
-    PFN_vkCreateRayTracingPipelinesKHR vkCreateRayTracingPipelinesKHR;
-    PFN_vkGetRayTracingShaderGroupHandlesKHR vkGetRayTracingShaderGroupHandlesKHR;
-    PFN_vkDestroyAccelerationStructureKHR vkDestroyASFunc;
-    PFN_vkCmdCopyAccelerationStructureKHR vkCmdCopyAccelerationStructureKHR;
-    PFN_vkCmdWriteAccelerationStructuresPropertiesKHR vkCmdWriteASPropertiesFunc;
-
     // Resource management template
     template <typename T, typename DestroyFuncType>
     class VulkanResource {
@@ -149,6 +136,7 @@ public:
         }
 
         VkDescriptorSet get() const { return set_; }
+        VkDescriptorSet* getPtr() { return &set_; } // Added to fix compilation error
 
     private:
         VkDevice device_;
@@ -171,6 +159,19 @@ public:
         ShaderBindingTable(ShaderBindingTable&& other) noexcept;
         ShaderBindingTable& operator=(ShaderBindingTable&& other) noexcept;
     };
+
+    // Vulkan extension function pointers
+    PFN_vkGetBufferDeviceAddress vkGetBufferDeviceAddressFunc;
+    PFN_vkGetAccelerationStructureDeviceAddressKHR vkGetASDeviceAddressFunc;
+    PFN_vkCreateAccelerationStructureKHR vkCreateASFunc;
+    PFN_vkCmdBuildAccelerationStructuresKHR vkCmdBuildASFunc;
+    PFN_vkGetAccelerationStructureBuildSizesKHR vkGetASBuildSizesFunc;
+    PFN_vkCmdTraceRaysKHR vkCmdTraceRaysKHR;
+    PFN_vkCreateRayTracingPipelinesKHR vkCreateRayTracingPipelinesKHR;
+    PFN_vkGetRayTracingShaderGroupHandlesKHR vkGetRayTracingShaderGroupHandlesKHR;
+    PFN_vkDestroyAccelerationStructureKHR vkDestroyASFunc;
+    PFN_vkCmdCopyAccelerationStructureKHR vkCmdCopyAccelerationStructureKHR;
+    PFN_vkCmdWriteAccelerationStructuresPropertiesKHR vkCmdWriteASPropertiesFunc;
 
     // Constructor
     VulkanRTX(VkDevice device, const std::vector<std::string>& shaderPaths);

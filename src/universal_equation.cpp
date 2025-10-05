@@ -100,6 +100,15 @@ UniversalEquation::UniversalEquation(
     nurbKnots_ = {0.0L, 0.0L, 0.0L, 0.0L, 0.5L, 1.0L, 1.0L, 1.0L, 1.0L};
     nurbWeights_ = {1.0L, 1.0L, 1.0L, 1.0L, 1.0L};
     try {
+        // Debug check for nCubeVertices_ before initialization
+        if (debug_) {
+            std::lock_guard<std::mutex> lock(debugMutex_);
+            std::cout << BOLD << CYAN << "[DEBUG] Before initializeWithRetry: nCubeVertices_ size=" << nCubeVertices_.size()
+                      << ", capacity=" << nCubeVertices_.capacity() << "\n" << RESET;
+            if (!nCubeVertices_.empty()) {
+                std::cerr << MAGENTA << "[ERROR] nCubeVertices_ is not empty before initialization\n" << RESET;
+            }
+        }
         initializeWithRetry();
         if (debug_) {
             std::lock_guard<std::mutex> lock(debugMutex_);
@@ -158,6 +167,8 @@ UniversalEquation::UniversalEquation(const UniversalEquation& other)
       nurbKnots_(other.nurbKnots_),
       nurbWeights_(other.nurbWeights_) {
     try {
+        // Lock other object's mutex for safe copying
+        std::lock_guard<std::mutex> lock(other.mutex_);
         // Reserve space for single vertex
         nCubeVertices_.reserve(1);
         vertexMomenta_.reserve(1);
@@ -167,6 +178,9 @@ UniversalEquation::UniversalEquation(const UniversalEquation& other)
         projectedVerts_.reserve(1);
         // Copy single vertex data
         if (!other.nCubeVertices_.empty()) {
+            if (other.nCubeVertices_[0].size() != static_cast<size_t>(currentDimension_.load())) {
+                throw std::runtime_error("Invalid dimension in copied nCubeVertices");
+            }
             nCubeVertices_.push_back(other.nCubeVertices_[0]);
             vertexMomenta_.push_back(other.vertexMomenta_[0]);
             vertexSpins_.push_back(other.vertexSpins_[0]);
@@ -195,7 +209,8 @@ UniversalEquation::UniversalEquation(const UniversalEquation& other)
 // Copy assignment
 UniversalEquation& UniversalEquation::operator=(const UniversalEquation& other) {
     if (this != &other) {
-        std::lock_guard<std::mutex> lock(mutex_);
+        std::unique_lock<std::mutex> lockThis(mutex_);
+        std::lock_guard<std::mutex> lockOther(other.mutex_);
         maxDimensions_ = other.maxDimensions_;
         mode_.store(other.mode_.load());
         currentDimension_.store(other.currentDimension_.load());
@@ -226,6 +241,13 @@ UniversalEquation& UniversalEquation::operator=(const UniversalEquation& other) 
         GodWaveFreq_.store(other.GodWaveFreq_.load());
         debug_.store(other.debug_.load());
         try {
+            // Clear existing data
+            nCubeVertices_.clear();
+            vertexMomenta_.clear();
+            vertexSpins_.clear();
+            vertexWaveAmplitudes_.clear();
+            interactions_.clear();
+            projectedVerts_.clear();
             // Reserve space for single vertex
             nCubeVertices_.reserve(1);
             vertexMomenta_.reserve(1);
@@ -234,14 +256,11 @@ UniversalEquation& UniversalEquation::operator=(const UniversalEquation& other) 
             interactions_.reserve(1);
             projectedVerts_.reserve(1);
             cachedCos_.reserve(other.cachedCos_.size());
-            // Clear and copy single vertex data
-            nCubeVertices_.clear();
-            vertexMomenta_.clear();
-            vertexSpins_.clear();
-            vertexWaveAmplitudes_.clear();
-            interactions_.clear();
-            projectedVerts_.clear();
+            // Copy single vertex data
             if (!other.nCubeVertices_.empty()) {
+                if (other.nCubeVertices_[0].size() != static_cast<size_t>(currentDimension_.load())) {
+                    throw std::runtime_error("Invalid dimension in copied nCubeVertices");
+                }
                 nCubeVertices_.push_back(other.nCubeVertices_[0]);
                 vertexMomenta_.push_back(other.vertexMomenta_[0]);
                 vertexSpins_.push_back(other.vertexSpins_[0]);
@@ -276,30 +295,50 @@ UniversalEquation& UniversalEquation::operator=(const UniversalEquation& other) 
 // Initializes n-cube vertices, momenta, spins, and amplitudes
 void UniversalEquation::initializeNCube() {
     std::lock_guard<std::mutex> lock(mutex_);
-    nCubeVertices_.clear();
-    vertexMomenta_.clear();
-    vertexSpins_.clear();
-    vertexWaveAmplitudes_.clear();
-    uint64_t numVertices = 1ULL; // Single vertex for water cube
     try {
+        // Clear vectors with explicit destruction to avoid invalid memory access
+        nCubeVertices_.clear();
+        vertexMomenta_.clear();
+        vertexSpins_.clear();
+        vertexWaveAmplitudes_.clear();
+        interactions_.clear();
+        projectedVerts_.clear();
+
+        // Reserve space for single vertex
+        uint64_t numVertices = 1ULL; // Single vertex for water cube
         nCubeVertices_.reserve(numVertices);
         vertexMomenta_.reserve(numVertices);
         vertexSpins_.reserve(numVertices);
         vertexWaveAmplitudes_.reserve(numVertices);
-        totalCharge_ = 0.0L;
-        std::vector<long double> vertex(currentDimension_.load(), 0.0L); // Center at origin
-        std::vector<long double> momentum(currentDimension_.load(), 0.0L);
+        interactions_.reserve(numVertices);
+        projectedVerts_.reserve(numVertices);
+
+        // Initialize single vertex
+        int dim = currentDimension_.load();
+        if (dim < 1 || dim > maxDimensions_) {
+            throw std::runtime_error("Invalid dimension: " + std::to_string(dim));
+        }
+        std::vector<long double> vertex(dim, 0.0L); // Center at origin
+        std::vector<long double> momentum(dim, 0.0L);
         long double spin = 0.032774L;
         long double amplitude = oneDPermeation_.load();
+
+        // Push back initialized data
         nCubeVertices_.push_back(std::move(vertex));
         vertexMomenta_.push_back(std::move(momentum));
         vertexSpins_.push_back(spin);
         vertexWaveAmplitudes_.push_back(amplitude);
         totalCharge_ = 1.0L;
+
+        // Verify vector integrity
+        if (nCubeVertices_.size() != 1 || nCubeVertices_[0].size() != static_cast<size_t>(dim)) {
+            throw std::runtime_error("Failed to initialize nCubeVertices correctly");
+        }
+
         if (debug_) {
             std::lock_guard<std::mutex> lock(debugMutex_);
-            std::cout << BOLD << CYAN << "[DEBUG] Initialized nCube with " << nCubeVertices_.size() << " vertices, totalCharge="
-                      << totalCharge_ << "\n" << RESET;
+            std::cout << BOLD << CYAN << "[DEBUG] Initialized nCube with " << nCubeVertices_.size() 
+                      << " vertices, dimension=" << dim << ", totalCharge=" << totalCharge_ << "\n" << RESET;
         }
     } catch (const std::exception& e) {
         std::lock_guard<std::mutex> lock(debugMutex_);
@@ -465,13 +504,14 @@ std::vector<UniversalEquation::DimensionData> UniversalEquation::computeBatch(in
     for (int d = 1; d <= maxDimensions_; ++d) {
         weights[d] = safe_div(weights[d], totalWeight);
     }
+    #pragma omp parallel for schedule(dynamic)
     for (int d = startDim; d <= endDim; ++d) {
         try {
             UniversalEquation temp(*this);
             temp.currentDimension_.store(d);
             temp.mode_.store(d);
             temp.needsUpdate_.store(true);
-            temp.maxVertices_ = 1ULL; // Single vertex
+            temp.maxVertices_ = 1ULL;
             temp.initializeWithRetry();
             DimensionData data = temp.updateCache();
             if (d == 3) {
