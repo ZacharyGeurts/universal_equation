@@ -1,4 +1,5 @@
-// universal_equation.hpp: Defines the UniversalEquation class for quantum simulation on n-dimensional hypercube lattices.
+// include/universal_equation.hpp
+// Defines the UniversalEquation class for quantum simulation on n-dimensional hypercube lattices.
 // Integrates classical and quantum physics with thread-safe, high-precision calculations using OpenMP and GLM.
 // Supports NURBS-based matter/energy fields and a deterministic "God wave" for quantum coherence.
 // Copyright Zachary Geurts 2025 (powered by Grok with Heisenberg swagger)
@@ -22,6 +23,7 @@
 #include <random>
 #include <numbers>
 #include <glm/glm.hpp>
+#include <span> // Added for DimensionData compatibility
 
 // Forward declaration for Vulkan rendering integration
 class DimensionalNavigator;
@@ -81,29 +83,29 @@ public:
     };
 
     UniversalEquation(
-        int maxDimensions = 19, // Default to 19D reality
+        int maxDimensions = 19,
         int mode = 3,
-        long double influence = 2.0L, // Increased for stronger interactions
+        long double influence = 2.0L,
         long double weak = 0.1L,
         long double collapse = 5.0L,
-        long double twoD = 1.5L, // Stronger 2D influence
+        long double twoD = 1.5L,
         long double threeDInfluence = 5.0L,
         long double oneDPermeation = 1.0L,
-        long double nurbMatterStrength = 0.5L, // Increased for non-zero matter
-        long double nurbEnergyStrength = 1.0L, // Increased for non-zero energy
-        long double alpha = 0.01L, // Reduced to minimize decay
+        long double nurbMatterStrength = 0.5L,
+        long double nurbEnergyStrength = 1.0L,
+        long double alpha = 0.01L,
         long double beta = 0.5L,
         long double carrollFactor = 0.1L,
         long double meanFieldApprox = 0.5L,
         long double asymCollapse = 0.5L,
         long double perspectiveTrans = 2.0L,
         long double perspectiveFocal = 4.0L,
-        long double spinInteraction = 1.0L, // Increased for non-zero spin energy
-        long double emFieldStrength = 1.0e6L, // Strong field for non-zero field energy
+        long double spinInteraction = 1.0L,
+        long double emFieldStrength = 1.0e6L,
         long double renormFactor = 1.0L,
-        long double vacuumEnergy = 0.5L, // Increased for non-zero contributions
-        long double GodWaveFreq = 2.0L, // Increased for non-zero God wave
-        bool debug = true); // Enable debug for tracing
+        long double vacuumEnergy = 0.5L,
+        long double GodWaveFreq = 2.0L,
+        bool debug = true);
 
     UniversalEquation(const UniversalEquation& other);
     UniversalEquation& operator=(const UniversalEquation& other);
@@ -196,6 +198,10 @@ public:
         std::lock_guard<std::mutex> lock(projMutex_);
         return avgProjScale_;
     }
+    std::span<const DimensionData> getDimensionData() const {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return dimensionData_;
+    }
 
     // Core methods
     void advanceCycle();
@@ -227,6 +233,7 @@ protected:
     long double computeNurbEnergy(long double distance) const;
     long double computeGodWaveAmplitude(int vertexIndex, long double distance) const;
 
+    // Reordered members to match initialization order
     int maxDimensions_;
     std::atomic<int> mode_;
     std::atomic<int> currentDimension_;
@@ -251,6 +258,7 @@ protected:
     std::vector<long double> nurbEnergyControlPoints_;
     std::vector<long double> nurbKnots_;
     std::vector<long double> nurbWeights_;
+    std::vector<DimensionData> dimensionData_; // Added for render mode compatibility
     std::atomic<long double> influence_;
     std::atomic<long double> weak_;
     std::atomic<long double> collapse_;

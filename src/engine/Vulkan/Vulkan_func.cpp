@@ -30,7 +30,7 @@ namespace VulkanInitializer {
         VkBuffer& indexStagingBuffer, VkDeviceMemory& indexStagingBufferMemory,
         VkDescriptorSetLayout& descriptorSetLayout2, VkDescriptorPool& descriptorPool, VkDescriptorSet& descriptorSet,
         VkSampler& sampler, VkShaderModule& vertShaderModule, VkShaderModule& fragShaderModule,
-        const std::vector<glm::vec3>& vertices, const std::vector<uint32_t>& indices, int width, int height) {
+        std::span<const glm::vec3> vertices, std::span<const uint32_t> indices, int width, int height) {
         // Select physical device with validation enabled
         createPhysicalDevice(instance, physicalDevice, graphicsFamily, presentFamily, surface, true,
                             [](const std::string& msg) { std::cerr << "Vulkan: " << msg << "\n"; });
@@ -90,7 +90,7 @@ namespace VulkanInitializer {
         VkBuffer& quadIndexBuffer, VkDeviceMemory& quadIndexBufferMemory,
         VkBuffer& quadStagingBuffer, VkDeviceMemory& quadStagingBufferMemory,
         VkBuffer& quadIndexStagingBuffer, VkDeviceMemory& quadIndexStagingBufferMemory,
-        const std::vector<glm::vec3>& quadVertices, const std::vector<uint32_t>& quadIndices) {
+        std::span<const glm::vec3> quadVertices, std::span<const uint32_t> quadIndices) {
         // Create quad vertex buffer
         createVertexBuffer(device, physicalDevice, commandPool, graphicsQueue,
                            quadVertexBuffer, quadVertexBufferMemory, quadStagingBuffer, quadStagingBufferMemory, quadVertices);
@@ -734,9 +734,9 @@ namespace VulkanInitializer {
     // Create a vertex buffer with staging
     void createVertexBuffer(VkDevice device, VkPhysicalDevice physicalDevice, VkCommandPool commandPool, VkQueue graphicsQueue,
                             VkBuffer& vertexBuffer, VkDeviceMemory& vertexBufferMemory, VkBuffer& stagingBuffer,
-                            VkDeviceMemory& stagingBufferMemory, const std::vector<glm::vec3>& vertices) {
+                            VkDeviceMemory& stagingBufferMemory, std::span<const glm::vec3> vertices) {
         if (vertices.empty()) {
-            throw std::runtime_error("Cannot create vertex buffer: empty vertices vector.");
+            throw std::runtime_error("Cannot create vertex buffer: empty vertices span.");
         }
 
         const VkDeviceSize bufferSize = sizeof(glm::vec3) * vertices.size();
@@ -771,9 +771,9 @@ namespace VulkanInitializer {
     // Create an index buffer with staging
     void createIndexBuffer(VkDevice device, VkPhysicalDevice physicalDevice, VkCommandPool commandPool, VkQueue graphicsQueue,
                            VkBuffer& indexBuffer, VkDeviceMemory& indexBufferMemory, VkBuffer& stagingBuffer,
-                           VkDeviceMemory& stagingBufferMemory, const std::vector<uint32_t>& indices) {
+                           VkDeviceMemory& stagingBufferMemory, std::span<const uint32_t> indices) {
         if (indices.empty()) {
-            throw std::runtime_error("Cannot create index buffer: empty indices vector.");
+            throw std::runtime_error("Cannot create index buffer: empty indices span.");
         }
 
         const VkDeviceSize bufferSize = sizeof(uint32_t) * indices.size();
@@ -805,4 +805,4 @@ namespace VulkanInitializer {
         copyBuffer(device, commandPool, graphicsQueue, stagingBuffer, indexBuffer, bufferSize);
     }
 
-}
+} // namespace VulkanInitializer

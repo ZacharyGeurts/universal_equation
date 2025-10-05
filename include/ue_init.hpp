@@ -1,5 +1,13 @@
+// include/ue_init.hpp
 #ifndef UE_INIT_HPP
 #define UE_INIT_HPP
+
+// AMOURANTH RTX Physics, October 2025
+// Computes multidimensional physics for visualization of 30,000 balls in dimension 8.
+// Thread-safe with std::atomic and std::mutex; uses OpenMP for parallelism.
+// Dependencies: GLM, C++20 standard library.
+// Usage: Instantiate with max dimensions, mode, influence, alpha, and debug flag.
+// Zachary Geurts 2025
 
 #include <vector>
 #include <cmath>
@@ -8,10 +16,8 @@
 #include <algorithm>
 #include <glm/glm.hpp>
 #include <random>
-
-// used by AMOURANTH RTX September 2025
-// Optimized for visualization of 30,000 balls in dimension 8
-// Zachary Geurts 2025
+#include <format>
+#include <iostream>
 
 struct DimensionData {
     int dimension;
@@ -49,6 +55,37 @@ struct Ball {
 
 class AMOURANTH;
 
+// Custom formatters for std::atomic types
+template <>
+struct std::formatter<std::atomic<int>, char> {
+    template <typename ParseContext>
+    constexpr auto parse(ParseContext& ctx) { return ctx.begin(); }
+    template <typename FormatContext>
+    auto format(const std::atomic<int>& value, FormatContext& ctx) const {
+        return std::format_to(ctx.out(), "{}", value.load());
+    }
+};
+
+template <>
+struct std::formatter<std::atomic<double>, char> {
+    template <typename ParseContext>
+    constexpr auto parse(ParseContext& ctx) { return ctx.begin(); }
+    template <typename FormatContext>
+    auto format(const std::atomic<double>& value, FormatContext& ctx) const {
+        return std::format_to(ctx.out(), "{:.10f}", value.load());
+    }
+};
+
+template <>
+struct std::formatter<std::atomic<bool>, char> {
+    template <typename ParseContext>
+    constexpr auto parse(ParseContext& ctx) { return ctx.begin(); }
+    template <typename FormatContext>
+    auto format(const std::atomic<bool>& value, FormatContext& ctx) const {
+        return std::format_to(ctx.out(), "{}", value.load());
+    }
+};
+
 class Xorshift {
 public:
     Xorshift(uint32_t seed) : state_(seed) {}
@@ -79,7 +116,14 @@ public:
         wavePhase_(0.0),
         simulationTime_(0.0),
         needsUpdate_(true) {
+        if (debug_) {
+            std::cout << std::format("[DEBUG] Constructing UniversalEquation: maxDimensions={}, mode={}, influence={}, alpha={}, debug={}\n",
+                                     maxDimensions_, mode_, influence_, alpha_, debug_);
+        }
         initializeNCube();
+        if (debug_) {
+            std::cout << std::format("[DEBUG] UniversalEquation constructed successfully\n");
+        }
     }
 
     void setCurrentDimension(int dimension) {
@@ -173,7 +217,6 @@ public:
         return results;
     }
 
-    // Reintroduced methods for AMOURANTH compatibility
     double computeInteraction(int vertexIndex, double distance) const {
         return influence_ * std::cos(wavePhase_ + vertexIndex * 0.1) / (distance + 1e-6);
     }
@@ -205,7 +248,6 @@ public:
         auto interactions = getInteractions();
         auto result = compute();
 
-        // Update accelerations in parallel
 #pragma omp parallel for
         for (size_t i = 0; i < balls.size(); ++i) {
             if (simulationTime_ < balls[i].startTime) continue;
@@ -219,7 +261,6 @@ public:
             balls[i].acceleration = force / balls[i].mass;
         }
 
-        // Boundary collisions (moved from renderMode8)
         const glm::vec3 boundsMin(-5.0f, -5.0f, -2.0f);
         const glm::vec3 boundsMax(5.0f, 5.0f, 2.0f);
 #pragma omp parallel for
@@ -235,7 +276,6 @@ public:
             if (pos.z > boundsMax.z) { pos.z = boundsMax.z; vel.z = -vel.z; }
         }
 
-        // Grid-based collision detection
         const int gridSize = 10;
         const float cellSize = 10.0f / gridSize;
         std::vector<std::vector<size_t>> grid(gridSize * gridSize * gridSize);
@@ -252,7 +292,6 @@ public:
             grid[cellIdx].push_back(i);
         }
 
-        // Resolve collisions in neighboring cells
 #pragma omp parallel for
         for (size_t i = 0; i < balls.size(); ++i) {
             if (simulationTime_ < balls[i].startTime) continue;
@@ -294,7 +333,6 @@ public:
             }
         }
 
-        // Update velocities and positions in parallel
 #pragma omp parallel for
         for (size_t i = 0; i < balls.size(); ++i) {
             if (simulationTime_ < balls[i].startTime) continue;
@@ -322,7 +360,17 @@ private:
     AMOURANTH* navigator_;
 
     void initializeNCube() {
+        if (debug_) {
+            std::lock_guard<std::mutex> lock(physicsMutex_);
+            std::cout << std::format("[DEBUG] Before nCubeVertices_.clear(): size={}, capacity={}\n",
+                                     nCubeVertices_.size(), nCubeVertices_.capacity());
+        }
         nCubeVertices_.clear();
+        if (debug_) {
+            std::lock_guard<std::mutex> lock(physicsMutex_);
+            std::cout << std::format("[DEBUG] After nCubeVertices_.clear(): size={}, capacity={}\n",
+                                     nCubeVertices_.size(), nCubeVertices_.capacity());
+        }
         uint64_t maxVertices = 1ULL << maxDimensions_;
         nCubeVertices_.reserve(maxVertices);
         for (uint64_t i = 0; i < maxVertices; ++i) {
@@ -334,6 +382,11 @@ private:
         }
         projectedVerts_.resize(maxVertices, glm::vec3(0.0f));
         avgProjScale_ = 1.0;
+        if (debug_) {
+            std::lock_guard<std::mutex> lock(physicsMutex_);
+            std::cout << std::format("[DEBUG] nCubeVertices_ initialized: size={}, capacity={}\n",
+                                     nCubeVertices_.size(), nCubeVertices_.capacity());
+        }
     }
 
     void updateInteractions() const {

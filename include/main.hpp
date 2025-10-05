@@ -1,4 +1,3 @@
-// main.hpp
 #ifndef MAIN_HPP
 #define MAIN_HPP
 
@@ -18,6 +17,7 @@
 // Fixed: Marked methods as inline to resolve undefined reference linker errors.
 // Fixed: Integrated HandleInput for input processing, supporting all SDL3 input types.
 // Updated: Added mutexes for thread-safe access to shared resources and Vulkan objects, excluding recreateSwapchain to avoid resizing freezes.
+// Fixed: Use std::span directly for VulkanInitializer calls to match updated signatures.
 // Zachary Geurts, 2025
 
 #include <glm/glm.hpp>
