@@ -84,7 +84,7 @@ public:
             input_ = new HandleInput(amouranth_, simulator_);
             input_->setCallbacks(); // Set default input handlers
             initializeVulkan();
-            amouranth_->setMode(9);
+            amouranth_->setMode(1);
             amouranth_->updateCache();
         } catch (const std::exception& e) {
             std::cerr << "Init failed: " << e.what() << "\n";

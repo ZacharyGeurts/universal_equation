@@ -8,11 +8,15 @@ set -e
 # Define directories
 BUILD_DIR="build"
 BIN_DIR="bin/Linux"
+SHADER_DIR="shaders/raytracing"
+RASTERIZATION_SHADER_DIR="shaders/rasterization"
 
-# Clean build directory if 'clean' is passed
+# Clean build directory and shader SPV files if 'clean' is passed
 if [ "$1" == "clean" ]; then
-    echo "Cleaning Linux build directory..."
+    echo "Cleaning Linux build directory and shader SPV files..."
     rm -rf "$BUILD_DIR" "$BIN_DIR"
+    rm -f "$SHADER_DIR"/*.spv
+    rm -f "$RASTERIZATION_SHADER_DIR"/*.spv
 fi
 
 # Create and enter build directory
@@ -26,8 +30,8 @@ echo "Building AMOURANTH RTX for Linux..."
 cmake --build . -j $(nproc)
 
 # Verify output
-if [ -f "$BIN_DIR/Navigator" ]; then
-    echo "Linux build successful! Binary located at $BIN_DIR/Navigator"
+if [ -f "../$BIN_DIR/Navigator" ]; then
+    echo "Linux build successful! Binary located at ../$BIN_DIR/Navigator"
 else
     echo "Linux build failed! Check errors above."
     exit 1
