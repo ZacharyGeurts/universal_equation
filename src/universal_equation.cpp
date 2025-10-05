@@ -312,6 +312,19 @@ void UniversalEquation::initializeNCube() {
             std::lock_guard lock(debugMutex_);
             std::cout << BOLD << CYAN << "[DEBUG] initializeNCube: nCubeVertices_ size=" << nCubeVertices_.size()
                       << ", capacity=" << nCubeVertices_.capacity() << "\n" << RESET;
+            std::cout << BOLD << CYAN << "[DEBUG] nurbMatterControlPoints_ size=" << nurbMatterControlPoints_.size()
+                      << ", nurbEnergyControlPoints_ size=" << nurbEnergyControlPoints_.size()
+                      << ", nurbKnots_ size=" << nurbKnots_.size()
+                      << ", nurbWeights_ size=" << nurbWeights_.size() << "\n" << RESET;
+        }
+
+        // Validate NURBS vectors
+        if (nurbMatterControlPoints_.size() < 4 || nurbEnergyControlPoints_.size() < 4 ||
+            nurbKnots_.size() < 8 || nurbWeights_.size() < 4) {
+            throw std::runtime_error("Invalid NURBS vector sizes: matter=" + std::to_string(nurbMatterControlPoints_.size()) +
+                                     ", energy=" + std::to_string(nurbEnergyControlPoints_.size()) +
+                                     ", knots=" + std::to_string(nurbKnots_.size()) +
+                                     ", weights=" + std::to_string(nurbWeights_.size()));
         }
 
         // Clear vectors safely
@@ -350,21 +363,47 @@ void UniversalEquation::initializeNCube() {
         const long double spin = 0.032774L;
         const long double amplitude = oneDPermeation_.load();
 
-        // Push back initialized data
+        // Populate vectors before computing NURBS and God wave
         nCubeVertices_.push_back(std::move(vertex));
         vertexMomenta_.push_back(std::move(momentum));
         vertexSpins_.push_back(spin);
         vertexWaveAmplitudes_.push_back(amplitude);
+
+        // Compute NURBS-related values with debug logging
+        long double nurbMatter, nurbEnergy, godWaveAmplitude;
+        try {
+            if (debug_) {
+                std::lock_guard lock(debugMutex_);
+                std::cout << BOLD << CYAN << "[DEBUG] Computing computeNurbMatter(0.0L)\n" << RESET;
+            }
+            nurbMatter = computeNurbMatter(0.0L);
+            if (debug_) {
+                std::lock_guard lock(debugMutex_);
+                std::cout << BOLD << CYAN << "[DEBUG] Computing computeNurbEnergy(0.0L)\n" << RESET;
+            }
+            nurbEnergy = computeNurbEnergy(0.0L);
+            if (debug_) {
+                std::lock_guard lock(debugMutex_);
+                std::cout << BOLD << CYAN << "[DEBUG] Computing computeGodWaveAmplitude(0, 0.0L), vertexWaveAmplitudes_ size=" << vertexWaveAmplitudes_.size() << "\n" << RESET;
+            }
+            godWaveAmplitude = computeGodWaveAmplitude(0, 0.0L);
+        } catch (const std::exception& e) {
+            std::lock_guard lock(debugMutex_);
+            std::cerr << MAGENTA << "[ERROR] Failed to compute NURBS values: " << e.what() << "\n" << RESET;
+            throw;
+        }
+
+        // Push back initialized data
         dimensionData_.push_back(DimensionData{
             dim,
             0.0L,
             0.0L,
-            computeNurbMatter(0.0L),
-            computeNurbEnergy(0.0L),
+            nurbMatter,
+            nurbEnergy,
             spin * spinInteraction_.load(),
             0.0L,
             0.0L,
-            computeGodWaveAmplitude(0, 0.0L)
+            godWaveAmplitude
         });
         totalCharge_ = 1.0L;
 

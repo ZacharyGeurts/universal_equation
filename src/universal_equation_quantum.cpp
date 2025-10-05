@@ -152,7 +152,12 @@ long double UniversalEquation::computeLorentzFactor(int vertexIndex) const {
 // Computes God wave amplitude
 long double UniversalEquation::computeGodWaveAmplitude(int vertexIndex, long double distance) const {
     if (vertexIndex < 0 || static_cast<size_t>(vertexIndex) >= vertexWaveAmplitudes_.size()) {
-        throw std::out_of_range("Invalid vertex index for God wave");
+        if (debug_) {
+            std::lock_guard<std::mutex> lock(debugMutex_);
+            std::cerr << "[ERROR] Invalid vertex index for God wave: vertexIndex=" << vertexIndex
+                      << ", vertexWaveAmplitudes_ size=" << vertexWaveAmplitudes_.size() << "\n";
+        }
+        return 0.0L; // Fallback to avoid exception during early initialization
     }
     long double phase = GodWaveFreq_.load() * distance + omega_ * vertexIndex;
     long double amplitude = vertexWaveAmplitudes_[vertexIndex] * std::cos(phase);

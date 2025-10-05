@@ -28,7 +28,7 @@ SDL3Initializer::~SDL3Initializer() {
 void SDL3Initializer::initialize(const char* title, int w, int h, Uint32 flags, bool rt,
                                  const std::string& fontPath, bool enableValidation, bool preferNvidia) {
     logMessage(std::format("Initializing SDL3Initializer with title: {}, width: {}, height: {}", title, w, h));
-    if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_GAMEPAD | SDL_INIT_EVENTS)) {
+    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_GAMEPAD | SDL_INIT_EVENTS) == 0) {
         std::string error = std::format("SDL_Init failed: {}", SDL_GetError());
         logMessage(error);
         throw std::runtime_error(error);
