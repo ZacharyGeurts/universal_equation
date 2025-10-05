@@ -1,110 +1,123 @@
+// src/modes/mode9.cpp
+// AMOURANTH RTX Engine - Render Mode 9 - October 2025
+// Hypercube-inspired visualization for 9th dimension with 30,000 orbs
+// Zachary Geurts, adapted for 9D by Grok, 2025
+
 #include "engine/core.hpp"
-#include <vulkan/vulkan.h>
-#include <cstring>
-#include <random>
-#include <glm/gtc/random.hpp>
+#include "ue_init.hpp"
+#include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtx/quaternion.hpp>
+#include <omp.h>
 
-struct InstanceData {
-    glm::vec4 baseColor;
-    float alpha;
-    float phase;
-    glm::vec2 _pad;
-};
-
-struct UniformData {
-    glm::mat4 viewInverse;
-    glm::mat4 projInverse;
-    glm::vec3 cameraPos;
-    float time;
-    glm::ivec2 imageSize;
-};
+const size_t kNumBalls = 30000; // Scaled up for 9D grandeur
 
 void renderMode9(AMOURANTH* amouranth, [[maybe_unused]] uint32_t imageIndex, VkBuffer vertexBuffer, VkCommandBuffer commandBuffer,
                  VkBuffer indexBuffer, float zoomLevel, int width, int height, float wavePhase,
-                 const std::vector<DimensionData>& cache, VkPipelineLayout pipelineLayout) {
-    // Camera setup
-    glm::mat4 view = glm::lookAt(
-        amouranth->isUserCamActive() ? amouranth->getUserCamPos() : glm::vec3(0.0f, 0.0f, 5.0f),
-        glm::vec3(0.0f, 0.0f, 0.0f),
-        glm::vec3(0.0f, 1.0f, 0.0f)
-    );
-    glm::mat4 proj = glm::perspective(glm::radians(45.0f / zoomLevel), (float)width / height, 0.1f, 100.0f);
-    proj[1][1] *= -1;
+                 [[maybe_unused]] const std::vector<DimensionData>& cache, VkPipelineLayout pipelineLayout) {
+    if (!amouranth || !vertexBuffer || !commandBuffer || !indexBuffer || !pipelineLayout) {
+        return;
+    }
 
-    // Fireworks parameters
-    const uint32_t numFireworks = 20;
-    const uint32_t particlesPerFirework = 60;
-    const float explosionRadius = 2.0f;
-    const float lifetime = 2.0f;
-    static std::mt19937 rng(static_cast<unsigned>(std::time(nullptr)));
-    static std::uniform_real_distribution<float> dist(-2.0f, 2.0f);
-    static std::uniform_real_distribution<float> colorDist(0.0f, 1.0f);
-    static std::uniform_real_distribution<float> delayDist(1.0f, 5.0f); // Random delay between 1 and 5 seconds
-
-    // Instance buffer for ray tracing
-    static std::vector<InstanceData> instanceBuffer(numFireworks * particlesPerFirework);
-    uint32_t instanceIdx = 0;
-
-    // Bind vertex and index buffers for rasterization
+    // Bind vertex and index buffers
     VkDeviceSize offsets[] = {0};
     vkCmdBindVertexBuffers(commandBuffer, 0, 1, &vertexBuffer, offsets);
     vkCmdBindIndexBuffer(commandBuffer, indexBuffer, 0, VK_INDEX_TYPE_UINT32);
 
-    // Firework data
-    static std::vector<glm::vec3> centers(numFireworks);
-    static std::vector<float> startTimes(numFireworks, -1.0f);
-    static std::vector<std::vector<glm::vec3>> directions(numFireworks, std::vector<glm::vec3>(particlesPerFirework));
-    static std::vector<std::vector<glm::vec3>> colors(numFireworks, std::vector<glm::vec3>(particlesPerFirework));
-
-    for (uint32_t i = 0; i < numFireworks; ++i) {
-        if (startTimes[i] < 0.0f || wavePhase - startTimes[i] > lifetime) {
-            centers[i] = glm::vec3(dist(rng), dist(rng), dist(rng) - 2.0f);
-            // Stagger start times with a random delay between 1 and 5 seconds
-            startTimes[i] = wavePhase + delayDist(rng) - 1.0f; // Offset from current wavePhase
-            for (uint32_t j = 0; j < particlesPerFirework; ++j) {
-                directions[i][j] = glm::sphericalRand(1.0f);
-                colors[i][j] = glm::vec3(colorDist(rng), colorDist(rng), colorDist(rng));
-            }
-        }
-
-        float t = (wavePhase - startTimes[i]) / lifetime;
-        if (t > 1.0f) continue;
-
-        for (uint32_t j = 0; j < particlesPerFirework; ++j) {
-            glm::vec3 dir = directions[i][j];
-            float radius = explosionRadius * t;
-            glm::vec3 pos = centers[i] + dir * radius;
-            pos.y -= 0.5f * t * t;
-            glm::vec3 color = colors[i][j];
-            float alpha = 1.0f - t * t;
-
-            float brightness = 1.0f;
-            if (!cache.empty()) {
-                brightness += static_cast<float>(cache[0].darkEnergy) * 0.5f;
-            }
-
-            // Rasterization: Push constants
-            PushConstants pc;
-            pc.model = glm::translate(glm::mat4(1.0f), pos) * glm::scale(glm::mat4(1.0f), glm::vec3(0.05f * alpha));
-            pc.view_proj = proj * view;
-            std::memset(pc.extra, 0, sizeof(pc.extra));
-            pc.extra[0] = glm::vec4(color * brightness, alpha);
-            pc.extra[1] = glm::vec4(wavePhase, 0.0f, 0.0f, 0.0f);
-
-            vkCmdPushConstants(commandBuffer, pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(PushConstants), &pc);
-            vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(amouranth->getSphereIndices().size()), 1, 0, 0, 0);
-
-            // Ray tracing: Store instance data
-            instanceBuffer[instanceIdx] = {glm::vec4(color * brightness, 0.0f), alpha, wavePhase, glm::vec2(0.0f)};
-            instanceIdx++;
-        }
+    // Initialize UniversalEquation for 9D
+    static UniversalEquation equation;
+    static bool initialized = false;
+    if (!initialized) {
+        equation.setCurrentDimension(9); // 9th dimension
+        equation.setMode(9);
+        equation.setInfluence(3.0f); // Increased influence for wilder dynamics
+        equation.setDebug(false);
+        equation.initializeCalculator(amouranth);
+        equation.initializeBalls(1.5f, 0.08f, kNumBalls); // Smaller orbs, more spread
+        initialized = true;
     }
 
-    // Update instance buffer (bind to binding = 3)
-    // Assume instanceBuffer is copied to a VkBuffer (e.g., instanceDataBuffer) with VK_BUFFER_USAGE_STORAGE_BUFFER_BIT
+    // Update physics in parallel
+    equation.advanceCycle();
+#pragma omp parallel
+    {
+        equation.updateBalls(0.016f); // Fixed timestep for physics
+    }
 
-    // Ray tracing dispatch (after binding ray tracing pipeline and descriptor sets)
-    // vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, rayTracingPipeline);
-    // vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, rayTracingPipelineLayout, 0, 1, &descriptorSet, 0, nullptr);
-    // vkCmdTraceRaysKHR(commandBuffer, &raygenSBT, &missSBT, &hitSBT, &anyHitSBT, width, height, 1);
+    // Update projected vertices
+    auto balls = equation.getBalls();
+    std::vector<glm::vec3> updatedVerts(balls.size());
+#pragma omp parallel for
+    for (size_t i = 0; i < balls.size(); ++i) {
+        updatedVerts[i] = (equation.getSimulationTime() >= balls[i].startTime) ? balls[i].position : glm::vec3(0.0f);
+    }
+    equation.updateProjectedVertices(updatedVerts);
+
+    // Get energy data
+    EnergyResult energyData = equation.compute();
+
+    // Push constants for shaders
+    struct PushConstants {
+        alignas(16) glm::mat4 model;
+        alignas(16) glm::mat4 view_proj;
+        alignas(16) glm::vec4 extra[8];
+    } pushConstants = {};
+
+    // View-projection matrix with 9D-inspired zoom
+    float aspectRatio = static_cast<float>(width) / height;
+    pushConstants.view_proj = glm::perspective(glm::radians(50.0f), aspectRatio, 0.1f, 150.0f);
+    pushConstants.view_proj = glm::translate(pushConstants.view_proj, glm::vec3(0.0f, 0.0f, -12.0f * zoomLevel));
+
+    // Hypercube-inspired scale with oscillation
+    float scale = 0.15f + 0.07f * sin(wavePhase * 1.5f) + 0.25f * static_cast<float>(energyData.observable);
+
+    // Draw orbs with 9D flair
+    uint32_t indexCount = amouranth->getSphereIndices().size();
+    if (indexCount == 0) {
+        return;
+    }
+
+#pragma omp parallel for
+    for (size_t i = 0; i < std::min(balls.size(), kNumBalls); ++i) {
+        if (equation.getSimulationTime() < balls[i].startTime) continue;
+
+        // 9D-inspired rotation with quaternions for smoother, chaotic motion
+        float rotationAngle = wavePhase * 1.2f + 0.6f * static_cast<float>(energyData.darkEnergy) + i * 0.03f;
+        glm::quat rotation = glm::angleAxis(rotationAngle, glm::normalize(glm::vec3(
+            sin(i * 0.1f + wavePhase),
+            cos(i * 0.15f + wavePhase),
+            sin(i * 0.2f + wavePhase)
+        )));
+
+        // Psychedelic color palette
+        glm::vec3 color = glm::vec3(
+            0.6f + 0.4f * sin(i * 0.12f + static_cast<float>(energyData.observable) + wavePhase),
+            0.6f + 0.4f * sin(i * 0.14f + static_cast<float>(energyData.potential) + wavePhase * 1.1f),
+            0.6f + 0.4f * sin(i * 0.16f + static_cast<float>(energyData.darkMatter) + wavePhase * 1.2f)
+        );
+
+        // Model matrix with translation, rotation, and scale
+        pushConstants.model = glm::mat4(1.0f);
+        pushConstants.model = glm::scale(pushConstants.model, glm::vec3(scale * (1.0f + 0.2f * sin(wavePhase + i * 0.05f))));
+        pushConstants.model = pushConstants.model * glm::toMat4(rotation);
+        pushConstants.model = glm::translate(pushConstants.model, balls[i].position);
+
+        // Push energy and color data
+        pushConstants.extra[0] = glm::vec4(
+            static_cast<float>(energyData.observable),
+            static_cast<float>(energyData.potential),
+            static_cast<float>(energyData.darkMatter),
+            static_cast<float>(energyData.darkEnergy)
+        );
+        pushConstants.extra[1] = glm::vec4(rotationAngle, scale, 0.0f, 0.0f);
+        pushConstants.extra[2] = glm::vec4(color, 1.0f);
+
+        // Thread-safe command buffer recording
+#pragma omp critical
+        {
+            vkCmdPushConstants(commandBuffer, pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                               0, sizeof(PushConstants), &pushConstants);
+            vkCmdDrawIndexed(commandBuffer, indexCount, 1, 0, 0, 0);
+        }
+    }
 }
