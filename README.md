@@ -29,9 +29,7 @@ All files are modular for AI updates.
 A ground up RTX engine for developers.  
 RTX 3060 Ti and higher, RX 6800 and up.  
 
-**Platform**: Currently Linux-only  with implementations for Windows, MacOS, and even iOS and Android.  
-It may build fine for non-Linux, I have untested so open a pull request if you get an OS working.  
-I expect RTX to stay, so I expect other platforms to eventually adopt with chips.  
+**Platform**: Currently Linux-only  with implementations for Windows  
 If you have a problem or need assistance please open an issue here on github.  
 
 Modular design. Modify with your favorite AI coding program.  
@@ -79,6 +77,7 @@ This is **not free (as in freedom) software**. It is provided for **educational 
 - **Distribution**: gzac5314@gmail.com for AMOURANTH RTX engine license  
 - **Why AMOURANTH?** They said they were hiring so I figured I would try to bring in a customer.  
 - **Source**: Obtain the software exclusively from [https://github.com/ZacharyGeurts/universal_equation](https://github.com/ZacharyGeurts/universal_equation).  
+
 
 ## Overview
 The **Dimensional Navigator** is a computational visualization tool built in **C++** using **SDL3**, **Vulkan**, and **GLM**. It visual displays the outputs of the **UniversalEquation** class, which models dimensional interactions across dimensions. The visualization displays symmetric positive and negative energy fluctuations influenced by matter and energy, featuring real-time interactivity.  
