@@ -301,11 +301,26 @@ UniversalEquation& UniversalEquation::operator=(const UniversalEquation& other) 
 // Initialize n-cube vertices, momenta, spins, amplitudes, and dimension data
 void UniversalEquation::initializeNCube() {
     if (debug_) {
-        std::lock_guard lock(debugMutex_);
-        std::cout << BOLD << CYAN << "[DEBUG] Entering initializeNCube: thread_id=" << std::this_thread::get_id()
-                  << ", mutex_address=" << &mutex_ << "\n" << RESET;
+        try {
+            std::unique_lock lock(debugMutex_, std::try_to_lock);
+            if (!lock.owns_lock()) {
+                std::cerr << MAGENTA << "[ERROR] Failed to acquire debugMutex_ in initializeNCube\n" << RESET;
+                return;
+            }
+            std::cout << BOLD << CYAN << "[DEBUG] Entering initializeNCube: thread_id=" << std::this_thread::get_id()
+                      << ", mutex_address=" << &mutex_ << "\n" << RESET;
+        } catch (const std::exception& e) {
+            std::cerr << MAGENTA << "[ERROR] Debug mutex lock failed: " << e.what() << "\n" << RESET;
+            return;
+        }
     }
-    std::lock_guard lock(mutex_);
+    std::unique_lock lock(mutex_, std::try_to_lock);
+    if (!lock.owns_lock()) {
+        if (debug_) {
+            std::cerr << MAGENTA << "[ERROR] Failed to acquire mutex_ in initializeNCube\n" << RESET;
+        }
+        throw std::runtime_error("Failed to acquire mutex_ in initializeNCube");
+    }
     try {
         // Log initial state for debugging
         if (debug_) {

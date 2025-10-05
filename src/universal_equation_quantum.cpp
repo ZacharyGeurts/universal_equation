@@ -29,7 +29,14 @@ inline long double safe_div(long double a, long double b) {
 }
 
 // Computes NURBS basis function
-long double UniversalEquation::computeNURBSBasis(int i, int p, long double u, const std::vector<long double>& knots) const {
+long double UniversalEquation::computeNURBSBasis(int i, int p, long double u, const std::vector<long double>& knots, int depth) const {
+    if (depth > 10) { // Prevent excessive recursion
+        if (debug_) {
+            std::lock_guard<std::mutex> lock(debugMutex_);
+            std::cerr << MAGENTA << "[ERROR] Excessive recursion in computeNURBSBasis: i=" << i << ", p=" << p << ", u=" << u << ", depth=" << depth << "\n" << RESET;
+        }
+        return 0.0L;
+    }
     if (i < 0 || i + p + 1 >= static_cast<int>(knots.size())) {
         return 0.0L;
     }
@@ -40,10 +47,10 @@ long double UniversalEquation::computeNURBSBasis(int i, int p, long double u, co
     long double denom2 = knots[i + p + 1] - knots[i + 1];
     long double term1 = 0.0L, term2 = 0.0L;
     if (denom1 > 1e-15L) {
-        term1 = safe_div((u - knots[i]), denom1) * computeNURBSBasis(i, p - 1, u, knots);
+        term1 = safe_div((u - knots[i]), denom1) * computeNURBSBasis(i, p - 1, u, knots, depth + 1);
     }
     if (denom2 > 1e-15L) {
-        term2 = safe_div((knots[i + p + 1] - u), denom2) * computeNURBSBasis(i + 1, p - 1, u, knots);
+        term2 = safe_div((knots[i + p + 1] - u), denom2) * computeNURBSBasis(i + 1, p - 1, u, knots, depth + 1);
     }
     long double result = term1 + term2;
     if (std::isnan(result) || std::isinf(result)) {
@@ -56,7 +63,7 @@ long double UniversalEquation::computeNURBSBasis(int i, int p, long double u, co
     return result;
 }
 
-// Evaluates NURBS curve
+// Update evaluateNURBS to pass depth parameter
 long double UniversalEquation::evaluateNURBS(long double u, const std::vector<long double>& controlPoints,
                                             const std::vector<long double>& weights,
                                             const std::vector<long double>& knots, int degree) const {
@@ -65,7 +72,7 @@ long double UniversalEquation::evaluateNURBS(long double u, const std::vector<lo
     }
     long double num = 0.0L, denom = 0.0L;
     for (size_t i = 0; i < controlPoints.size(); ++i) {
-        long double basis = computeNURBSBasis(i, degree, u, knots);
+        long double basis = computeNURBSBasis(i, degree, u, knots, 0);
         num += basis * weights[i] * controlPoints[i];
         denom += basis * weights[i];
     }

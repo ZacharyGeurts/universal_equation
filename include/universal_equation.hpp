@@ -23,7 +23,13 @@
 #include <random>
 #include <numbers>
 #include <glm/glm.hpp>
-#include <span> // Added for DimensionData compatibility
+#include <span>
+
+// ANSI color codes
+#define RESET "\033[0m"
+#define MAGENTA "\033[35m"
+#define CYAN "\033[36m"
+#define BOLD "\033[1m"
 
 // Forward declaration for Vulkan rendering integration
 class DimensionalNavigator;
@@ -258,7 +264,7 @@ protected:
     std::vector<long double> nurbEnergyControlPoints_;
     std::vector<long double> nurbKnots_;
     std::vector<long double> nurbWeights_;
-    std::vector<DimensionData> dimensionData_; // Added for render mode compatibility
+    std::vector<DimensionData> dimensionData_;
     std::atomic<long double> influence_;
     std::atomic<long double> weak_;
     std::atomic<long double> collapse_;
@@ -289,7 +295,7 @@ private:
     std::vector<long double> computeVectorPotential(int vertexIndex, long double distance) const;
     long double computeLorentzFactor(int vertexIndex) const;
     std::vector<long double> computeEMField(int vertexIndex) const;
-    long double computeNURBSBasis(int i, int p, long double u, const std::vector<long double>& knots) const;
+    long double computeNURBSBasis(int i, int p, long double u, const std::vector<long double>& knots, int depth) const; // Updated declaration
     long double evaluateNURBS(long double u, const std::vector<long double>& controlPoints, const std::vector<long double>& weights, const std::vector<long double>& knots, int degree) const;
     void updateInteractions() const;
 };
