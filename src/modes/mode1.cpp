@@ -1,49 +1,51 @@
-// src/modes/mode1.cpp
-// AMOURANTH RTX Engine, October 2025 - RenderMode1 for 1D perspective.
-// Implements rendering for a 1D line along the x-axis.
-// Zachary Geurts, 2025
-
+#include "engine/core.hpp"
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
-#include <vulkan/vulkan.h>
-#include "engine/core.hpp"
+#include <cmath>
+#include <stdexcept>
 
-void renderMode1(AMOURANTH* amouranth, [[maybe_unused]] uint32_t imageIndex, VkBuffer vertexBuffer,
-                 VkCommandBuffer commandBuffer, VkBuffer indexBuffer, [[maybe_unused]] float deltaTime,
-                 int width, [[maybe_unused]] int height, float scale,
-                 [[maybe_unused]] std::span<const DimensionData> dimData, VkPipelineLayout pipelineLayout) {
-    // Bind vertex and index buffers
+void renderMode1(AMOURANTH* amouranth, uint32_t imageIndex, VkBuffer vertexBuffer, VkCommandBuffer commandBuffer,
+                 VkBuffer indexBuffer, float zoomLevel, int width, int height, float wavePhase,
+                 std::span<const DimensionData> cache, VkPipelineLayout pipelineLayout, VkDescriptorSet descriptorSet) {
+    if (!amouranth || !commandBuffer || !pipelineLayout) {
+        throw std::runtime_error("renderMode1: Invalid AMOURANTH, commandBuffer, or pipelineLayout");
+    }
+    if (cache.size() < 1) {
+        throw std::runtime_error("renderMode1: Cache is empty for dimension 1");
+    }
+
     VkDeviceSize offsets[] = {0};
     vkCmdBindVertexBuffers(commandBuffer, 0, 1, &vertexBuffer, offsets);
     vkCmdBindIndexBuffer(commandBuffer, indexBuffer, 0, VK_INDEX_TYPE_UINT32);
 
-    // 1D projection: orthographic, focused on x-axis
-    glm::mat4 proj = glm::ortho(-width / 2.0f, width / 2.0f, -1.0f, 1.0f, -1.0f, 1.0f);
-    glm::mat4 view = glm::lookAt(
-        glm::vec3(0.0f, 0.0f, 1.0f), // Camera at (0, 0, 1)
-        glm::vec3(0.0f, 0.0f, 0.0f), // Look at origin
-        glm::vec3(0.0f, 1.0f, 0.0f)  // Up vector
-    );
+    // Bind descriptor set for RTX pipeline
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &descriptorSet, 0, nullptr);
 
-    // Model matrix (scale based on input)
-    glm::mat4 model = glm::scale(glm::mat4(1.0f), glm::vec3(scale, 1.0f, 1.0f));
+    PushConstants pushConstants = {};
+    float observable = cache[0].observable;
+    float animatedScale = observable * 0.5f * (1.0f + 0.1f * std::sin(wavePhase));
+    pushConstants.model = glm::scale(glm::mat4(1.0f), glm::vec3(std::max(0.1f, animatedScale)));
 
-    // TODO: Integrate dimData when DimensionData structure is clarified
-    // Example: model = glm::translate(model, glm::vec3(dimData[0].some_field, 0.0f, 0.0f));
+    glm::vec3 cameraPos = amouranth->isUserCamActive() ? amouranth->getUserCamPos() : glm::vec3(0.0f, 0.0f, 5.0f * zoomLevel);
+    glm::mat4 view = glm::lookAt(cameraPos, glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+    glm::mat4 proj = glm::perspective(glm::radians(45.0f / std::max(0.1f, zoomLevel)), static_cast<float>(width) / height, 0.1f, 100.0f);
+    proj[1][1] *= -1;
+    pushConstants.view_proj = proj * view;
 
-    // Push constants
-    struct PushConstants {
-        glm::mat4 model;
-        glm::mat4 view;
-        glm::mat4 proj;
-    } push;
-    push.model = model;
-    push.view = view;
-    push.proj = proj;
+    pushConstants.extra[0].x = observable;
+    for (int i = 1; i < 8; ++i) {
+        pushConstants.extra[i] = glm::vec4(0.0f);
+    }
 
-    vkCmdPushConstants(commandBuffer, pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT,
-                       0, sizeof(PushConstants), &push);
+    vkCmdPushConstants(commandBuffer, pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                       0, sizeof(PushConstants), &pushConstants);
 
-    // Draw geometry
-    vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(amouranth->getSphereIndices().size()), 1, 0, 0, 0);
+    if (amouranth->getDebug()) {
+        std::cout << std::format("[DEBUG] Rendering frame {} for dimension 1 with observable {}\n", imageIndex, observable);
+    }
+    auto indices = amouranth->getSphereIndices();
+    if (indices.empty()) {
+        throw std::runtime_error("renderMode1: Sphere indices are empty");
+    }
+    vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(indices.size()), 1, 0, 0, 0);
 }

@@ -5,11 +5,11 @@
 // Core rendering and navigation for Vulkan-based ray tracing and SDL integration.
 // Manages physics via UniversalEquation (ue_init.hpp) and input via handleinput.hpp.
 // Uses 256-byte PushConstants for rasterization and ray tracing pipelines.
+// Supports sphere, quad, and triangle geometries for fast 3D rendering.
 // Dependencies: Vulkan 1.3+, SDL3, GLM, ue_init.hpp, handleinput.hpp.
 // Usage: Instantiate AMOURANTH with DimensionalNavigator; call render and update for gameplay.
 // Zachary Geurts 2025
 
-// Move the constant here to avoid incomplete type issue
 static constexpr int kMaxRenderedDimensions = 9;
 
 #include <glm/glm.hpp>
@@ -26,13 +26,12 @@ static constexpr int kMaxRenderedDimensions = 9;
 #include "handleinput.hpp"
 
 struct PushConstants {
-    alignas(16) glm::mat4 model;       // 64 bytes: Model matrix
-    alignas(16) glm::mat4 view_proj;   // 64 bytes: View-projection matrix
-    alignas(16) glm::vec4 extra[8];    // 128 bytes: Shader data
+    alignas(16) glm::mat4 model;       // 64 bytes
+    alignas(16) glm::mat4 view_proj;   // 64 bytes
+    alignas(16) glm::vec4 extra[8];    // 128 bytes
 };
 static_assert(sizeof(PushConstants) == 256, "PushConstants must be 256 bytes");
 
-// Forward declaration of AMOURANTH
 class AMOURANTH;
 
 class DimensionalNavigator {
@@ -54,7 +53,7 @@ public:
 
 private:
     void initializeCache() {
-        cache_.resize(kMaxRenderedDimensions); // Use global constant
+        cache_.resize(kMaxRenderedDimensions);
         for (size_t i = 0; i < cache_.size(); ++i) {
             cache_[i].dimension = static_cast<int>(i + 1);
             cache_[i].observable = 1.0;
@@ -89,11 +88,12 @@ public:
         if (!navigator) throw std::runtime_error("AMOURANTH: Null DimensionalNavigator provided.");
         initializeSphereGeometry();
         initializeQuadGeometry();
+        initializeTriangleGeometry();
         initializeCalculator();
     }
 
     void render(uint32_t imageIndex, VkBuffer vertexBuffer, VkCommandBuffer commandBuffer,
-                VkBuffer indexBuffer, VkPipelineLayout pipelineLayout);
+                VkBuffer indexBuffer, VkPipelineLayout pipelineLayout, VkDescriptorSet descriptorSet);
     void update(float deltaTime);
 
     void adjustInfluence(double delta) {
@@ -123,6 +123,8 @@ public:
     std::span<const uint32_t> getSphereIndices() const { return sphereIndices_; }
     std::span<const glm::vec3> getQuadVertices() const { return quadVertices_; }
     std::span<const uint32_t> getQuadIndices() const { return quadIndices_; }
+    std::span<const glm::vec3> getTriangleVertices() const { return triangleVertices_; }
+    std::span<const uint32_t> getTriangleIndices() const { return triangleIndices_; }
     std::span<const DimensionData> getCache() const { return cache_; }
     int getMode() const { return mode_; }
     float getWavePhase() const { return wavePhase_; }
@@ -135,6 +137,7 @@ public:
 private:
     void initializeSphereGeometry();
     void initializeQuadGeometry();
+    void initializeTriangleGeometry();
     void initializeCalculator();
 
     UniversalEquation ue_;
@@ -143,6 +146,8 @@ private:
     std::vector<uint32_t> sphereIndices_;
     std::vector<glm::vec3> quadVertices_;
     std::vector<uint32_t> quadIndices_;
+    std::vector<glm::vec3> triangleVertices_;
+    std::vector<uint32_t> triangleIndices_;
     DimensionalNavigator* simulator_;
     int mode_;
     float wavePhase_;
@@ -158,46 +163,46 @@ private:
 // Forward declarations for mode-specific rendering
 void renderMode1(AMOURANTH* amouranth, uint32_t imageIndex, VkBuffer vertexBuffer, VkCommandBuffer commandBuffer,
                  VkBuffer indexBuffer, float zoomLevel, int width, int height, float wavePhase,
-                 std::span<const DimensionData> cache, VkPipelineLayout pipelineLayout);
+                 std::span<const DimensionData> cache, VkPipelineLayout pipelineLayout, VkDescriptorSet descriptorSet);
 void renderMode2(AMOURANTH* amouranth, uint32_t imageIndex, VkBuffer vertexBuffer, VkCommandBuffer commandBuffer,
                  VkBuffer indexBuffer, float zoomLevel, int width, int height, float wavePhase,
-                 std::span<const DimensionData> cache, VkPipelineLayout pipelineLayout);
+                 std::span<const DimensionData> cache, VkPipelineLayout pipelineLayout, VkDescriptorSet descriptorSet);
 void renderMode3(AMOURANTH* amouranth, uint32_t imageIndex, VkBuffer vertexBuffer, VkCommandBuffer commandBuffer,
                  VkBuffer indexBuffer, float zoomLevel, int width, int height, float wavePhase,
-                 std::span<const DimensionData> cache, VkPipelineLayout pipelineLayout);
+                 std::span<const DimensionData> cache, VkPipelineLayout pipelineLayout, VkDescriptorSet descriptorSet);
 void renderMode4(AMOURANTH* amouranth, uint32_t imageIndex, VkBuffer vertexBuffer, VkCommandBuffer commandBuffer,
                  VkBuffer indexBuffer, float zoomLevel, int width, int height, float wavePhase,
-                 std::span<const DimensionData> cache, VkPipelineLayout pipelineLayout);
+                 std::span<const DimensionData> cache, VkPipelineLayout pipelineLayout, VkDescriptorSet descriptorSet);
 void renderMode5(AMOURANTH* amouranth, uint32_t imageIndex, VkBuffer vertexBuffer, VkCommandBuffer commandBuffer,
                  VkBuffer indexBuffer, float zoomLevel, int width, int height, float wavePhase,
-                 std::span<const DimensionData> cache, VkPipelineLayout pipelineLayout);
+                 std::span<const DimensionData> cache, VkPipelineLayout pipelineLayout, VkDescriptorSet descriptorSet);
 void renderMode6(AMOURANTH* amouranth, uint32_t imageIndex, VkBuffer vertexBuffer, VkCommandBuffer commandBuffer,
                  VkBuffer indexBuffer, float zoomLevel, int width, int height, float wavePhase,
-                 std::span<const DimensionData> cache, VkPipelineLayout pipelineLayout);
+                 std::span<const DimensionData> cache, VkPipelineLayout pipelineLayout, VkDescriptorSet descriptorSet);
 void renderMode7(AMOURANTH* amouranth, uint32_t imageIndex, VkBuffer vertexBuffer, VkCommandBuffer commandBuffer,
                  VkBuffer indexBuffer, float zoomLevel, int width, int height, float wavePhase,
-                 std::span<const DimensionData> cache, VkPipelineLayout pipelineLayout);
+                 std::span<const DimensionData> cache, VkPipelineLayout pipelineLayout, VkDescriptorSet descriptorSet);
 void renderMode8(AMOURANTH* amouranth, uint32_t imageIndex, VkBuffer vertexBuffer, VkCommandBuffer commandBuffer,
                  VkBuffer indexBuffer, float zoomLevel, int width, int height, float wavePhase,
-                 std::span<const DimensionData> cache, VkPipelineLayout pipelineLayout);
+                 std::span<const DimensionData> cache, VkPipelineLayout pipelineLayout, VkDescriptorSet descriptorSet);
 void renderMode9(AMOURANTH* amouranth, uint32_t imageIndex, VkBuffer vertexBuffer, VkCommandBuffer commandBuffer,
                  VkBuffer indexBuffer, float zoomLevel, int width, int height, float wavePhase,
-                 std::span<const DimensionData> cache, VkPipelineLayout pipelineLayout);
+                 std::span<const DimensionData> cache, VkPipelineLayout pipelineLayout, VkDescriptorSet descriptorSet);
 
 // Inline implementations
 inline void AMOURANTH::render(uint32_t imageIndex, VkBuffer vertexBuffer, VkCommandBuffer commandBuffer,
-                              VkBuffer indexBuffer, VkPipelineLayout pipelineLayout) {
+                              VkBuffer indexBuffer, VkPipelineLayout pipelineLayout, VkDescriptorSet descriptorSet) {
     switch (simulator_->getMode()) {
-        case 1: renderMode1(this, imageIndex, vertexBuffer, commandBuffer, indexBuffer, simulator_->getZoomLevel(), width_, height_, simulator_->getWavePhase(), getCache(), pipelineLayout); break;
-        case 2: renderMode2(this, imageIndex, vertexBuffer, commandBuffer, indexBuffer, simulator_->getZoomLevel(), width_, height_, simulator_->getWavePhase(), getCache(), pipelineLayout); break;
-        case 3: renderMode3(this, imageIndex, vertexBuffer, commandBuffer, indexBuffer, simulator_->getZoomLevel(), width_, height_, simulator_->getWavePhase(), getCache(), pipelineLayout); break;
-        case 4: renderMode4(this, imageIndex, vertexBuffer, commandBuffer, indexBuffer, simulator_->getZoomLevel(), width_, height_, simulator_->getWavePhase(), getCache(), pipelineLayout); break;
-        case 5: renderMode5(this, imageIndex, vertexBuffer, commandBuffer, indexBuffer, simulator_->getZoomLevel(), width_, height_, simulator_->getWavePhase(), getCache(), pipelineLayout); break;
-        case 6: renderMode6(this, imageIndex, vertexBuffer, commandBuffer, indexBuffer, simulator_->getZoomLevel(), width_, height_, simulator_->getWavePhase(), getCache(), pipelineLayout); break;
-        case 7: renderMode7(this, imageIndex, vertexBuffer, commandBuffer, indexBuffer, simulator_->getZoomLevel(), width_, height_, simulator_->getWavePhase(), getCache(), pipelineLayout); break;
-        case 8: renderMode8(this, imageIndex, vertexBuffer, commandBuffer, indexBuffer, simulator_->getZoomLevel(), width_, height_, simulator_->getWavePhase(), getCache(), pipelineLayout); break;
-        case 9: renderMode9(this, imageIndex, vertexBuffer, commandBuffer, indexBuffer, simulator_->getZoomLevel(), width_, height_, simulator_->getWavePhase(), getCache(), pipelineLayout); break;
-        default: renderMode1(this, imageIndex, vertexBuffer, commandBuffer, indexBuffer, simulator_->getZoomLevel(), width_, height_, simulator_->getWavePhase(), getCache(), pipelineLayout); break;
+        case 1: renderMode1(this, imageIndex, vertexBuffer, commandBuffer, indexBuffer, simulator_->getZoomLevel(), width_, height_, simulator_->getWavePhase(), getCache(), pipelineLayout, descriptorSet); break;
+        case 2: renderMode2(this, imageIndex, vertexBuffer, commandBuffer, indexBuffer, simulator_->getZoomLevel(), width_, height_, simulator_->getWavePhase(), getCache(), pipelineLayout, descriptorSet); break;
+        case 3: renderMode3(this, imageIndex, vertexBuffer, commandBuffer, indexBuffer, simulator_->getZoomLevel(), width_, height_, simulator_->getWavePhase(), getCache(), pipelineLayout, descriptorSet); break;
+        case 4: renderMode4(this, imageIndex, vertexBuffer, commandBuffer, indexBuffer, simulator_->getZoomLevel(), width_, height_, simulator_->getWavePhase(), getCache(), pipelineLayout, descriptorSet); break;
+        case 5: renderMode5(this, imageIndex, vertexBuffer, commandBuffer, indexBuffer, simulator_->getZoomLevel(), width_, height_, simulator_->getWavePhase(), getCache(), pipelineLayout, descriptorSet); break;
+        case 6: renderMode6(this, imageIndex, vertexBuffer, commandBuffer, indexBuffer, simulator_->getZoomLevel(), width_, height_, simulator_->getWavePhase(), getCache(), pipelineLayout, descriptorSet); break;
+        case 7: renderMode7(this, imageIndex, vertexBuffer, commandBuffer, indexBuffer, simulator_->getZoomLevel(), width_, height_, simulator_->getWavePhase(), getCache(), pipelineLayout, descriptorSet); break;
+        case 8: renderMode8(this, imageIndex, vertexBuffer, commandBuffer, indexBuffer, simulator_->getZoomLevel(), width_, height_, simulator_->getWavePhase(), getCache(), pipelineLayout, descriptorSet); break;
+        case 9: renderMode9(this, imageIndex, vertexBuffer, commandBuffer, indexBuffer, simulator_->getZoomLevel(), width_, height_, simulator_->getWavePhase(), getCache(), pipelineLayout, descriptorSet); break;
+        default: renderMode1(this, imageIndex, vertexBuffer, commandBuffer, indexBuffer, simulator_->getZoomLevel(), width_, height_, simulator_->getWavePhase(), getCache(), pipelineLayout, descriptorSet); break;
     }
 }
 
@@ -261,13 +266,22 @@ inline void AMOURANTH::initializeQuadGeometry() {
     quadIndices_ = {0, 1, 2, 2, 3, 0};
 }
 
+inline void AMOURANTH::initializeTriangleGeometry() {
+    triangleVertices_ = {
+        {0.0f, 0.5f, 0.0f},    // Top vertex
+        {-0.5f, -0.5f, 0.0f}, // Bottom-left vertex
+        {0.5f, -0.5f, 0.0f}   // Bottom-right vertex
+    };
+    triangleIndices_ = {0, 1, 2};
+}
+
 inline void AMOURANTH::initializeCalculator() {
     try {
         if (getDebug()) {
             std::cout << std::format("[DEBUG] Initializing cache for UniversalEquation\n");
         }
         cache_.clear();
-        cache_.resize(kMaxRenderedDimensions); // Use global constant
+        cache_.resize(kMaxRenderedDimensions);
         for (int i = 0; i < kMaxRenderedDimensions; ++i) {
             cache_[i].dimension = i + 1;
             cache_[i].observable = 1.0;

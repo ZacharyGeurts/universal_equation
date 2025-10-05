@@ -394,7 +394,7 @@ private:
         vkCmdBindPipeline(commandBuffers_[imageIndex], VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_);
         {
             std::lock_guard<std::mutex> lock(resourceMutex_);
-            amouranth_->render(imageIndex, vertexBuffer_, commandBuffers_[imageIndex], indexBuffer_, pipelineLayout_);
+            amouranth_->render(imageIndex, vertexBuffer_, commandBuffers_[imageIndex], indexBuffer_, pipelineLayout_, descriptorSet_);
         }
         vkCmdEndRenderPass(commandBuffers_[imageIndex]);
         if (vkEndCommandBuffer(commandBuffers_[imageIndex]) != VK_SUCCESS) throw std::runtime_error("Failed to end command buffer");

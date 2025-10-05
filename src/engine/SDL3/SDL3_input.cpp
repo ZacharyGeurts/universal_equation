@@ -7,6 +7,7 @@
 
 #include "engine/SDL3/SDL3_input.hpp"
 #include <algorithm>
+#include <sched.h>
 
 namespace SDL3Initializer {
 
@@ -32,7 +33,8 @@ SDL3Input::~SDL3Input() {
 }
 
 void SDL3Input::initialize(GamepadConnectCallback gc) {
-    // Enable HIDAPI for gamepad support
+    // Set SDL thread priority to default to avoid glibc priority errors
+    SDL_SetHint(SDL_HINT_THREAD_PRIORITY_POLICY, "default");
     logMessage("Initializing input system");
     SDL_SetHint(SDL_HINT_JOYSTICK_HIDAPI, "1");
 
@@ -63,7 +65,6 @@ void SDL3Input::setCallbacks(KeyboardCallback kb, MouseButtonCallback mb, MouseM
                              MouseWheelCallback mw, TextInputCallback ti, TouchCallback tc,
                              GamepadButtonCallback gb, GamepadAxisCallback ga, GamepadConnectCallback gc,
                              ResizeCallback onResize) {
-    // Store callbacks for event handling
     logMessage("Setting input callbacks");
     m_kb = std::move(kb);
     m_mb = std::move(mb);
@@ -78,7 +79,6 @@ void SDL3Input::setCallbacks(KeyboardCallback kb, MouseButtonCallback mb, MouseM
 }
 
 bool SDL3Input::pollEvents(SDL_Window* window, SDL_AudioDeviceID audioDevice, bool& consoleOpen, bool exitOnClose) {
-    // Poll and process all pending SDL events
     SDL_Event e;
     while (SDL_PollEvent(&e)) {
         logMessage("Processing SDL event type: " + std::to_string(e.type));
@@ -170,7 +170,6 @@ bool SDL3Input::pollEvents(SDL_Window* window, SDL_AudioDeviceID audioDevice, bo
 }
 
 void SDL3Input::enableTextInput(SDL_Window* window, bool enable) {
-    // Enable or disable text input for the window
     logMessage(enable ? "Enabling text input" : "Disabling text input");
     if (enable) {
         SDL_StartTextInput(window);
@@ -185,7 +184,6 @@ const std::map<SDL_JoystickID, SDL_Gamepad*>& SDL3Input::getGamepads() const {
 }
 
 void SDL3Input::exportLog(const std::string& filename) const {
-    // Export log to specified file
     logMessage("Exporting log to " + filename);
     std::ofstream out(filename, std::ios::app);
     if (out.is_open()) {
@@ -198,7 +196,6 @@ void SDL3Input::exportLog(const std::string& filename) const {
 }
 
 void SDL3Input::handleKeyboard(const SDL_KeyboardEvent& k, SDL_Window* window, SDL_AudioDeviceID audioDevice, bool& consoleOpen) {
-    // Process keyboard events for specific keys
     if (k.type != SDL_EVENT_KEY_DOWN) {
         logMessage("Ignoring non-key-down event");
         return;
@@ -246,7 +243,6 @@ void SDL3Input::handleKeyboard(const SDL_KeyboardEvent& k, SDL_Window* window, S
 }
 
 void SDL3Input::handleMouseButton(const SDL_MouseButtonEvent& b, SDL_Window* window) {
-    // Process mouse button events
     logMessage((b.type == SDL_EVENT_MOUSE_BUTTON_DOWN ? "Pressed" : "Released") + std::string(" mouse button ") +
                (b.button == SDL_BUTTON_LEFT ? "Left" : b.button == SDL_BUTTON_RIGHT ? "Right" : "Middle") +
                " at (" + std::to_string(b.x) + ", " + std::to_string(b.y) + ")");
@@ -258,14 +254,12 @@ void SDL3Input::handleMouseButton(const SDL_MouseButtonEvent& b, SDL_Window* win
 }
 
 void SDL3Input::handleTouch(const SDL_TouchFingerEvent& t) {
-    // Log touch events
     logMessage("Touch " + std::string(t.type == SDL_EVENT_FINGER_DOWN ? "DOWN" : t.type == SDL_EVENT_FINGER_UP ? "UP" : "MOTION") +
                " fingerID: " + std::to_string(t.fingerID) + " at (" + std::to_string(t.x) + ", " + std::to_string(t.y) +
                ") pressure: " + std::to_string(t.pressure));
 }
 
 void SDL3Input::handleGamepadButton(const SDL_GamepadButtonEvent& g, SDL_AudioDeviceID audioDevice) {
-    // Process gamepad button events
     if (g.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN) {
         logMessage("Gamepad button down: ");
         switch (g.button) {
@@ -307,10 +301,14 @@ void SDL3Input::handleGamepadButton(const SDL_GamepadButtonEvent& g, SDL_AudioDe
 }
 
 void SDL3Input::startWorkerThreads(int numThreads) {
-    // Start worker threads for asynchronous gamepad event processing
     logMessage("Starting " + std::to_string(numThreads) + " worker threads for gamepad events");
     for (int i = 0; i < numThreads; ++i) {
         workerThreads.emplace_back([this] {
+            // Set thread to use default scheduling policy to avoid glibc error
+            sched_param param = {};
+            param.sched_priority = 0; // Default for SCHED_OTHER
+            pthread_setschedparam(pthread_self(), SCHED_OTHER, &param);
+            
             while (true) {
                 std::vector<std::function<void()>> tasks;
                 {
@@ -332,7 +330,6 @@ void SDL3Input::startWorkerThreads(int numThreads) {
 }
 
 void SDL3Input::cleanup() {
-    // Clean up gamepad resources
     logMessage("Cleaning up input system");
     std::unique_lock<std::mutex> lock(gamepadMutex);
     for (auto& [id, gp] : gamepads) {
@@ -343,7 +340,6 @@ void SDL3Input::cleanup() {
 }
 
 void SDL3Input::logMessage(const std::string& message) const {
-    // Log message to console and file with timestamp
     std::string timestamp = "[" + std::to_string(SDL_GetTicks()) + "ms] " + message;
     std::cout << timestamp << "\n";
     logStream << timestamp << "\n";
