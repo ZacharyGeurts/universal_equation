@@ -9,75 +9,141 @@
 
 #include <vulkan/vulkan.h>
 #include <vector>
-#include <string>
+#include <string_view>
 #include <span>
 #include <optional>
+#include <format>
+#include <syncstream>
+#include <source_location>
 #include "engine/core.hpp"
+
+// ANSI color codes for consistent logging
+#define RESET "\033[0m"
+#define MAGENTA "\033[1;35m" // Bold magenta for errors
+#define CYAN "\033[1;36m"    // Bold cyan for debug
+#define YELLOW "\033[1;33m"  // Bold yellow for warnings
+#define GREEN "\033[1;32m"   // Bold green for info
+
+namespace Logging {
+// Log levels for different types of messages
+enum class LogLevel { Info, Warning, Error, Debug };
+
+class Logger {
+public:
+    void log(LogLevel level, std::string_view message, 
+             std::source_location loc = std::source_location::current()) const {
+        std::string_view color;
+        std::string_view levelStr;
+        switch (level) {
+            case LogLevel::Info:   color = GREEN;   levelStr = "[INFO]";   break;
+            case LogLevel::Warning: color = YELLOW;  levelStr = "[WARNING]"; break;
+            case LogLevel::Error:   color = MAGENTA; levelStr = "[ERROR]";  break;
+            case LogLevel::Debug:   color = CYAN;    levelStr = "[DEBUG]";  break;
+        }
+        std::osyncstream(std::cout) << color << levelStr << " [" << loc.file_name() << ":" << loc.line() << "] " 
+                                    << message << RESET << std::endl;
+    }
+};
+
+} // namespace Logging
 
 namespace VulkanInitializer {
 
 struct QueueFamilyIndices {
     std::optional<uint32_t> graphicsFamily;
     std::optional<uint32_t> presentFamily;
-    bool isComplete() const { return graphicsFamily.has_value() && presentFamily.has_value(); }
+    
+    [[nodiscard]] consteval bool isComplete() const noexcept {
+        return graphicsFamily.has_value() && presentFamily.has_value();
+    }
 };
 
 struct DeviceRequirements {
-    std::vector<const char*> extensions = {
+    static constexpr const char* extensions[] = {
         VK_KHR_SWAPCHAIN_EXTENSION_NAME,
         VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME,
         VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,
         VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME,
         VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME,
-        VK_KHR_MAINTENANCE_4_EXTENSION_NAME // Fixed: Added underscore
+        VK_KHR_MAINTENANCE_4_EXTENSION_NAME
     };
-    VkPhysicalDeviceRayTracingPipelineFeaturesKHR rayTracingFeatures = {
+
+    VkPhysicalDeviceRayTracingPipelineFeaturesKHR rayTracingFeatures {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_FEATURES_KHR,
-        .pNext = nullptr, // Explicitly initialize
+        .pNext = nullptr,
         .rayTracingPipeline = VK_TRUE,
         .rayTracingPipelineShaderGroupHandleCaptureReplay = VK_FALSE,
         .rayTracingPipelineShaderGroupHandleCaptureReplayMixed = VK_FALSE,
         .rayTracingPipelineTraceRaysIndirect = VK_FALSE,
         .rayTraversalPrimitiveCulling = VK_FALSE
     };
-    VkPhysicalDeviceAccelerationStructureFeaturesKHR accelerationStructureFeatures = {
+
+    VkPhysicalDeviceAccelerationStructureFeaturesKHR accelerationStructureFeatures {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR,
-        .pNext = nullptr, // Explicitly initialize
+        .pNext = nullptr,
         .accelerationStructure = VK_TRUE,
         .accelerationStructureCaptureReplay = VK_FALSE,
         .accelerationStructureIndirectBuild = VK_FALSE,
         .accelerationStructureHostCommands = VK_FALSE,
         .descriptorBindingAccelerationStructureUpdateAfterBind = VK_FALSE
     };
-    VkPhysicalDeviceBufferDeviceAddressFeatures bufferDeviceAddressFeatures = {
+
+    VkPhysicalDeviceBufferDeviceAddressFeatures bufferDeviceAddressFeatures {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_BUFFER_DEVICE_ADDRESS_FEATURES,
-        .pNext = nullptr, // Explicitly initialize
+        .pNext = nullptr,
         .bufferDeviceAddress = VK_TRUE,
         .bufferDeviceAddressCaptureReplay = VK_FALSE,
         .bufferDeviceAddressMultiDevice = VK_FALSE
     };
-    VkPhysicalDeviceMaintenance4Features maintenance4Features = {
+
+    VkPhysicalDeviceMaintenance4Features maintenance4Features {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAINTENANCE_4_FEATURES,
-        .pNext = nullptr, // Explicitly initialize
+        .pNext = nullptr,
         .maintenance4 = VK_TRUE
     };
 };
 
 void initializeVulkan(
-    VkInstance instance, VkPhysicalDevice& physicalDevice, VkDevice& device, VkSurfaceKHR surface,
-    VkQueue& graphicsQueue, VkQueue& presentQueue, uint32_t& graphicsFamily, uint32_t& presentFamily,
-    VkSwapchainKHR& swapchain, std::vector<VkImage>& swapchainImages, std::vector<VkImageView>& swapchainImageViews,
-    VkRenderPass& renderPass, VkPipeline& pipeline, VkPipelineLayout& pipelineLayout,
-    VkDescriptorSetLayout& descriptorSetLayout, std::vector<VkFramebuffer>& swapchainFramebuffers,
-    VkCommandPool& commandPool, std::vector<VkCommandBuffer>& commandBuffers,
-    std::vector<VkSemaphore>& imageAvailableSemaphores, std::vector<VkSemaphore>& renderFinishedSemaphores,
-    std::vector<VkFence>& inFlightFences, VkBuffer& vertexBuffer, VkDeviceMemory& vertexBufferMemory,
-    VkBuffer& indexBuffer, VkDeviceMemory& indexBufferMemory,
-    VkBuffer& sphereStagingBuffer, VkDeviceMemory& sphereStagingBufferMemory,
-    VkBuffer& indexStagingBuffer, VkDeviceMemory& indexStagingBufferMemory,
-    VkDescriptorSetLayout& descriptorSetLayout2, VkDescriptorPool& descriptorPool, VkDescriptorSet& descriptorSet,
-    VkSampler& sampler, VkShaderModule& vertShaderModule, VkShaderModule& fragShaderModule,
-    std::span<const glm::vec3> vertices, std::span<const uint32_t> indices, int width, int height);
+    VkInstance instance, 
+    VkPhysicalDevice& physicalDevice, 
+    VkDevice& device, 
+    VkSurfaceKHR surface,
+    VkQueue& graphicsQueue, 
+    VkQueue& presentQueue, 
+    uint32_t& graphicsFamily, 
+    uint32_t& presentFamily,
+    VkSwapchainKHR& swapchain, 
+    std::vector<VkImage>& swapchainImages, 
+    std::vector<VkImageView>& swapchainImageViews,
+    VkRenderPass& renderPass, 
+    VkPipeline& pipeline, 
+    VkPipelineLayout& pipelineLayout,
+    VkDescriptorSetLayout& descriptorSetLayout, 
+    std::vector<VkFramebuffer>& swapchainFramebuffers,
+    VkCommandPool& commandPool, 
+    std::vector<VkCommandBuffer>& commandBuffers,
+    std::vector<VkSemaphore>& imageAvailableSemaphores, 
+    std::vector<VkSemaphore>& renderFinishedSemaphores,
+    std::vector<VkFence>& inFlightFences, 
+    VkBuffer& vertexBuffer, 
+    VkDeviceMemory& vertexBufferMemory,
+    VkBuffer& indexBuffer, 
+    VkDeviceMemory& indexBufferMemory,
+    VkBuffer& sphereStagingBuffer, 
+    VkDeviceMemory& sphereStagingBufferMemory,
+    VkBuffer& indexStagingBuffer, 
+    VkDeviceMemory& indexStagingBufferMemory,
+    VkDescriptorSetLayout& descriptorSetLayout2, 
+    VkDescriptorPool& descriptorPool, 
+    VkDescriptorSet& descriptorSet,
+    VkSampler& sampler, 
+    VkShaderModule& vertShaderModule, 
+    VkShaderModule& fragShaderModule,
+    std::span<const glm::vec3> vertices, 
+    std::span<const uint32_t> indices, 
+    int width, 
+    int height,
+    const Logging::Logger& logger);
 
 void initializeQuadBuffers(
     VkDevice device, VkPhysicalDevice physicalDevice, VkCommandPool commandPool, VkQueue graphicsQueue,
@@ -85,7 +151,8 @@ void initializeQuadBuffers(
     VkBuffer& quadIndexBuffer, VkDeviceMemory& quadIndexBufferMemory,
     VkBuffer& quadStagingBuffer, VkDeviceMemory& quadStagingBufferMemory,
     VkBuffer& quadIndexStagingBuffer, VkDeviceMemory& quadIndexStagingBufferMemory,
-    std::span<const glm::vec3> quadVertices, std::span<const uint32_t> quadIndices);
+    std::span<const glm::vec3> quadVertices, std::span<const uint32_t> quadIndices,
+    const Logging::Logger& logger);
 
 void initializeVoxelBuffers(
     VkDevice device, VkPhysicalDevice physicalDevice, VkCommandPool commandPool, VkQueue graphicsQueue,
@@ -93,7 +160,8 @@ void initializeVoxelBuffers(
     VkBuffer& voxelIndexBuffer, VkDeviceMemory& voxelIndexBufferMemory,
     VkBuffer& voxelStagingBuffer, VkDeviceMemory& voxelStagingBufferMemory,
     VkBuffer& voxelIndexStagingBuffer, VkDeviceMemory& voxelIndexStagingBufferMemory,
-    std::span<const glm::vec3> voxelVertices, std::span<const uint32_t> voxelIndices);
+    std::span<const glm::vec3> voxelVertices, std::span<const uint32_t> voxelIndices,
+    const Logging::Logger& logger);
 
 void cleanupVulkan(
     VkDevice device, VkSwapchainKHR& swapchain, std::vector<VkImageView>& swapchainImageViews,
@@ -105,38 +173,47 @@ void cleanupVulkan(
     VkDescriptorSetLayout& descriptorSetLayout, VkDescriptorPool& descriptorPool, VkDescriptorSet& descriptorSet,
     VkSampler& sampler, VkBuffer& sphereStagingBuffer, VkDeviceMemory& sphereStagingBufferMemory,
     VkBuffer& indexStagingBuffer, VkDeviceMemory& indexStagingBufferMemory,
-    VkShaderModule& vertShaderModule, VkShaderModule& fragShaderModule);
+    VkShaderModule& vertShaderModule, VkShaderModule& fragShaderModule,
+    const Logging::Logger& logger);
 
-void createPhysicalDevice(VkInstance instance, VkPhysicalDevice& physicalDevice, uint32_t& graphicsFamily,
-                         uint32_t& presentFamily, VkSurfaceKHR surface, bool preferNvidia);
+void createPhysicalDevice(
+    VkInstance instance, VkPhysicalDevice& physicalDevice, uint32_t& graphicsFamily,
+    uint32_t& presentFamily, VkSurfaceKHR surface, bool preferNvidia, const Logging::Logger& logger);
 
-void createLogicalDevice(VkPhysicalDevice physicalDevice, VkDevice& device, VkQueue& graphicsQueue,
-                         VkQueue& presentQueue, uint32_t graphicsFamily, uint32_t presentFamily);
+void createLogicalDevice(
+    VkPhysicalDevice physicalDevice, VkDevice& device, VkQueue& graphicsQueue,
+    VkQueue& presentQueue, uint32_t graphicsFamily, uint32_t presentFamily, const Logging::Logger& logger);
 
-VkSurfaceFormatKHR selectSurfaceFormat(VkPhysicalDevice physicalDevice, VkSurfaceKHR surface);
+VkSurfaceFormatKHR selectSurfaceFormat(VkPhysicalDevice physicalDevice, VkSurfaceKHR surface, const Logging::Logger& logger);
 
-void createCommandPool(VkDevice device, VkCommandPool& commandPool, uint32_t graphicsFamily);
+void createCommandPool(VkDevice device, VkCommandPool& commandPool, uint32_t graphicsFamily, const Logging::Logger& logger);
 
-void createCommandBuffers(VkDevice device, VkCommandPool commandPool, std::vector<VkCommandBuffer>& commandBuffers,
-                          std::vector<VkFramebuffer>& swapchainFramebuffers);
+void createCommandBuffers(
+    VkDevice device, VkCommandPool commandPool, std::vector<VkCommandBuffer>& commandBuffers,
+    std::vector<VkFramebuffer>& swapchainFramebuffers, const Logging::Logger& logger);
 
-void createSyncObjects(VkDevice device, std::vector<VkSemaphore>& imageAvailableSemaphores,
-                       std::vector<VkSemaphore>& renderFinishedSemaphores, std::vector<VkFence>& inFlightFences,
-                       uint32_t maxFramesInFlight);
+void createSyncObjects(
+    VkDevice device, std::vector<VkSemaphore>& imageAvailableSemaphores,
+    std::vector<VkSemaphore>& renderFinishedSemaphores, std::vector<VkFence>& inFlightFences,
+    uint32_t maxFramesInFlight, const Logging::Logger& logger);
 
-void createBuffer(VkDevice device, VkPhysicalDevice physicalDevice, VkDeviceSize size, VkBufferUsageFlags usage,
-                  VkMemoryPropertyFlags props, VkBuffer& buffer, VkDeviceMemory& memory);
+void createBuffer(
+    VkDevice device, VkPhysicalDevice physicalDevice, VkDeviceSize size, VkBufferUsageFlags usage,
+    VkMemoryPropertyFlags props, VkBuffer& buffer, VkDeviceMemory& memory, const Logging::Logger& logger);
 
-void copyBuffer(VkDevice device, VkCommandPool commandPool, VkQueue graphicsQueue, VkBuffer src, VkBuffer dst,
-                VkDeviceSize size);
+void copyBuffer(
+    VkDevice device, VkCommandPool commandPool, VkQueue graphicsQueue, VkBuffer src, VkBuffer dst,
+    VkDeviceSize size, const Logging::Logger& logger);
 
-void createVertexBuffer(VkDevice device, VkPhysicalDevice physicalDevice, VkCommandPool commandPool, VkQueue graphicsQueue,
-                        VkBuffer& vertexBuffer, VkDeviceMemory& vertexBufferMemory, VkBuffer& stagingBuffer,
-                        VkDeviceMemory& stagingBufferMemory, std::span<const glm::vec3> vertices);
+void createVertexBuffer(
+    VkDevice device, VkPhysicalDevice physicalDevice, VkCommandPool commandPool, VkQueue graphicsQueue,
+    VkBuffer& vertexBuffer, VkDeviceMemory& vertexBufferMemory, VkBuffer& stagingBuffer,
+    VkDeviceMemory& stagingBufferMemory, std::span<const glm::vec3> vertices, const Logging::Logger& logger);
 
-void createIndexBuffer(VkDevice device, VkPhysicalDevice physicalDevice, VkCommandPool commandPool, VkQueue graphicsQueue,
-                       VkBuffer& indexBuffer, VkDeviceMemory& indexBufferMemory, VkBuffer& stagingBuffer,
-                       VkDeviceMemory& stagingBufferMemory, std::span<const uint32_t> indices);
+void createIndexBuffer(
+    VkDevice device, VkPhysicalDevice physicalDevice, VkCommandPool commandPool, VkQueue graphicsQueue,
+    VkBuffer& indexBuffer, VkDeviceMemory& indexBufferMemory, VkBuffer& stagingBuffer,
+    VkDeviceMemory& stagingBufferMemory, std::span<const uint32_t> indices, const Logging::Logger& logger);
 
 } // namespace VulkanInitializer
 

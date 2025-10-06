@@ -1,6 +1,3 @@
-#ifndef SDL3_INIT_HPP
-#define SDL3_INIT_HPP
-
 // AMOURANTH RTX Engine, October 2025 - SDL3Initializer for SDL3 and Vulkan integration.
 // Initializes SDL subsystems, window, Vulkan, audio, font, and input with thread-safe event processing.
 // Supports Windows and Linux (X11/Wayland); no mutexes or threads for rendering.
@@ -8,6 +5,9 @@
 // Usage: Initialize with title, size, and flags; run eventLoop with render and resize callbacks.
 // Potential Issues: Ensure Vulkan extensions (VK_KHR_surface, platform-specific) and NVIDIA GPU selection for hybrid systems.
 // Zachary Geurts 2025
+
+#ifndef SDL3_INIT_HPP
+#define SDL3_INIT_HPP
 
 #include <SDL3/SDL.h>
 #include <SDL3_ttf/SDL_ttf.h>
@@ -17,7 +17,8 @@
 #include <string>
 #include <memory>
 #include <map>
-#include <filesystem>
+#include <fstream>
+#include <sstream>
 #include <format>
 #include "engine/SDL3/SDL3_window.hpp"
 #include "engine/SDL3/SDL3_vulkan.hpp"

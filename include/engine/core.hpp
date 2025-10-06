@@ -10,6 +10,7 @@
 // Usage: Instantiate AMOURANTH with DimensionalNavigator; call render and update for gameplay.
 // Zachary Geurts 2025
 
+#include "ue_init.hpp" // Moved to top to define DimensionData, EnergyResult, etc.
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <SDL3/SDL.h>
@@ -19,7 +20,7 @@
 #include <stdexcept>
 #include <numbers>
 #include <format>
-#include <syncstream> // Added for std::osyncstream
+#include <syncstream>
 #include <span>
 
 // ANSI color codes for consistent logging
@@ -50,7 +51,7 @@ public:
     float getWavePhase() const { return wavePhase_; }
     std::span<const DimensionData> getCache() const { return cache_; }
     int getWidth() const { return width_; }
-    int getHeight() const { return height_; }
+    int getHeight() const { return height_; } // Fixed typo
     void setMode(int mode) { mode_ = glm::clamp(mode, 1, 9); }
     void setZoomLevel(float zoom) { zoomLevel_ = std::max(0.1f, zoom); }
     void setWavePhase(float phase) { wavePhase_ = phase; }
@@ -174,8 +175,6 @@ private:
     int height_;
 };
 
-// Include dependencies after AMOURANTH definition to avoid circular dependencies
-#include "ue_init.hpp"
 #include "handleinput.hpp"
 
 // Forward declarations for mode-specific rendering

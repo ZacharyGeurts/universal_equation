@@ -19,7 +19,7 @@
 #include <syncstream>
 #include <omp.h>
 
-class AMOURANTH; // Forward declaration, assuming defined in core.hpp
+class AMOURANTH; // Forward declaration, defined in core.hpp
 
 struct DimensionData {
     int dimension;
@@ -366,7 +366,7 @@ private:
     mutable std::vector<glm::vec3> projectedVerts_;
     mutable std::atomic<double> avgProjScale_;
     mutable std::vector<Ball> balls_;
-    std::atomic<bool> needsUpdate_; // Added missing member
+    mutable std::atomic<bool> needsUpdate_; // Made mutable for const methods
     AMOURANTH* navigator_;
 
     void initializeNCube() {
