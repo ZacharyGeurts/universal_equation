@@ -2,6 +2,8 @@
 // Defines the UniversalEquation class for quantum simulation on n-dimensional hypercube lattices.
 // Integrates classical and quantum physics with thread-safe, high-precision calculations using OpenMP and GLM.
 // Supports NURBS-based matter/energy fields and a deterministic "God wave" for quantum coherence.
+// Models multiple vertices representing particles in a 1-inch cube of water, with properties influenced by 2D and 4D projections.
+
 // Copyright Zachary Geurts 2025 (powered by Grok with Heisenberg swagger)
 
 #ifndef UNIVERSAL_EQUATION_HPP
@@ -27,8 +29,10 @@
 
 // ANSI color codes
 #define RESET "\033[0m"
-#define MAGENTA "\033[35m"
-#define CYAN "\033[36m"
+#define MAGENTA "\033[1;35m" // Bold magenta for errors
+#define CYAN "\033[1;36m"    // Bold cyan for debug
+#define YELLOW "\033[1;33m"  // Bold yellow for warnings
+#define GREEN "\033[1;32m"   // Bold green for info
 #define BOLD "\033[1m"
 
 // Forward declaration for Vulkan rendering integration
@@ -111,38 +115,39 @@ public:
         long double renormFactor = 1.0L,
         long double vacuumEnergy = 0.5L,
         long double GodWaveFreq = 2.0L,
-        bool debug = true);
+        bool debug = true,
+        uint64_t numVertices = 1ULL);
 
     UniversalEquation(const UniversalEquation& other);
     UniversalEquation& operator=(const UniversalEquation& other);
     virtual ~UniversalEquation() = default;
 
     // Setters
-    void setInfluence(long double value) { influence_ = std::clamp(value, 0.0L, 10.0L); needsUpdate_ = true; }
-    void setWeak(long double value) { weak_ = std::clamp(value, 0.0L, 1.0L); needsUpdate_ = true; }
-    void setCollapse(long double value) { collapse_ = std::clamp(value, 0.0L, 5.0L); needsUpdate_ = true; }
-    void setTwoD(long double value) { twoD_ = std::clamp(value, 0.0L, 5.0L); needsUpdate_ = true; }
-    void setThreeDInfluence(long double value) { threeDInfluence_ = std::clamp(value, 0.0L, 5.0L); needsUpdate_ = true; }
-    void setOneDPermeation(long double value) { oneDPermeation_ = std::clamp(value, 0.0L, 5.0L); needsUpdate_ = true; }
-    void setNurbMatterStrength(long double value) { nurbMatterStrength_ = std::clamp(value, 0.0L, 1.0L); needsUpdate_ = true; }
-    void setNurbEnergyStrength(long double value) { nurbEnergyStrength_ = std::clamp(value, 0.0L, 2.0L); needsUpdate_ = true; }
-    void setAlpha(long double value) { alpha_ = std::clamp(value, 0.01L, 10.0L); needsUpdate_ = true; }
-    void setBeta(long double value) { beta_ = std::clamp(value, 0.0L, 1.0L); needsUpdate_ = true; }
-    void setCarrollFactor(long double value) { carrollFactor_ = std::clamp(value, 0.0L, 1.0L); needsUpdate_ = true; }
-    void setMeanFieldApprox(long double value) { meanFieldApprox_ = std::clamp(value, 0.0L, 1.0L); needsUpdate_ = true; }
-    void setAsymCollapse(long double value) { asymCollapse_ = std::clamp(value, 0.0L, 1.0L); needsUpdate_ = true; }
-    void setPerspectiveTrans(long double value) { perspectiveTrans_ = std::clamp(value, 0.0L, 10.0L); needsUpdate_ = true; }
-    void setPerspectiveFocal(long double value) { perspectiveFocal_ = std::clamp(value, 1.0L, 20.0L); needsUpdate_ = true; }
-    void setSpinInteraction(long double value) { spinInteraction_ = std::clamp(value, 0.0L, 1.0L); needsUpdate_ = true; }
-    void setEMFieldStrength(long double value) { emFieldStrength_ = std::clamp(value, 0.0L, 1.0e7L); needsUpdate_ = true; }
-    void setRenormFactor(long double value) { renormFactor_ = std::clamp(value, 0.1L, 10.0L); needsUpdate_ = true; }
-    void setVacuumEnergy(long double value) { vacuumEnergy_ = std::clamp(value, 0.0L, 1.0L); needsUpdate_ = true; }
-    void setGodWaveFreq(long double value) { GodWaveFreq_ = std::clamp(value, 0.1L, 10.0L); needsUpdate_ = true; }
-    void setDebug(bool value) { debug_ = value; }
-    void setMode(int mode) { mode_ = std::clamp(mode, 1, maxDimensions_); needsUpdate_ = true; }
-    void setCurrentDimension(int dimension) { currentDimension_ = std::clamp(dimension, 1, maxDimensions_); needsUpdate_ = true; }
+    void setInfluence(long double value) { influence_.store(std::clamp(value, 0.0L, 10.0L)); needsUpdate_.store(true); }
+    void setWeak(long double value) { weak_.store(std::clamp(value, 0.0L, 1.0L)); needsUpdate_.store(true); }
+    void setCollapse(long double value) { collapse_.store(std::clamp(value, 0.0L, 5.0L)); needsUpdate_.store(true); }
+    void setTwoD(long double value) { twoD_.store(std::clamp(value, 0.0L, 5.0L)); needsUpdate_.store(true); }
+    void setThreeDInfluence(long double value) { threeDInfluence_.store(std::clamp(value, 0.0L, 5.0L)); needsUpdate_.store(true); }
+    void setOneDPermeation(long double value) { oneDPermeation_.store(std::clamp(value, 0.0L, 5.0L)); needsUpdate_.store(true); }
+    void setNurbMatterStrength(long double value) { nurbMatterStrength_.store(std::clamp(value, 0.0L, 1.0L)); needsUpdate_.store(true); }
+    void setNurbEnergyStrength(long double value) { nurbEnergyStrength_.store(std::clamp(value, 0.0L, 2.0L)); needsUpdate_.store(true); }
+    void setAlpha(long double value) { alpha_.store(std::clamp(value, 0.01L, 10.0L)); needsUpdate_.store(true); }
+    void setBeta(long double value) { beta_.store(std::clamp(value, 0.0L, 1.0L)); needsUpdate_.store(true); }
+    void setCarrollFactor(long double value) { carrollFactor_.store(std::clamp(value, 0.0L, 1.0L)); needsUpdate_.store(true); }
+    void setMeanFieldApprox(long double value) { meanFieldApprox_.store(std::clamp(value, 0.0L, 1.0L)); needsUpdate_.store(true); }
+    void setAsymCollapse(long double value) { asymCollapse_.store(std::clamp(value, 0.0L, 1.0L)); needsUpdate_.store(true); }
+    void setPerspectiveTrans(long double value) { perspectiveTrans_.store(std::clamp(value, 0.0L, 10.0L)); needsUpdate_.store(true); }
+    void setPerspectiveFocal(long double value) { perspectiveFocal_.store(std::clamp(value, 1.0L, 20.0L)); needsUpdate_.store(true); }
+    void setSpinInteraction(long double value) { spinInteraction_.store(std::clamp(value, 0.0L, 1.0L)); needsUpdate_.store(true); }
+    void setEMFieldStrength(long double value) { emFieldStrength_.store(std::clamp(value, 0.0L, 1.0e7L)); needsUpdate_.store(true); }
+    void setRenormFactor(long double value) { renormFactor_.store(std::clamp(value, 0.1L, 10.0L)); needsUpdate_.store(true); }
+    void setVacuumEnergy(long double value) { vacuumEnergy_.store(std::clamp(value, 0.0L, 1.0L)); needsUpdate_.store(true); }
+    void setGodWaveFreq(long double value) { GodWaveFreq_.store(std::clamp(value, 0.1L, 10.0L)); needsUpdate_.store(true); }
+    void setDebug(bool value) { debug_.store(value); }
+    void setMode(int mode) { mode_.store(std::clamp(mode, 1, maxDimensions_)); needsUpdate_.store(true); }
+    void setCurrentDimension(int dimension) { currentDimension_.store(std::clamp(dimension, 1, maxDimensions_)); needsUpdate_.store(true); }
 
-    // Getters
+    // Getters (thread-safe)
     long double getInfluence() const { return influence_.load(); }
     long double getWeak() const { return weak_.load(); }
     long double getCollapse() const { return collapse_.load(); }
@@ -170,44 +175,19 @@ public:
     long double getOmega() const { return omega_; }
     long double getInvMaxDim() const { return invMaxDim_; }
     uint64_t getMaxVertices() const { return maxVertices_; }
-    size_t getCachedCosSize() const { std::lock_guard<std::mutex> lock(mutex_); return cachedCos_.size(); }
+    size_t getCachedCosSize() const { return cachedCos_.size(); }
     const std::vector<DimensionInteraction>& getInteractions() const {
-        std::lock_guard<std::mutex> lock(mutex_);
-        if (needsUpdate_) updateInteractions();
+        if (needsUpdate_.load()) updateInteractions();
         return interactions_;
     }
-    const std::vector<std::vector<long double>>& getNCubeVertices() const {
-        std::lock_guard<std::mutex> lock(mutex_);
-        return nCubeVertices_;
-    }
-    const std::vector<std::vector<long double>>& getVertexMomenta() const {
-        std::lock_guard<std::mutex> lock(mutex_);
-        return vertexMomenta_;
-    }
-    const std::vector<long double>& getVertexSpins() const {
-        std::lock_guard<std::mutex> lock(mutex_);
-        return vertexSpins_;
-    }
-    const std::vector<long double>& getVertexWaveAmplitudes() const {
-        std::lock_guard<std::mutex> lock(mutex_);
-        return vertexWaveAmplitudes_;
-    }
-    const std::vector<long double>& getCachedCos() const {
-        std::lock_guard<std::mutex> lock(mutex_);
-        return cachedCos_;
-    }
-    std::vector<glm::vec3> getProjectedVertices() const {
-        std::lock_guard<std::mutex> lock(projMutex_);
-        return projectedVerts_;
-    }
-    long double getAvgProjScale() const {
-        std::lock_guard<std::mutex> lock(projMutex_);
-        return avgProjScale_;
-    }
-    std::span<const DimensionData> getDimensionData() const {
-        std::lock_guard<std::mutex> lock(mutex_);
-        return dimensionData_;
-    }
+    const std::vector<std::vector<long double>>& getNCubeVertices() const { return nCubeVertices_; }
+    const std::vector<std::vector<long double>>& getVertexMomenta() const { return vertexMomenta_; }
+    const std::vector<long double>& getVertexSpins() const { return vertexSpins_; }
+    const std::vector<long double>& getVertexWaveAmplitudes() const { return vertexWaveAmplitudes_; }
+    const std::vector<long double>& getCachedCos() const { return cachedCos_; }
+    std::vector<glm::vec3> getProjectedVertices() const { return projectedVerts_; }
+    long double getAvgProjScale() const { return avgProjScale_.load(); }
+    std::span<const DimensionData> getDimensionData() const { return dimensionData_; }
 
     // Core methods
     void advanceCycle();
@@ -238,26 +218,35 @@ protected:
     long double computeNurbMatter(long double distance) const;
     long double computeNurbEnergy(long double distance) const;
     long double computeGodWaveAmplitude(int vertexIndex, long double distance) const;
+    long double computeNURBSBasis(int i, int p, long double u, const std::vector<long double>& knots) const;
+    long double evaluateNURBS(long double u, const std::vector<long double>& controlPoints,
+                              const std::vector<long double>& weights,
+                              const std::vector<long double>& knots, int degree) const;
+    long double computeSpinInteraction(int vertexIndex1, int vertexIndex2) const;
+    std::vector<long double> computeVectorPotential(int vertexIndex, long double distance) const;
+    std::vector<long double> computeEMField(int vertexIndex) const;
+    long double computeLorentzFactor(int vertexIndex) const;
+    long double computeInteraction(int vertexIndex, long double distance) const;
+    long double computePermeation(int vertexIndex) const;
+    long double computeCollapse() const;
+    void updateInteractions() const;
 
-    // Reordered members to match initialization order
+    // Member variables
     int maxDimensions_;
     std::atomic<int> mode_;
     std::atomic<int> currentDimension_;
     uint64_t maxVertices_;
     long double omega_;
     long double invMaxDim_;
-    mutable long double totalCharge_;
+    mutable std::atomic<long double> totalCharge_;
     mutable std::atomic<bool> needsUpdate_;
-    mutable std::mutex mutex_;
     mutable std::vector<std::vector<long double>> nCubeVertices_;
     mutable std::vector<std::vector<long double>> vertexMomenta_;
     mutable std::vector<long double> vertexSpins_;
     mutable std::vector<long double> vertexWaveAmplitudes_;
     mutable std::vector<DimensionInteraction> interactions_;
     mutable std::vector<glm::vec3> projectedVerts_;
-    mutable long double avgProjScale_;
-    mutable std::mutex projMutex_;
-    mutable std::mutex debugMutex_;
+    mutable std::atomic<long double> avgProjScale_;
     std::vector<long double> cachedCos_;
     DimensionalNavigator* navigator_;
     std::vector<long double> nurbMatterControlPoints_;
@@ -286,18 +275,6 @@ protected:
     std::atomic<long double> vacuumEnergy_;
     std::atomic<long double> GodWaveFreq_;
     std::atomic<bool> debug_;
-
-private:
-    long double computeInteraction(int vertexIndex, long double distance) const;
-    long double computePermeation(int vertexIndex) const;
-    long double computeCollapse() const;
-    long double computeSpinInteraction(int vertexIndex1, int vertexIndex2) const;
-    std::vector<long double> computeVectorPotential(int vertexIndex, long double distance) const;
-    long double computeLorentzFactor(int vertexIndex) const;
-    std::vector<long double> computeEMField(int vertexIndex) const;
-    long double computeNURBSBasis(int i, int p, long double u, const std::vector<long double>& knots, int depth) const; // Updated declaration
-    long double evaluateNURBS(long double u, const std::vector<long double>& controlPoints, const std::vector<long double>& weights, const std::vector<long double>& knots, int degree) const;
-    void updateInteractions() const;
 };
 
 #endif // UNIVERSAL_EQUATION_HPP

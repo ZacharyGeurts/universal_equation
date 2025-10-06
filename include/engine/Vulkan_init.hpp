@@ -1,16 +1,23 @@
 #ifndef VULKAN_INIT_HPP
 #define VULKAN_INIT_HPP
 
+// AMOURANTH RTX Engine, October 2025 - VulkanRenderer for Vulkan initialization and rendering.
+// Initializes Vulkan resources, including swapchain, pipeline, and geometry buffers (vertex, index, quad, voxel).
+// Thread-safe with no mutexes; designed for Windows/Linux (X11/Wayland).
+// Dependencies: Vulkan 1.3+, GLM, C++20 standard library.
+// Usage: Initialize with instance, surface, shaders, and geometry; call initializeQuadBuffers or initializeVoxelBuffers for additional geometries.
+// Potential Issues: Ensure Vulkan extensions (VK_KHR_surface, platform-specific) and NVIDIA GPU selection for hybrid systems.
+// Zachary Geurts 2025
+
 #include <vulkan/vulkan.h>
 #include <vector>
 #include <glm/glm.hpp>
 #include <stdexcept>
-#include <iostream>
-#include <functional>  // For logging callback
+#include <functional>
+#include <format>
+#include <span>
 #include "engine/Vulkan/Vulkan_func.hpp"
-// AMOURANTH RTX September 2025
-// Zachary Geurts 2025
-// Struct to group Vulkan resources for better manageability
+
 struct VulkanContext {
     VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
     VkDevice device = VK_NULL_HANDLE;
@@ -36,38 +43,40 @@ struct VulkanContext {
     VkBuffer indexBuffer = VK_NULL_HANDLE;
     VkDeviceMemory indexBufferMemory = VK_NULL_HANDLE;
     VkDescriptorPool descriptorPool = VK_NULL_HANDLE;
-    VkDescriptorSet descriptorSet = VK_NULL_HANDLE;  // Assume used (e.g., bound in command buffers)
+    VkDescriptorSet descriptorSet = VK_NULL_HANDLE;
     VkSampler sampler = VK_NULL_HANDLE;
-    VkShaderModule vertShaderModule = VK_NULL_HANDLE;  // Caller provides; not created here
-    VkShaderModule fragShaderModule = VK_NULL_HANDLE;  // Caller provides; not created here
-
-    // Optional quad buffers (init separately if needed)
+    VkShaderModule vertShaderModule = VK_NULL_HANDLE;
+    VkShaderModule fragShaderModule = VK_NULL_HANDLE;
+    // Quad buffers
     VkBuffer quadVertexBuffer = VK_NULL_HANDLE;
     VkDeviceMemory quadVertexBufferMemory = VK_NULL_HANDLE;
     VkBuffer quadIndexBuffer = VK_NULL_HANDLE;
     VkDeviceMemory quadIndexBufferMemory = VK_NULL_HANDLE;
+    // Voxel buffers
+    VkBuffer voxelVertexBuffer = VK_NULL_HANDLE;
+    VkDeviceMemory voxelVertexBufferMemory = VK_NULL_HANDLE;
+    VkBuffer voxelIndexBuffer = VK_NULL_HANDLE;
+    VkDeviceMemory voxelIndexBufferMemory = VK_NULL_HANDLE;
 };
 
 // RAII class for Vulkan resources: init in ctor, cleanup in dtor
 class VulkanRenderer {
 public:
-    // Constructor: Initializes Vulkan with provided instance/surface/shaders/vertices
     VulkanRenderer(
         VkInstance instance, VkSurfaceKHR surface,
-        const std::vector<glm::vec3>& vertices, const std::vector<uint32_t>& indices,
+        std::span<const glm::vec3> vertices, std::span<const uint32_t> indices,
         VkShaderModule vertShaderModule, VkShaderModule fragShaderModule,
         int width, int height,
-        std::function<void(const std::string&)> logger = [](const std::string& msg) { std::cerr << "Vulkan: " << msg << "\n"; });
+        std::function<void(const std::string&)> logger = [](const std::string& msg) {
+            std::cerr << std::format("Vulkan: {}\n", msg);
+        });
 
-    // Destructor: Automatically cleans up
     ~VulkanRenderer();
 
-    // Access the context (const to prevent modification)
     const VulkanContext& getContext() const { return context_; }
 
-    // Optional: Initialize quad buffers (call after ctor if needed)
-    void initializeQuadBuffers(
-        const std::vector<glm::vec3>& quadVertices, const std::vector<uint32_t>& quadIndices);
+    void initializeQuadBuffers(std::span<const glm::vec3> quadVertices, std::span<const uint32_t> quadIndices);
+    void initializeVoxelBuffers(std::span<const glm::vec3> voxelVertices, std::span<const uint32_t> voxelIndices);
 
 private:
     VulkanContext context_;
@@ -75,13 +84,11 @@ private:
     VkSurfaceKHR surface_ = VK_NULL_HANDLE;  // Not owned; caller manages
     std::function<void(const std::string&)> logger_;
 
-    // Internal init (called by ctor)
     void initializeVulkan(
-        const std::vector<glm::vec3>& vertices, const std::vector<uint32_t>& indices,
+        std::span<const glm::vec3> vertices, std::span<const uint32_t> indices,
         VkShaderModule vertShaderModule, VkShaderModule fragShaderModule,
         int width, int height);
 
-    // Internal cleanup (called by dtor)
     void cleanupVulkan();
 };
 

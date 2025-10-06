@@ -1,23 +1,23 @@
-// include/ue_init.hpp
 #ifndef UE_INIT_HPP
 #define UE_INIT_HPP
 
 // AMOURANTH RTX Physics, October 2025
 // Computes multidimensional physics for visualization of 30,000 balls in dimension 8.
-// Thread-safe with std::atomic and std::mutex; uses OpenMP for parallelism.
-// Dependencies: GLM, C++20 standard library.
+// Thread-safe with std::atomic and OpenMP; uses C++20 features for parallelism.
+// Dependencies: GLM, OpenMP, C++20 standard library.
 // Usage: Instantiate with max dimensions, mode, influence, alpha, and debug flag.
 // Zachary Geurts 2025
 
 #include <vector>
 #include <cmath>
-#include <mutex>
 #include <atomic>
 #include <algorithm>
 #include <glm/glm.hpp>
 #include <random>
 #include <format>
 #include <iostream>
+#include <syncstream>
+#include <omp.h>
 
 struct DimensionData {
     int dimension;
@@ -117,31 +117,31 @@ public:
         simulationTime_(0.0),
         needsUpdate_(true) {
         if (debug_) {
-            std::cout << std::format("[DEBUG] Constructing UniversalEquation: maxDimensions={}, mode={}, influence={}, alpha={}, debug={}\n",
-                                     maxDimensions_, mode_, influence_, alpha_, debug_);
+            std::osyncstream(std::cout) << std::format("[DEBUG] Constructing UniversalEquation: maxDimensions={}, mode={}, influence={}, alpha={}, debug={}\n",
+                                                       maxDimensions_, mode_, influence_, alpha_, debug_);
         }
         initializeNCube();
         if (debug_) {
-            std::cout << std::format("[DEBUG] UniversalEquation constructed successfully\n");
+            std::osyncstream(std::cout) << std::format("[DEBUG] UniversalEquation constructed successfully\n");
         }
     }
 
     void setCurrentDimension(int dimension) {
-        currentDimension_ = std::clamp(dimension, 1, maxDimensions_);
-        needsUpdate_ = true;
+        currentDimension_.store(std::clamp(dimension, 1, maxDimensions_));
+        needsUpdate_.store(true);
     }
     void setInfluence(double influence) {
-        influence_ = std::clamp(influence, 0.0, 10.0);
-        needsUpdate_ = true;
+        influence_.store(std::clamp(influence, 0.0, 10.0));
+        needsUpdate_.store(true);
     }
     void setAlpha(double alpha) {
-        alpha_ = std::clamp(alpha, 0.1, 10.0);
-        needsUpdate_ = true;
+        alpha_.store(std::clamp(alpha, 0.1, 10.0));
+        needsUpdate_.store(true);
     }
-    void setDebug(bool debug) { debug_ = debug; }
+    void setDebug(bool debug) { debug_.store(debug); }
     void setMode(int mode) {
-        mode_ = std::clamp(mode, 1, maxDimensions_);
-        needsUpdate_ = true;
+        mode_.store(std::clamp(mode, 1, maxDimensions_));
+        needsUpdate_.store(true);
     }
 
     int getCurrentDimension() const { return currentDimension_.load(); }
@@ -150,40 +150,35 @@ public:
     bool getDebug() const { return debug_.load(); }
     int getMode() const { return mode_.load(); }
     int getMaxDimensions() const { return maxDimensions_; }
-    double getWavePhase() const { return wavePhase_; }
-    float getSimulationTime() const { return simulationTime_; }
+    double getWavePhase() const { return wavePhase_.load(); }
+    float getSimulationTime() const { return simulationTime_.load(); }
     const std::vector<DimensionInteraction>& getInteractions() const {
-        if (needsUpdate_) {
+        if (needsUpdate_.load()) {
             updateInteractions();
-            needsUpdate_ = false;
+            needsUpdate_.store(false);
         }
         return interactions_;
     }
-    const std::vector<std::vector<double>>& getNCubeVertices() const {
-        return nCubeVertices_;
-    }
-    const std::vector<glm::vec3>& getProjectedVertices() const {
-        return projectedVerts_;
-    }
-    double getAvgProjScale() const { return avgProjScale_; }
+    const std::vector<std::vector<double>>& getNCubeVertices() const { return nCubeVertices_; }
+    const std::vector<glm::vec3>& getProjectedVertices() const { return projectedVerts_; }
+    double getAvgProjScale() const { return avgProjScale_.load(); }
     const std::vector<Ball>& getBalls() const { return balls_; }
-    std::mutex& getPhysicsMutex() const { return physicsMutex_; }
 
     void updateProjectedVertices(const std::vector<glm::vec3>& newVerts) {
         projectedVerts_ = newVerts;
     }
 
     void advanceCycle() {
-        wavePhase_ += 0.1;
-        needsUpdate_ = true;
+        wavePhase_.fetch_add(0.1);
+        needsUpdate_.store(true);
     }
 
     EnergyResult compute() const {
         EnergyResult result;
-        result.observable = influence_ * std::cos(wavePhase_);
-        result.potential = influence_ * std::sin(wavePhase_);
-        result.darkMatter = influence_ * 0.27;
-        result.darkEnergy = influence_ * 0.68;
+        result.observable = influence_.load() * std::cos(wavePhase_.load());
+        result.potential = influence_.load() * std::sin(wavePhase_.load());
+        result.darkMatter = influence_.load() * 0.27;
+        result.darkEnergy = influence_.load() * 0.68;
         return result;
     }
 
@@ -195,7 +190,7 @@ public:
 
     DimensionData updateCache() {
         DimensionData data;
-        data.dimension = currentDimension_;
+        data.dimension = currentDimension_.load();
         auto result = compute();
         data.observable = result.observable;
         data.potential = result.potential;
@@ -218,18 +213,18 @@ public:
     }
 
     double computeInteraction(int vertexIndex, double distance) const {
-        return influence_ * std::cos(wavePhase_ + vertexIndex * 0.1) / (distance + 1e-6);
+        return influence_.load() * std::cos(wavePhase_.load() + vertexIndex * 0.1) / (distance + 1e-6);
     }
     double computePermeation(int vertexIndex) const {
-        return influence_ * std::sin(wavePhase_ + vertexIndex * 0.1);
+        return influence_.load() * std::sin(wavePhase_.load() + vertexIndex * 0.1);
     }
     double computeDarkEnergy(double distance) const {
-        return influence_ * 0.68 / (distance + 1e-6);
+        return influence_.load() * 0.68 / (distance + 1e-6);
     }
 
     void initializeBalls(float baseMass = 1.2f, float baseRadius = 0.12f, size_t numBalls = 30000) {
         balls_.clear();
-        simulationTime_ = 0.0f;
+        simulationTime_.store(0.0f);
         balls_.reserve(numBalls);
         auto result = compute();
         float massScale = static_cast<float>(result.darkMatter);
@@ -243,31 +238,32 @@ public:
     }
 
     void updateBalls(float deltaTime) {
-        simulationTime_ += deltaTime;
-        auto& balls = balls_;
+        simulationTime_.fetch_add(deltaTime);
         auto interactions = getInteractions();
         auto result = compute();
 
+        // Compute forces in parallel
+        std::vector<glm::vec3> forces(balls_.size(), glm::vec3(0.0f));
 #pragma omp parallel for
-        for (size_t i = 0; i < balls.size(); ++i) {
-            if (simulationTime_ < balls[i].startTime) continue;
-            glm::vec3 force(0.0f);
+        for (size_t i = 0; i < balls_.size(); ++i) {
+            if (simulationTime_.load() < balls_[i].startTime) continue;
             double interactionStrength = (i < interactions.size()) ? interactions[i].strength : 0.0;
-            force += glm::vec3(
+            forces[i] = glm::vec3(
                 static_cast<float>(result.observable),
                 static_cast<float>(result.potential),
                 static_cast<float>(result.darkEnergy)
             ) * static_cast<float>(interactionStrength);
-            balls[i].acceleration = force / balls[i].mass;
+            balls_[i].acceleration = forces[i] / balls_[i].mass;
         }
 
+        // Apply boundary conditions in parallel
         const glm::vec3 boundsMin(-5.0f, -5.0f, -2.0f);
         const glm::vec3 boundsMax(5.0f, 5.0f, 2.0f);
 #pragma omp parallel for
-        for (size_t i = 0; i < balls.size(); ++i) {
-            if (simulationTime_ < balls[i].startTime) continue;
-            auto& pos = balls[i].position;
-            auto& vel = balls[i].velocity;
+        for (size_t i = 0; i < balls_.size(); ++i) {
+            if (simulationTime_.load() < balls_[i].startTime) continue;
+            auto& pos = balls_[i].position;
+            auto& vel = balls_[i].velocity;
             if (pos.x < boundsMin.x) { pos.x = boundsMin.x; vel.x = -vel.x; }
             if (pos.x > boundsMax.x) { pos.x = boundsMax.x; vel.x = -vel.x; }
             if (pos.y < boundsMin.y) { pos.y = boundsMin.y; vel.y = -vel.y; }
@@ -276,12 +272,13 @@ public:
             if (pos.z > boundsMax.z) { pos.z = boundsMax.z; vel.z = -vel.z; }
         }
 
+        // Spatial grid for collision detection
         const int gridSize = 10;
         const float cellSize = 10.0f / gridSize;
         std::vector<std::vector<size_t>> grid(gridSize * gridSize * gridSize);
-        for (size_t i = 0; i < balls.size(); ++i) {
-            if (simulationTime_ < balls[i].startTime) continue;
-            glm::vec3 pos = balls[i].position;
+        for (size_t i = 0; i < balls_.size(); ++i) {
+            if (simulationTime_.load() < balls_[i].startTime) continue;
+            glm::vec3 pos = balls_[i].position;
             int x = static_cast<int>((pos.x + 5.0f) / cellSize);
             int y = static_cast<int>((pos.y + 5.0f) / cellSize);
             int z = static_cast<int>((pos.z + 2.0f) / cellSize * 0.5f);
@@ -292,10 +289,12 @@ public:
             grid[cellIdx].push_back(i);
         }
 
+        // Handle collisions in parallel with per-thread storage
+        std::vector<std::vector<std::pair<size_t, size_t>>> threadCollisions(omp_get_max_threads());
 #pragma omp parallel for
-        for (size_t i = 0; i < balls.size(); ++i) {
-            if (simulationTime_ < balls[i].startTime) continue;
-            glm::vec3 pos = balls[i].position;
+        for (size_t i = 0; i < balls_.size(); ++i) {
+            if (simulationTime_.load() < balls_[i].startTime) continue;
+            glm::vec3 pos = balls_[i].position;
             int x = static_cast<int>((pos.x + 5.0f) / cellSize);
             int y = static_cast<int>((pos.y + 5.0f) / cellSize);
             int z = static_cast<int>((pos.z + 2.0f) / cellSize * 0.5f);
@@ -303,6 +302,7 @@ public:
             y = std::clamp(y, 0, gridSize - 1);
             z = std::clamp(z, 0, gridSize - 1);
 
+            int threadId = omp_get_thread_num();
             for (int dz = -1; dz <= 1; ++dz) {
                 for (int dy = -1; dy <= 1; ++dy) {
                     for (int dx = -1; dx <= 1; ++dx) {
@@ -310,22 +310,12 @@ public:
                         if (nx < 0 || nx >= gridSize || ny < 0 || ny >= gridSize || nz < 0 || nz >= gridSize) continue;
                         int cellIdx = nz * gridSize * gridSize + ny * gridSize + nx;
                         for (size_t j : grid[cellIdx]) {
-                            if (j <= i || simulationTime_ < balls[j].startTime) continue;
-                            glm::vec3 delta = balls[j].position - balls[i].position;
+                            if (j <= i || simulationTime_.load() < balls_[j].startTime) continue;
+                            glm::vec3 delta = balls_[j].position - balls_[i].position;
                             float distance = glm::length(delta);
-                            float minDistance = balls[i].radius + balls[j].radius;
+                            float minDistance = balls_[i].radius + balls_[j].radius;
                             if (distance < minDistance && distance > 0.0f) {
-                                glm::vec3 normal = delta / distance;
-                                glm::vec3 relVelocity = balls[j].velocity - balls[i].velocity;
-                                float impulse = -2.0f * glm::dot(relVelocity, normal) / (1.0f / balls[i].mass + 1.0f / balls[j].mass);
-#pragma omp critical
-                                {
-                                    balls[i].velocity += (impulse / balls[i].mass) * normal;
-                                    balls[j].velocity -= (impulse / balls[j].mass) * normal;
-                                    float overlap = minDistance - distance;
-                                    balls[i].position -= normal * (overlap * 0.5f);
-                                    balls[j].position += normal * (overlap * 0.5f);
-                                }
+                                threadCollisions[threadId].emplace_back(i, j);
                             }
                         }
                     }
@@ -333,11 +323,31 @@ public:
             }
         }
 
+        // Process collisions sequentially to avoid race conditions
+        for (const auto& collisions : threadCollisions) {
+            for (const auto& [i, j] : collisions) {
+                glm::vec3 delta = balls_[j].position - balls_[i].position;
+                float distance = glm::length(delta);
+                float minDistance = balls_[i].radius + balls_[j].radius;
+                if (distance < minDistance && distance > 0.0f) {
+                    glm::vec3 normal = delta / distance;
+                    glm::vec3 relVelocity = balls_[j].velocity - balls_[i].velocity;
+                    float impulse = -2.0f * glm::dot(relVelocity, normal) / (1.0f / balls_[i].mass + 1.0f / balls_[j].mass);
+                    balls_[i].velocity += (impulse / balls_[i].mass) * normal;
+                    balls_[j].velocity -= (impulse / balls_[j].mass) * normal;
+                    float overlap = minDistance - distance;
+                    balls_[i].position -= normal * (overlap * 0.5f);
+                    balls_[j].position += normal * (overlap * 0.5f);
+                }
+            }
+        }
+
+        // Update positions in parallel
 #pragma omp parallel for
-        for (size_t i = 0; i < balls.size(); ++i) {
-            if (simulationTime_ < balls[i].startTime) continue;
-            balls[i].velocity += balls[i].acceleration * deltaTime;
-            balls[i].position += balls[i].velocity * deltaTime;
+        for (size_t i = 0; i < balls_.size(); ++i) {
+            if (simulationTime_.load() < balls_[i].startTime) continue;
+            balls_[i].velocity += balls_[i].acceleration * deltaTime;
+            balls_[i].position += balls_[i].velocity * deltaTime;
         }
     }
 
@@ -348,28 +358,25 @@ private:
     std::atomic<double> influence_;
     std::atomic<double> alpha_;
     std::atomic<bool> debug_;
-    double wavePhase_;
-    float simulationTime_;
+    std::atomic<double> wavePhase_;
+    std::atomic<float> simulationTime_;
     mutable std::vector<DimensionInteraction> interactions_;
     std::vector<std::vector<double>> nCubeVertices_;
     mutable std::vector<glm::vec3> projectedVerts_;
-    mutable double avgProjScale_;
-    mutable std::mutex physicsMutex_;
+    mutable std::atomic<double> avgProjScale_;
     mutable std::vector<Ball> balls_;
     mutable std::atomic<bool> needsUpdate_;
     AMOURANTH* navigator_;
 
     void initializeNCube() {
-        if (debug_) {
-            std::lock_guard<std::mutex> lock(physicsMutex_);
-            std::cout << std::format("[DEBUG] Before nCubeVertices_.clear(): size={}, capacity={}\n",
-                                     nCubeVertices_.size(), nCubeVertices_.capacity());
+        if (debug_.load()) {
+            std::osyncstream(std::cout) << std::format("[DEBUG] Before nCubeVertices_.clear(): size={}, capacity={}\n",
+                                                       nCubeVertices_.size(), nCubeVertices_.capacity());
         }
         nCubeVertices_.clear();
-        if (debug_) {
-            std::lock_guard<std::mutex> lock(physicsMutex_);
-            std::cout << std::format("[DEBUG] After nCubeVertices_.clear(): size={}, capacity={}\n",
-                                     nCubeVertices_.size(), nCubeVertices_.capacity());
+        if (debug_.load()) {
+            std::osyncstream(std::cout) << std::format("[DEBUG] After nCubeVertices_.clear(): size={}, capacity={}\n",
+                                                       nCubeVertices_.size(), nCubeVertices_.capacity());
         }
         uint64_t maxVertices = 1ULL << maxDimensions_;
         nCubeVertices_.reserve(maxVertices);
@@ -381,11 +388,10 @@ private:
             nCubeVertices_.push_back(vertex);
         }
         projectedVerts_.resize(maxVertices, glm::vec3(0.0f));
-        avgProjScale_ = 1.0;
-        if (debug_) {
-            std::lock_guard<std::mutex> lock(physicsMutex_);
-            std::cout << std::format("[DEBUG] nCubeVertices_ initialized: size={}, capacity={}\n",
-                                     nCubeVertices_.size(), nCubeVertices_.capacity());
+        avgProjScale_.store(1.0);
+        if (debug_.load()) {
+            std::osyncstream(std::cout) << std::format("[DEBUG] nCubeVertices_ initialized: size={}, capacity={}\n",
+                                                       nCubeVertices_.size(), nCubeVertices_.capacity());
         }
     }
 
@@ -398,8 +404,8 @@ private:
                 distance += v * v;
             }
             distance = std::sqrt(distance);
-            double strength = influence_ * std::cos(wavePhase_ + i * 0.1) / (distance + 1e-6);
-            interactions_.emplace_back(currentDimension_, strength, wavePhase_ + i * 0.1);
+            double strength = influence_.load() * std::cos(wavePhase_.load() + i * 0.1) / (distance + 1e-6);
+            interactions_.emplace_back(currentDimension_.load(), strength, wavePhase_.load() + i * 0.1);
         }
     }
 

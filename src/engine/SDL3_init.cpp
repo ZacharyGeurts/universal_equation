@@ -1,4 +1,3 @@
-// src/engine/SDL3_init.cpp
 #include "engine/SDL3_init.hpp"
 #include <format>
 #include <algorithm>
@@ -11,22 +10,14 @@ SDL3Initializer::SDL3Initializer() : logFile("sdl3_initializer.log"), m_useVulka
 
 SDL3Initializer::~SDL3Initializer() {
     logMessage("Destructing SDL3Initializer");
-    if (renderThread.joinable()) {
-        std::unique_lock<std::mutex> lock(renderMutex);
-        renderReady = false;
-        stopRender = true;
-        renderCond.notify_one();
-        lock.unlock();
-        renderThread.join();
-    }
     cleanup();
     if (logFile.is_open()) {
         logFile.close();
     }
 }
 
-void SDL3Initializer::initialize(const char* title, int w, int h, Uint32 flags, bool rt,
-                                 const std::string& fontPath, bool enableValidation, bool preferNvidia) {
+void SDL3Initializer::initialize(const char* title, int w, int h, Uint32 flags,
+                                 bool rt, const std::string& fontPath, bool enableValidation, bool preferNvidia) {
     logMessage(std::format("Initializing SDL3Initializer with title: {}, width: {}, height: {}", title, w, h));
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_GAMEPAD | SDL_INIT_EVENTS) == 0) {
         std::string error = std::format("SDL_Init failed: {}", SDL_GetError());
@@ -82,36 +73,11 @@ void SDL3Initializer::eventLoop(std::function<void()> render, ResizeCallback onR
         m_inputManager.enableTextInput(m_window.get(), true);
     }
 
-    if (render) {
-        renderThread = std::thread([this, render]() {
-            while (true) {
-                std::unique_lock<std::mutex> lock(renderMutex);
-                renderCond.wait(lock, [this] { return renderReady || stopRender; });
-                if (stopRender && !renderReady) break;
-                if (renderReady) {
-                    render();
-                    renderReady = false;
-                    lock.unlock();
-                    renderCond.notify_one();
-                }
-            }
-        });
-    }
-
     for (bool running = true; running;) {
         running = m_inputManager.pollEvents(m_window.get(), m_audioDevice, m_consoleOpen, exitOnClose);
         if (render && running) {
-            std::unique_lock<std::mutex> lock(renderMutex);
-            renderReady = true;
-            renderCond.notify_one();
-            renderCond.wait(lock, [this] { return !renderReady || stopRender; });
+            render();
         }
-    }
-
-    {
-        std::unique_lock<std::mutex> lock(renderMutex);
-        stopRender = true;
-        renderCond.notify_one();
     }
 
     if (ti) {

@@ -1,23 +1,12 @@
 #ifndef MAIN_HPP
 #define MAIN_HPP
 
-// AMOURANTH RTX Engine, Sep 2025 - Main Application class header.
+// AMOURANTH RTX Engine, October 2025 - Main Application class header.
 // Manages SDL3 window/input, Vulkan rendering, and engine logic (DimensionalNavigator, AMOURANTH).
-// Features: Thread-safe (OpenMP, mutexes), memory-safe, error handling (std::runtime_error), Vulkan 1.2+ with ray tracing.
+// Features: Thread-safe (OpenMP, atomics), memory-safe, error handling (std::runtime_error), Vulkan 1.2+ with ray tracing.
 // Input handling is managed via HandleInput (handleinput.hpp) for modularity.
 // Font handling is managed via SDL3Font (SDL3_font.hpp in SDL3Initializer).
 // Usage: Application app("Title", 1920, 1080); app.run();
-// Fixed: Updated initializeVulkan to avoid redundant sync object creation, resolving VUID-vkDestroyDevice-device-05137.
-// Fixed: Updated render to cycle semaphores/fences with currentFrame, resolving VUID-vkQueueSubmit-pSignalSemaphores-00067.
-// Fixed: Updated cleanup and recreateSwapchain to include descriptorPool, descriptorSet, sampler, and shader modules,
-// resolving signature mismatch with VulkanInitializer::cleanupVulkan.
-// Fixed: Moved quad buffer destruction before VulkanInitializer::cleanupVulkan to resolve VUID-vkDestroyDevice-device-05137.
-// Fixed: Removed instance and surface destruction from VulkanInitializer::cleanupVulkan to avoid double destruction,
-// resolving VUID-vkDestroySurfaceKHR-instance-parameter.
-// Fixed: Marked methods as inline to resolve undefined reference linker errors.
-// Fixed: Integrated HandleInput for input processing, supporting all SDL3 input types.
-// Updated: Added mutexes for thread-safe access to shared resources and Vulkan objects, excluding recreateSwapchain to avoid resizing freezes.
-// Fixed: Use std::span directly for VulkanInitializer calls to match updated signatures.
 // Zachary Geurts, 2025
 
 #include <glm/glm.hpp>
@@ -31,9 +20,6 @@
 #include <vector>
 #include <map>
 #include <thread>
-#include <mutex>
-#include <condition_variable>
-#include <queue>
 #include <atomic>
 #include <fstream>
 #include <sstream>
@@ -66,19 +52,14 @@ public:
           commandPool_(VK_NULL_HANDLE), imageAvailableSemaphores_(), renderFinishedSemaphores_(),
           inFlightFences_(), vertexBuffer_(VK_NULL_HANDLE), vertexBufferMemory_(VK_NULL_HANDLE),
           indexBuffer_(VK_NULL_HANDLE), indexBufferMemory_(VK_NULL_HANDLE),
-          graphicsFamily_(UINT32_MAX), presentFamily_(UINT32_MAX), width_(width), height_(height),
+          graphicsFamily_(UINT32_MAX), presentFamily_(UINT32_MAX), width_(std::max(1280, width)), height_(std::max(720, height)),
           amouranth_(nullptr), input_(nullptr) {
         try {
             omp_set_num_threads(omp_get_max_threads());
-            sdlInitializer_.initialize(title, width, height);
+            sdlInitializer_.initialize(title, width_, height_);
             window_ = sdlInitializer_.getWindow();
             vulkanInstance_ = sdlInitializer_.getVkInstance();
             surface_ = sdlInitializer_.getVkSurface();
-
-#ifdef __ANDROID__
-            if (width == 0 || height == 0) SDL_GetWindowSize(window_, &width_, &height_);
-#endif
-
             simulator_ = new DimensionalNavigator("Dimensional Navigator", width_, height_);
             amouranth_ = new AMOURANTH(simulator_);
             input_ = new HandleInput(amouranth_, simulator_);
@@ -104,11 +85,8 @@ public:
         sdlInitializer_.eventLoop(
             [this]() { render(); },
             [this](int w, int h) {
-#ifdef __ANDROID__
-                width_ = w; height_ = h;
-#else
-                width_ = std::max(1280, w); height_ = std::max(720, h);
-#endif
+                width_ = std::max(1280, w);
+                height_ = std::max(720, h);
                 try { recreateSwapchain(); } catch (const std::exception& e) {
                     std::cerr << "Swapchain recreation failed: " << e.what() << "\n";
                     throw;
@@ -176,8 +154,6 @@ private:
     int width_, height_;
     AMOURANTH* amouranth_;
     HandleInput* input_;
-    std::mutex resourceMutex_; // Protects shared simulation/rendering data
-    std::mutex vulkanMutex_;   // Protects Vulkan resource access
 
     inline void initializeVulkan() {
         VulkanInitializer::initializeVulkan(
@@ -272,17 +248,13 @@ private:
         fragShaderModule_ = VK_NULL_HANDLE;
         int newWidth, newHeight;
         SDL_GetWindowSize(window_, &newWidth, &newHeight);
-        width_ = newWidth; height_ = newHeight;
-#ifndef __ANDROID__
-        width_ = std::max(1280, newWidth); height_ = std::max(720, newHeight);
-        if (newWidth < 1280 || newHeight < 720) SDL_SetWindowSize(window_, width_, height_);
-#endif
+        width_ = std::max(1280, newWidth);
+        height_ = std::max(720, newHeight);
+        SDL_SetWindowSize(window_, width_, height_);
         initializeVulkan();
     }
 
     inline void cleanup() {
-        std::lock_guard<std::mutex> vulkanLock(vulkanMutex_);
-        std::lock_guard<std::mutex> resourceLock(resourceMutex_);
         if (vulkanDevice_ != VK_NULL_HANDLE) {
             VkResult result = vkDeviceWaitIdle(vulkanDevice_);
             if (result != VK_SUCCESS) std::cerr << "vkDeviceWaitIdle failed: " << result << "\n";
@@ -364,17 +336,11 @@ private:
     inline void render() {
         static uint32_t currentFrame = 0;
         if (amouranth_->isUserCamActive()) return;
-        {
-            std::lock_guard<std::mutex> lock(resourceMutex_);
-            amouranth_->update(0.016f);
-        }
+        amouranth_->update(0.016f);
         uint32_t imageCount = static_cast<uint32_t>(swapchainImages_.size());
 
-        {
-            std::lock_guard<std::mutex> vulkanLock(vulkanMutex_);
-            vkWaitForFences(vulkanDevice_, 1, &inFlightFences_[currentFrame], VK_TRUE, UINT64_MAX);
-            vkResetFences(vulkanDevice_, 1, &inFlightFences_[currentFrame]);
-        }
+        vkWaitForFences(vulkanDevice_, 1, &inFlightFences_[currentFrame], VK_TRUE, UINT64_MAX);
+        vkResetFences(vulkanDevice_, 1, &inFlightFences_[currentFrame]);
 
         uint32_t imageIndex;
         VkResult result = vkAcquireNextImageKHR(vulkanDevice_, swapchain_, UINT64_MAX, imageAvailableSemaphores_[currentFrame], VK_NULL_HANDLE, &imageIndex);
@@ -392,10 +358,7 @@ private:
         };
         vkCmdBeginRenderPass(commandBuffers_[imageIndex], &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
         vkCmdBindPipeline(commandBuffers_[imageIndex], VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_);
-        {
-            std::lock_guard<std::mutex> lock(resourceMutex_);
-            amouranth_->render(imageIndex, vertexBuffer_, commandBuffers_[imageIndex], indexBuffer_, pipelineLayout_, descriptorSet_);
-        }
+        amouranth_->render(imageIndex, vertexBuffer_, commandBuffers_[imageIndex], indexBuffer_, pipelineLayout_, descriptorSet_);
         vkCmdEndRenderPass(commandBuffers_[imageIndex]);
         if (vkEndCommandBuffer(commandBuffers_[imageIndex]) != VK_SUCCESS) throw std::runtime_error("Failed to end command buffer");
 
@@ -404,10 +367,7 @@ private:
             VK_STRUCTURE_TYPE_SUBMIT_INFO, nullptr, 1, &imageAvailableSemaphores_[currentFrame], waitStages,
             1, &commandBuffers_[imageIndex], 1, &renderFinishedSemaphores_[currentFrame]
         };
-        {
-            std::lock_guard<std::mutex> vulkanLock(vulkanMutex_);
-            if (vkQueueSubmit(graphicsQueue_, 1, &submitInfo, inFlightFences_[currentFrame]) != VK_SUCCESS) throw std::runtime_error("Failed to submit queue");
-        }
+        if (vkQueueSubmit(graphicsQueue_, 1, &submitInfo, inFlightFences_[currentFrame]) != VK_SUCCESS) throw std::runtime_error("Failed to submit queue");
 
         VkPresentInfoKHR presentInfo = {
             VK_STRUCTURE_TYPE_PRESENT_INFO_KHR, nullptr, 1, &renderFinishedSemaphores_[currentFrame], 1, &swapchain_, &imageIndex, nullptr

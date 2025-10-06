@@ -1,11 +1,10 @@
-// include/engine/SDL3_init.hpp
 #ifndef SDL3_INIT_HPP
 #define SDL3_INIT_HPP
 
 // AMOURANTH RTX Engine, October 2025 - SDL3Initializer for SDL3 and Vulkan integration.
 // Initializes SDL subsystems, window, Vulkan, audio, font, and input with thread-safe event processing.
-// Supports Linux (X11/Wayland), Windows, macOS (MoltenVK), and Android.
-// Dependencies: SDL3, SDL3_ttf, Vulkan 1.3+.
+// Supports Windows and Linux (X11/Wayland); no mutexes or threads for rendering.
+// Dependencies: SDL3, SDL3_ttf, Vulkan 1.3+, C++20 standard library.
 // Usage: Initialize with title, size, and flags; run eventLoop with render and resize callbacks.
 // Potential Issues: Ensure Vulkan extensions (VK_KHR_surface, platform-specific) and NVIDIA GPU selection for hybrid systems.
 // Zachary Geurts 2025
@@ -18,11 +17,8 @@
 #include <string>
 #include <memory>
 #include <map>
-#include <thread>
-#include <mutex>
-#include <condition_variable>
-#include <atomic>
 #include <filesystem>
+#include <format>
 #include "engine/SDL3/SDL3_window.hpp"
 #include "engine/SDL3/SDL3_vulkan.hpp"
 #include "engine/SDL3/SDL3_audio.hpp"
@@ -80,11 +76,6 @@ private:
     SDL_AudioStream* m_audioStream = nullptr;
     SDL3Font m_fontManager;
     SDL3Input m_inputManager;
-    std::mutex renderMutex;
-    std::condition_variable renderCond;
-    std::atomic<bool> renderReady{false};
-    std::atomic<bool> stopRender{false};
-    std::thread renderThread;
     mutable std::ofstream logFile;
     mutable std::stringstream logStream;
     bool m_useVulkan;

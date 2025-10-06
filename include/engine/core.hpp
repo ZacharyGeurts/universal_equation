@@ -5,7 +5,7 @@
 // Core rendering and navigation for Vulkan-based ray tracing and SDL integration.
 // Manages physics via UniversalEquation (ue_init.hpp) and input via handleinput.hpp.
 // Uses 256-byte PushConstants for rasterization and ray tracing pipelines.
-// Supports sphere, quad, and triangle geometries for fast 3D rendering.
+// Supports sphere, quad, triangle, and voxel geometries for fast 3D rendering.
 // Dependencies: Vulkan 1.3+, SDL3, GLM, ue_init.hpp, handleinput.hpp.
 // Usage: Instantiate AMOURANTH with DimensionalNavigator; call render and update for gameplay.
 // Zachary Geurts 2025
@@ -89,6 +89,7 @@ public:
         initializeSphereGeometry();
         initializeQuadGeometry();
         initializeTriangleGeometry();
+        initializeVoxelGeometry();
         initializeCalculator();
     }
 
@@ -125,6 +126,8 @@ public:
     std::span<const uint32_t> getQuadIndices() const { return quadIndices_; }
     std::span<const glm::vec3> getTriangleVertices() const { return triangleVertices_; }
     std::span<const uint32_t> getTriangleIndices() const { return triangleIndices_; }
+    std::span<const glm::vec3> getVoxelVertices() const { return voxelVertices_; }
+    std::span<const uint32_t> getVoxelIndices() const { return voxelIndices_; }
     std::span<const DimensionData> getCache() const { return cache_; }
     int getMode() const { return mode_; }
     float getWavePhase() const { return wavePhase_; }
@@ -138,6 +141,7 @@ private:
     void initializeSphereGeometry();
     void initializeQuadGeometry();
     void initializeTriangleGeometry();
+    void initializeVoxelGeometry();
     void initializeCalculator();
 
     UniversalEquation ue_;
@@ -148,6 +152,8 @@ private:
     std::vector<uint32_t> quadIndices_;
     std::vector<glm::vec3> triangleVertices_;
     std::vector<uint32_t> triangleIndices_;
+    std::vector<glm::vec3> voxelVertices_;
+    std::vector<uint32_t> voxelIndices_;
     DimensionalNavigator* simulator_;
     int mode_;
     float wavePhase_;
@@ -273,6 +279,35 @@ inline void AMOURANTH::initializeTriangleGeometry() {
         {0.5f, -0.5f, 0.0f}   // Bottom-right vertex
     };
     triangleIndices_ = {0, 1, 2};
+}
+
+inline void AMOURANTH::initializeVoxelGeometry() {
+    // Define a cube centered at origin with side length 1
+    voxelVertices_ = {
+        {-0.5f, -0.5f, -0.5f}, // 0: Back-bottom-left
+        { 0.5f, -0.5f, -0.5f}, // 1: Back-bottom-right
+        { 0.5f,  0.5f, -0.5f}, // 2: Back-top-right
+        {-0.5f,  0.5f, -0.5f}, // 3: Back-top-left
+        {-0.5f, -0.5f,  0.5f}, // 4: Front-bottom-left
+        { 0.5f, -0.5f,  0.5f}, // 5: Front-bottom-right
+        { 0.5f,  0.5f,  0.5f}, // 6: Front-top-right
+        {-0.5f,  0.5f,  0.5f}  // 7: Front-top-left
+    };
+    // Define 12 triangles (2 per face) for the cube
+    voxelIndices_ = {
+        // Back face (z = -0.5)
+        0, 1, 2,  2, 3, 0,
+        // Front face (z = 0.5)
+        4, 6, 5,  6, 4, 7,
+        // Left face (x = -0.5)
+        0, 3, 7,  7, 4, 0,
+        // Right face (x = 0.5)
+        1, 5, 6,  6, 2, 1,
+        // Bottom face (y = -0.5)
+        0, 4, 5,  5, 1, 0,
+        // Top face (y = 0.5)
+        3, 2, 6,  6, 7, 3
+    };
 }
 
 inline void AMOURANTH::initializeCalculator() {
