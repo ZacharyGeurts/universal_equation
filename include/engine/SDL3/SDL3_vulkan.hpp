@@ -12,9 +12,7 @@
 #include <string_view>
 #include <format>
 #include <syncstream>
-#include <source_location>
 #include "engine/SDL3/SDL3_window.hpp"
-#include "engine/Vulkan/Vulkan_func.hpp"
 
 // ANSI color codes for consistent logging
 #define RESET "\033[0m"
@@ -26,28 +24,13 @@
 namespace SDL3Initializer {
 
 struct VulkanInstanceDeleter {
-    void operator()(VkInstance instance) const {
-        if (instance) {
-            Logging::Logger logger;
-            logger.log(Logging::LogLevel::Info, "Destroying Vulkan instance");
-            vkDestroyInstance(instance, nullptr);
-        }
-    }
+    void operator()(VkInstance instance) const;
 };
 
 struct VulkanSurfaceDeleter {
     VulkanSurfaceDeleter() = default;
     explicit VulkanSurfaceDeleter(VkInstance instance) : m_instance(instance) {}
-    void operator()(VkSurfaceKHR surface) const {
-        if (surface && m_instance) {
-            Logging::Logger logger;
-            logger.log(Logging::LogLevel::Info, "Destroying Vulkan surface");
-            vkDestroySurfaceKHR(m_instance, surface, nullptr);
-        } else if (surface) {
-            Logging::Logger logger;
-            logger.log(Logging::LogLevel::Warning, "Cannot destroy VkSurfaceKHR because VkInstance is invalid");
-        }
-    }
+    void operator()(VkSurfaceKHR surface) const;
     VkInstance m_instance = nullptr;
 };
 
@@ -61,14 +44,13 @@ void initVulkan(
     bool enableValidation, 
     bool preferNvidia, 
     bool rt, 
-    std::string_view title,
-    const Logging::Logger& logger);
+    std::string_view title);
 
 VkInstance getVkInstance(const VulkanInstancePtr& instance);
 
 VkSurfaceKHR getVkSurface(const VulkanSurfacePtr& surface);
 
-std::vector<std::string> getVulkanExtensions(const Logging::Logger& logger);
+std::vector<std::string> getVulkanExtensions();
 
 } // namespace SDL3Initializer
 

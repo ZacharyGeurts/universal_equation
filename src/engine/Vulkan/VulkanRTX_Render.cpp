@@ -1,15 +1,4 @@
-// AMOURANTH RTX Engine © 2025 by Zachary Geurts gzac5314@gmail.com is licensed under CC BY-NC 4.0
-// Vulkan_RTX.cpp: Core Vulkan ray tracing implementation for the AMOURANTH RTX Engine.
-// Supports real-time ray tracing of voxel-based geometry on n-dimensional lattices, with strong integration of DimensionData for voxel grid metadata.
-// Leverages Vulkan ray tracing pipelines, acceleration structures, and compute shaders for denoising.
-// Optimized for single-threaded operation with no mutexes, using C++20 features for robust and efficient rendering.
-
-// How this ties into the voxel world:
-// The VulkanRTX class manages Vulkan ray tracing resources to render voxel-based scenes, where each voxel is represented as a cube with 12 triangles (8 vertices, 36 indices).
-// DimensionData (grid dimensions, voxel size) is stored in a storage buffer for shader access, enabling ray-voxel intersection tests or procedural geometry.
-// The ray tracing pipeline supports optional intersection shaders for procedural voxels, and the top-level acceleration structure (TLAS) handles a single static voxel grid instance.
-// The denoising compute shader processes the ray-traced output, ensuring high-quality rendering of voxel surfaces with dynamic resolution support.
-
+// VulkanRTX_Render.cpp
 #include "engine/Vulkan/Vulkan_RTX.hpp"
 #include <array>
 #include <vector>
@@ -18,14 +7,9 @@
 #include <format>
 #include <syncstream>
 #include <iostream>
+#include <fstream>
 
-// ANSI color codes
-#define RESET "\033[0m"
-#define MAGENTA "\033[1;35m" // Bold magenta for errors
-#define CYAN "\033[1;36m"    // Bold cyan for debug
-#define YELLOW "\033[1;33m"  // Bold yellow for warnings
-#define GREEN "\033[1;36m"   // Bold green for info
-#define BOLD "\033[1m"
+namespace VulkanRTX {
 
 void VulkanRTX::createBuffer(
     VkPhysicalDevice physicalDevice,
@@ -41,27 +25,32 @@ void VulkanRTX::createBuffer(
 
     VkBufferCreateInfo bufferInfo{
         .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+        .pNext = nullptr,
+        .flags = 0,
         .size = size,
         .usage = usage,
-        .sharingMode = VK_SHARING_MODE_EXCLUSIVE
+        .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+        .queueFamilyIndexCount = 0,
+        .pQueueFamilyIndices = nullptr
     };
 
     VkBuffer tempBuffer = VK_NULL_HANDLE;
     VK_CHECK(vkCreateBuffer(device_, &bufferInfo, nullptr, &tempBuffer), std::format("Buffer creation failed for size={}.", size));
-    buffer = VulkanResource<VkBuffer, PFN_vkDestroyBuffer>(device_, tempBuffer, vkDestroyBuffer);
+    buffer = VulkanResource<VkBuffer, PFN_vkDestroyBuffer>(tempBuffer, device_, vkDestroyBuffer);
 
     VkMemoryRequirements memRequirements;
     vkGetBufferMemoryRequirements(device_, tempBuffer, &memRequirements);
 
     VkMemoryAllocateInfo allocInfo{
         .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+        .pNext = nullptr,
         .allocationSize = memRequirements.size,
         .memoryTypeIndex = findMemoryType(physicalDevice, memRequirements.memoryTypeBits, props)
     };
 
     VkDeviceMemory tempMemory = VK_NULL_HANDLE;
     VK_CHECK(vkAllocateMemory(device_, &allocInfo, nullptr, &tempMemory), "Memory allocation failed.");
-    memory = VulkanResource<VkDeviceMemory, PFN_vkFreeMemory>(device_, tempMemory, vkFreeMemory);
+    memory = VulkanResource<VkDeviceMemory, PFN_vkFreeMemory>(tempMemory, device_, vkFreeMemory);
 
     VK_CHECK(vkBindBufferMemory(device_, tempBuffer, tempMemory, 0), "Buffer memory binding failed.");
     std::osyncstream(std::cout) << GREEN << "[INFO] Created buffer with size=" << size << RESET << std::endl;
@@ -92,9 +81,9 @@ void VulkanRTX::createBottomLevelAS(
         throw VulkanRTXException("Invalid BLAS params: empty geometries.");
     }
 
-    std::vector<VkAccelerationStructureGeometryKHR> geometriesKHR(geometries.size());
     primitiveCounts_.resize(geometries.size());
 
+    std::vector<VkAccelerationStructureGeometryKHR> geometriesKHR(geometries.size());
     for (size_t i : std::views::iota(0u, geometries.size())) {
         auto [vertexBuffer, indexBuffer, vertexCount, indexCount, vertexStride] = geometries[i];
         if (!vertexBuffer || !indexBuffer || vertexCount == 0 || indexCount == 0 || vertexStride == 0) {
@@ -102,18 +91,21 @@ void VulkanRTX::createBottomLevelAS(
             throw VulkanRTXException(std::format("Invalid geometry at index {}: null buffer or zero count/stride.", i));
         }
 
-        geometriesKHR[i] = {
+        geometriesKHR[i] = VkAccelerationStructureGeometryKHR{
             .sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR,
+            .pNext = nullptr,
             .geometryType = VK_GEOMETRY_TYPE_TRIANGLES_KHR,
             .geometry = {
                 .triangles = {
                     .sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_TRIANGLES_DATA_KHR,
+                    .pNext = nullptr,
                     .vertexFormat = VK_FORMAT_R32G32B32_SFLOAT,
                     .vertexData = { .deviceAddress = getBufferDeviceAddress(vertexBuffer) },
                     .vertexStride = vertexStride,
                     .maxVertex = vertexCount - 1,
                     .indexType = VK_INDEX_TYPE_UINT32,
-                    .indexData = { .deviceAddress = getBufferDeviceAddress(indexBuffer) }
+                    .indexData = { .deviceAddress = getBufferDeviceAddress(indexBuffer) },
+                    .transformData = { .deviceAddress = 0 }
                 }
             },
             .flags = VK_GEOMETRY_OPAQUE_BIT_KHR
@@ -129,10 +121,16 @@ void VulkanRTX::createBottomLevelAS(
 
     VkAccelerationStructureBuildGeometryInfoKHR buildInfo{
         .sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR,
+        .pNext = nullptr,
         .type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR,
         .flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR | VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_COMPACTION_BIT_KHR,
+        .mode = VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR,
+        .srcAccelerationStructure = VK_NULL_HANDLE,
+        .dstAccelerationStructure = VK_NULL_HANDLE,
         .geometryCount = static_cast<uint32_t>(geometries.size()),
-        .pGeometries = geometriesKHR.data()
+        .pGeometries = geometriesKHR.data(),
+        .ppGeometries = nullptr,
+        .scratchData = { .deviceAddress = 0 }
     };
 
     std::vector<uint32_t> maxPrimitives(geometries.size());
@@ -140,8 +138,14 @@ void VulkanRTX::createBottomLevelAS(
         maxPrimitives[i] = primitiveCounts_[i].primitiveCount;
     }
 
-    VkAccelerationStructureBuildSizesInfoKHR sizeInfo{ .sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR };
-    vkGetASBuildSizesFunc(device_, VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR, &buildInfo, maxPrimitives.data(), &sizeInfo);
+    VkAccelerationStructureBuildSizesInfoKHR sizeInfo{
+        .sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR,
+        .pNext = nullptr,
+        .accelerationStructureSize = 0,
+        .updateScratchSize = 0,
+        .buildScratchSize = 0
+    };
+    vkGetAccelerationStructureBuildSizesKHR(device_, VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR, &buildInfo, maxPrimitives.data(), &sizeInfo);
 
     createBuffer(physicalDevice, sizeInfo.accelerationStructureSize,
                  VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
@@ -149,17 +153,21 @@ void VulkanRTX::createBottomLevelAS(
 
     VkAccelerationStructureCreateInfoKHR createInfo{
         .sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR,
+        .pNext = nullptr,
+        .createFlags = 0,
         .buffer = blasBuffer_.get(),
+        .offset = 0,
         .size = sizeInfo.accelerationStructureSize,
-        .type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR
+        .type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR,
+        .deviceAddress = 0
     };
 
     VkAccelerationStructureKHR asHandle = VK_NULL_HANDLE;
-    VK_CHECK(vkCreateASFunc(device_, &createInfo, nullptr, &asHandle), "Failed to create BLAS.");
-    blas_ = VulkanResource<VkAccelerationStructureKHR, PFN_vkDestroyAccelerationStructureKHR>(device_, asHandle, vkDestroyASFunc);
+    VK_CHECK(vkCreateAccelerationStructureKHR(device_, &createInfo, nullptr, &asHandle), "Failed to create BLAS.");
+    blas_ = VulkanResource<VkAccelerationStructureKHR, PFN_vkDestroyAccelerationStructureKHR>(asHandle, device_, vkDestroyAccelerationStructureKHR);
 
-    VulkanResource<VkBuffer, PFN_vkDestroyBuffer> scratchBuffer(device_, VK_NULL_HANDLE, vkDestroyBuffer);
-    VulkanResource<VkDeviceMemory, PFN_vkFreeMemory> scratchMemory(device_, VK_NULL_HANDLE, vkFreeMemory);
+    VulkanResource<VkBuffer, PFN_vkDestroyBuffer> scratchBuffer;
+    VulkanResource<VkDeviceMemory, PFN_vkFreeMemory> scratchMemory;
     createBuffer(physicalDevice, sizeInfo.buildScratchSize,
                  VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
                  VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, scratchBuffer, scratchMemory);
@@ -170,7 +178,9 @@ void VulkanRTX::createBottomLevelAS(
     VkCommandBuffer cmdBuffer = allocateTransientCommandBuffer(commandPool);
     VkCommandBufferBeginInfo beginInfo{
         .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
-        .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT
+        .pNext = nullptr,
+        .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
+        .pInheritanceInfo = nullptr
     };
     VK_CHECK(vkBeginCommandBuffer(cmdBuffer, &beginInfo), "Failed to begin command buffer");
 
@@ -178,7 +188,7 @@ void VulkanRTX::createBottomLevelAS(
     for (size_t i : std::views::iota(0u, geometries.size())) {
         buildRangePtrs[i] = &primitiveCounts_[i];
     }
-    vkCmdBuildASFunc(cmdBuffer, 1, &buildInfo, buildRangePtrs.data());
+    vkCmdBuildAccelerationStructuresKHR(cmdBuffer, 1, &buildInfo, buildRangePtrs.data());
 
     VK_CHECK(vkEndCommandBuffer(cmdBuffer), "Failed to end command buffer");
     submitAndWaitTransient(cmdBuffer, queue, commandPool);
@@ -204,9 +214,13 @@ void VulkanRTX::createTopLevelAS(
         }
 
         VkTransformMatrixKHR transformMatrix;
-        std::memcpy(&transformMatrix, &transform, sizeof(VkTransformMatrixKHR));
+        for (int row = 0; row < 3; ++row) {
+            for (int col = 0; col < 4; ++col) {
+                transformMatrix.matrix[row][col] = transform[col][row];
+            }
+        }
 
-        instanceData[i] = {
+        instanceData[i] = VkAccelerationStructureInstanceKHR{
             .transform = transformMatrix,
             .instanceCustomIndex = 0,
             .mask = 0xFF,
@@ -217,9 +231,8 @@ void VulkanRTX::createTopLevelAS(
     }
 
     VkDeviceSize instanceSize = instanceData.size() * sizeof(VkAccelerationStructureInstanceKHR);
-    VulkanResource<VkBuffer, PFN_vkDestroyBuffer> instanceBuffer(device_, VK_NULL_HANDLE, vkDestroyBuffer);
-    VulkanResource<VkDeviceMemory, PFN_vkFreeMemory> instanceMemory(device_, VK_NULL_HANDLE, vkFreeMemory);
-
+    VulkanResource<VkBuffer, PFN_vkDestroyBuffer> instanceBuffer;
+    VulkanResource<VkDeviceMemory, PFN_vkFreeMemory> instanceMemory;
     createBuffer(physicalDevice, instanceSize,
                  VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
                  VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
@@ -232,10 +245,13 @@ void VulkanRTX::createTopLevelAS(
 
     VkAccelerationStructureGeometryKHR geometry{
         .sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR,
+        .pNext = nullptr,
         .geometryType = VK_GEOMETRY_TYPE_INSTANCES_KHR,
         .geometry = {
             .instances = {
                 .sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_INSTANCES_DATA_KHR,
+                .pNext = nullptr,
+                .arrayOfPointers = VK_FALSE,
                 .data = { .deviceAddress = getBufferDeviceAddress(instanceBuffer.get()) }
             }
         },
@@ -244,15 +260,27 @@ void VulkanRTX::createTopLevelAS(
 
     VkAccelerationStructureBuildGeometryInfoKHR buildInfo{
         .sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR,
+        .pNext = nullptr,
         .type = VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR,
         .flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR,
+        .mode = VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR,
+        .srcAccelerationStructure = VK_NULL_HANDLE,
+        .dstAccelerationStructure = VK_NULL_HANDLE,
         .geometryCount = 1,
-        .pGeometries = &geometry
+        .pGeometries = &geometry,
+        .ppGeometries = nullptr,
+        .scratchData = { .deviceAddress = 0 }
     };
 
     uint32_t primitiveCount = static_cast<uint32_t>(instances.size());
-    VkAccelerationStructureBuildSizesInfoKHR buildSizes{ .sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR };
-    vkGetASBuildSizesFunc(device_, VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR, &buildInfo, &primitiveCount, &buildSizes);
+    VkAccelerationStructureBuildSizesInfoKHR buildSizes{
+        .sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR,
+        .pNext = nullptr,
+        .accelerationStructureSize = 0,
+        .updateScratchSize = 0,
+        .buildScratchSize = 0
+    };
+    vkGetAccelerationStructureBuildSizesKHR(device_, VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR, &buildInfo, &primitiveCount, &buildSizes);
 
     createBuffer(physicalDevice, buildSizes.accelerationStructureSize,
                  VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
@@ -260,17 +288,21 @@ void VulkanRTX::createTopLevelAS(
 
     VkAccelerationStructureCreateInfoKHR createInfo{
         .sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR,
+        .pNext = nullptr,
+        .createFlags = 0,
         .buffer = tlasBuffer_.get(),
+        .offset = 0,
         .size = buildSizes.accelerationStructureSize,
-        .type = VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR
+        .type = VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR,
+        .deviceAddress = 0
     };
 
     VkAccelerationStructureKHR tempAS = VK_NULL_HANDLE;
-    VK_CHECK(vkCreateASFunc(device_, &createInfo, nullptr, &tempAS), "TLAS creation failed.");
-    tlas_ = VulkanResource<VkAccelerationStructureKHR, PFN_vkDestroyAccelerationStructureKHR>(device_, tempAS, vkDestroyASFunc);
+    VK_CHECK(vkCreateAccelerationStructureKHR(device_, &createInfo, nullptr, &tempAS), "TLAS creation failed.");
+    tlas_ = VulkanResource<VkAccelerationStructureKHR, PFN_vkDestroyAccelerationStructureKHR>(tempAS, device_, vkDestroyAccelerationStructureKHR);
 
-    VulkanResource<VkBuffer, PFN_vkDestroyBuffer> scratchBuffer(device_, VK_NULL_HANDLE, vkDestroyBuffer);
-    VulkanResource<VkDeviceMemory, PFN_vkFreeMemory> scratchMemory(device_, VK_NULL_HANDLE, vkFreeMemory);
+    VulkanResource<VkBuffer, PFN_vkDestroyBuffer> scratchBuffer;
+    VulkanResource<VkDeviceMemory, PFN_vkFreeMemory> scratchMemory;
     createBuffer(physicalDevice, buildSizes.buildScratchSize,
                  VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
                  VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, scratchBuffer, scratchMemory);
@@ -278,17 +310,24 @@ void VulkanRTX::createTopLevelAS(
     buildInfo.dstAccelerationStructure = tlas_.get();
     buildInfo.scratchData.deviceAddress = getBufferDeviceAddress(scratchBuffer.get());
 
-    VkAccelerationStructureBuildRangeInfoKHR buildRange{ .primitiveCount = primitiveCount };
+    VkAccelerationStructureBuildRangeInfoKHR buildRange{
+        .primitiveCount = primitiveCount,
+        .primitiveOffset = 0,
+        .firstVertex = 0,
+        .transformOffset = 0
+    };
     VkAccelerationStructureBuildRangeInfoKHR* buildRanges = &buildRange;
 
     VkCommandBuffer cmdBuffer = allocateTransientCommandBuffer(commandPool);
     VkCommandBufferBeginInfo beginInfo{
         .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
-        .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT
+        .pNext = nullptr,
+        .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
+        .pInheritanceInfo = nullptr
     };
     VK_CHECK(vkBeginCommandBuffer(cmdBuffer, &beginInfo), "TLAS begin failed.");
 
-    vkCmdBuildASFunc(cmdBuffer, 1, &buildInfo, &buildRanges);
+    vkCmdBuildAccelerationStructuresKHR(cmdBuffer, 1, &buildInfo, &buildRanges);
 
     VK_CHECK(vkEndCommandBuffer(cmdBuffer), "TLAS end failed.");
     submitAndWaitTransient(cmdBuffer, queue, commandPool);
@@ -297,8 +336,12 @@ void VulkanRTX::createTopLevelAS(
 }
 
 VkDeviceAddress VulkanRTX::getBufferDeviceAddress(VkBuffer buffer) const {
-    VkBufferDeviceAddressInfo info{ .sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO, .buffer = buffer };
-    VkDeviceAddress address = vkGetBufferDeviceAddressFunc(device_, &info);
+    VkBufferDeviceAddressInfo info{
+        .sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO,
+        .pNext = nullptr,
+        .buffer = buffer
+    };
+    VkDeviceAddress address = vkGetBufferDeviceAddress(device_, &info);
     if (address == 0) {
         std::osyncstream(std::cerr) << MAGENTA << "[ERROR] Invalid buffer device address" << RESET << std::endl;
         throw VulkanRTXException("Invalid buffer device address.");
@@ -309,9 +352,10 @@ VkDeviceAddress VulkanRTX::getBufferDeviceAddress(VkBuffer buffer) const {
 VkDeviceAddress VulkanRTX::getAccelerationStructureDeviceAddress(VkAccelerationStructureKHR as) const {
     VkAccelerationStructureDeviceAddressInfoKHR info{
         .sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_DEVICE_ADDRESS_INFO_KHR,
+        .pNext = nullptr,
         .accelerationStructure = as
     };
-    VkDeviceAddress address = vkGetASDeviceAddressFunc(device_, &info);
+    VkDeviceAddress address = vkGetAccelerationStructureDeviceAddressKHR(device_, &info);
     if (address == 0) {
         std::osyncstream(std::cerr) << MAGENTA << "[ERROR] Invalid AS device address" << RESET << std::endl;
         throw VulkanRTXException("Invalid AS device address.");
@@ -322,6 +366,7 @@ VkDeviceAddress VulkanRTX::getAccelerationStructureDeviceAddress(VkAccelerationS
 VkCommandBuffer VulkanRTX::allocateTransientCommandBuffer(VkCommandPool commandPool) {
     VkCommandBufferAllocateInfo allocInfo{
         .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+        .pNext = nullptr,
         .commandPool = commandPool,
         .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
         .commandBufferCount = 1
@@ -336,11 +381,21 @@ VkCommandBuffer VulkanRTX::allocateTransientCommandBuffer(VkCommandPool commandP
 void VulkanRTX::submitAndWaitTransient(VkCommandBuffer cmdBuffer, VkQueue queue, VkCommandPool commandPool) {
     VkSubmitInfo submitInfo{
         .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+        .pNext = nullptr,
+        .waitSemaphoreCount = 0,
+        .pWaitSemaphores = nullptr,
+        .pWaitDstStageMask = nullptr,
         .commandBufferCount = 1,
-        .pCommandBuffers = &cmdBuffer
+        .pCommandBuffers = &cmdBuffer,
+        .signalSemaphoreCount = 0,
+        .pSignalSemaphores = nullptr
     };
 
-    VkFenceCreateInfo fenceInfo{ .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO };
+    VkFenceCreateInfo fenceInfo{
+        .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
+        .pNext = nullptr,
+        .flags = 0
+    };
     VkFence fence;
     VK_CHECK(vkCreateFence(device_, &fenceInfo, nullptr, &fence), "Fence creation failed.");
 
@@ -360,6 +415,7 @@ void VulkanRTX::updateDescriptorSetForTLAS(VkAccelerationStructureKHR tlas) {
 
     VkWriteDescriptorSetAccelerationStructureKHR asInfo{
         .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR,
+        .pNext = nullptr,
         .accelerationStructureCount = 1,
         .pAccelerationStructures = &tlas
     };
@@ -371,7 +427,10 @@ void VulkanRTX::updateDescriptorSetForTLAS(VkAccelerationStructureKHR tlas) {
         .dstBinding = static_cast<uint32_t>(DescriptorBindings::TLAS),
         .dstArrayElement = 0,
         .descriptorCount = 1,
-        .descriptorType = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR
+        .descriptorType = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR,
+        .pImageInfo = nullptr,
+        .pBufferInfo = nullptr,
+        .pTexelBufferView = nullptr
     };
 
     vkUpdateDescriptorSets(device_, 1, &accelWrite, 0, nullptr);
@@ -379,7 +438,9 @@ void VulkanRTX::updateDescriptorSetForTLAS(VkAccelerationStructureKHR tlas) {
 }
 
 void VulkanRTX::createStorageImage(
-    VkPhysicalDevice physicalDevice, VkExtent2D extent, VkFormat format,
+    VkPhysicalDevice physicalDevice,
+    VkExtent2D extent,
+    VkFormat format,
     VulkanResource<VkImage, PFN_vkDestroyImage>& image,
     VulkanResource<VkImageView, PFN_vkDestroyImageView>& imageView,
     VulkanResource<VkDeviceMemory, PFN_vkFreeMemory>& memory) {
@@ -390,6 +451,8 @@ void VulkanRTX::createStorageImage(
 
     VkImageCreateInfo imageInfo{
         .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+        .pNext = nullptr,
+        .flags = 0,
         .imageType = VK_IMAGE_TYPE_2D,
         .format = format,
         .extent = {extent.width, extent.height, 1},
@@ -400,28 +463,33 @@ void VulkanRTX::createStorageImage(
         .usage = VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
                  VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
         .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+        .queueFamilyIndexCount = 0,
+        .pQueueFamilyIndices = nullptr,
         .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED
     };
 
     VkImage tempImage = VK_NULL_HANDLE;
     VK_CHECK(vkCreateImage(device_, &imageInfo, nullptr, &tempImage), std::format("Storage image creation failed for extent={}x{}.", extent.width, extent.height));
-    image = VulkanResource<VkImage, PFN_vkDestroyImage>(device_, tempImage, vkDestroyImage);
+    image = VulkanResource<VkImage, PFN_vkDestroyImage>(tempImage, device_, vkDestroyImage);
 
     VkMemoryRequirements memReqs;
     vkGetImageMemoryRequirements(device_, image.get(), &memReqs);
     VkMemoryAllocateInfo allocInfo{
         .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+        .pNext = nullptr,
         .allocationSize = memReqs.size,
         .memoryTypeIndex = findMemoryType(physicalDevice, memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)
     };
 
     VkDeviceMemory tempMemory = VK_NULL_HANDLE;
     VK_CHECK(vkAllocateMemory(device_, &allocInfo, nullptr, &tempMemory), "Storage image memory allocation failed.");
-    memory = VulkanResource<VkDeviceMemory, PFN_vkFreeMemory>(device_, tempMemory, vkFreeMemory);
+    memory = VulkanResource<VkDeviceMemory, PFN_vkFreeMemory>(tempMemory, device_, vkFreeMemory);
     VK_CHECK(vkBindImageMemory(device_, image.get(), memory.get(), 0), "Storage image memory binding failed.");
 
     VkImageViewCreateInfo viewInfo{
         .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+        .pNext = nullptr,
+        .flags = 0,
         .image = image.get(),
         .viewType = VK_IMAGE_VIEW_TYPE_2D,
         .format = format,
@@ -431,14 +499,18 @@ void VulkanRTX::createStorageImage(
 
     VkImageView tempImageView = VK_NULL_HANDLE;
     VK_CHECK(vkCreateImageView(device_, &viewInfo, nullptr, &tempImageView), "Storage image view creation failed.");
-    imageView = VulkanResource<VkImageView, PFN_vkDestroyImageView>(device_, tempImageView, vkDestroyImageView);
-    extent_ = extent; // Store extent for denoiseImage
+    imageView = VulkanResource<VkImageView, PFN_vkDestroyImageView>(tempImageView, device_, vkDestroyImageView);
+    extent_ = extent;
     std::osyncstream(std::cout) << GREEN << "[INFO] Created storage image with extent=" << extent.width << "x" << extent.height << RESET << std::endl;
 }
 
 void VulkanRTX::recordRayTracingCommands(
-    VkCommandBuffer cmdBuffer, VkExtent2D extent, VkImage outputImage, VkImageView outputImageView,
-    const PushConstants& pc, VkAccelerationStructureKHR tlas) {
+    VkCommandBuffer cmdBuffer,
+    VkExtent2D extent,
+    VkImage outputImage,
+    VkImageView outputImageView,
+    const PushConstants& pc,
+    VkAccelerationStructureKHR tlas) {
     if (!cmdBuffer || !outputImage || !outputImageView) {
         std::osyncstream(std::cerr) << MAGENTA << "[ERROR] Null cmd buffer/image/view for ray tracing" << RESET << std::endl;
         throw VulkanRTXException("Null cmd buffer/image/view for ray tracing.");
@@ -446,20 +518,28 @@ void VulkanRTX::recordRayTracingCommands(
     if (tlas == VK_NULL_HANDLE) tlas = tlas_.get();
     if (tlas != tlas_.get()) updateDescriptorSetForTLAS(tlas);
 
-    VkDescriptorImageInfo imageInfo{ .imageView = outputImageView, .imageLayout = VK_IMAGE_LAYOUT_GENERAL };
+    VkDescriptorImageInfo imageInfo{
+        .sampler = VK_NULL_HANDLE,
+        .imageView = outputImageView,
+        .imageLayout = VK_IMAGE_LAYOUT_GENERAL
+    };
     VkWriteDescriptorSet imageWrite{
         .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+        .pNext = nullptr,
         .dstSet = ds_.get(),
         .dstBinding = static_cast<uint32_t>(DescriptorBindings::StorageImage),
         .dstArrayElement = 0,
         .descriptorCount = 1,
         .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
-        .pImageInfo = &imageInfo
+        .pImageInfo = &imageInfo,
+        .pBufferInfo = nullptr,
+        .pTexelBufferView = nullptr
     };
     vkUpdateDescriptorSets(device_, 1, &imageWrite, 0, nullptr);
 
     VkImageMemoryBarrier barrier{
         .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+        .pNext = nullptr,
         .srcAccessMask = 0,
         .dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT,
         .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
@@ -494,7 +574,9 @@ void VulkanRTX::recordRayTracingCommands(
 }
 
 void VulkanRTX::initializeRTX(
-    VkPhysicalDevice physicalDevice, VkCommandPool commandPool, VkQueue graphicsQueue,
+    VkPhysicalDevice physicalDevice,
+    VkCommandPool commandPool,
+    VkQueue graphicsQueue,
     const std::vector<std::tuple<VkBuffer, VkBuffer, uint32_t, uint32_t, uint64_t>>& geometries,
     uint32_t maxRayRecursionDepth,
     const std::vector<DimensionData>& dimensionCache) {
@@ -534,16 +616,16 @@ void VulkanRTX::initializeRTX(
     };
     createTopLevelAS(physicalDevice, commandPool, graphicsQueue, instances);
 
-    VulkanResource<VkBuffer, PFN_vkDestroyBuffer> dimensionBuffer(device_, VK_NULL_HANDLE, vkDestroyBuffer);
-    VulkanResource<VkDeviceMemory, PFN_vkFreeMemory> dimensionMemory(device_, VK_NULL_HANDLE, vkFreeMemory);
+    VulkanResource<VkBuffer, PFN_vkDestroyBuffer> dimensionBuffer;
+    VulkanResource<VkDeviceMemory, PFN_vkFreeMemory> dimensionMemory;
     if (!dimensionCache.empty()) {
         VkDeviceSize dimSize = static_cast<VkDeviceSize>(dimensionCache.size()) * sizeof(DimensionData);
         createBuffer(physicalDevice, dimSize,
                      VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
                      VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, dimensionBuffer, dimensionMemory);
 
-        VulkanResource<VkBuffer, PFN_vkDestroyBuffer> stagingBuffer(device_, VK_NULL_HANDLE, vkDestroyBuffer);
-        VulkanResource<VkDeviceMemory, PFN_vkFreeMemory> stagingMemory(device_, VK_NULL_HANDLE, vkFreeMemory);
+        VulkanResource<VkBuffer, PFN_vkDestroyBuffer> stagingBuffer;
+        VulkanResource<VkDeviceMemory, PFN_vkFreeMemory> stagingMemory;
         createBuffer(physicalDevice, dimSize,
                      VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
                      VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
@@ -557,7 +639,9 @@ void VulkanRTX::initializeRTX(
         VkCommandBuffer cmdBuffer = allocateTransientCommandBuffer(commandPool);
         VkCommandBufferBeginInfo beginInfo{
             .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
-            .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT
+            .pNext = nullptr,
+            .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
+            .pInheritanceInfo = nullptr
         };
         VK_CHECK(vkBeginCommandBuffer(cmdBuffer, &beginInfo), "Failed to begin command buffer");
         VkBufferCopy copyRegion{ .srcOffset = 0, .dstOffset = 0, .size = dimSize };
@@ -572,7 +656,9 @@ void VulkanRTX::initializeRTX(
 }
 
 void VulkanRTX::updateRTX(
-    VkPhysicalDevice physicalDevice, VkCommandPool commandPool, VkQueue graphicsQueue,
+    VkPhysicalDevice physicalDevice,
+    VkCommandPool commandPool,
+    VkQueue graphicsQueue,
     const std::vector<std::tuple<VkBuffer, VkBuffer, uint32_t, uint32_t, uint64_t>>& geometries,
     const std::vector<DimensionData>& dimensionCache) {
     if (!physicalDevice || !commandPool || !graphicsQueue || geometries.empty()) {
@@ -610,16 +696,16 @@ void VulkanRTX::updateRTX(
         std::osyncstream(std::cout) << YELLOW << "[WARNING] Geometries changed, rebuilt BLAS and TLAS" << RESET << std::endl;
     }
 
-    VulkanResource<VkBuffer, PFN_vkDestroyBuffer> dimensionBuffer(device_, VK_NULL_HANDLE, vkDestroyBuffer);
-    VulkanResource<VkDeviceMemory, PFN_vkFreeMemory> dimensionMemory(device_, VK_NULL_HANDLE, vkFreeMemory);
+    VulkanResource<VkBuffer, PFN_vkDestroyBuffer> dimensionBuffer;
+    VulkanResource<VkDeviceMemory, PFN_vkFreeMemory> dimensionMemory;
     if (!dimensionCache.empty() && dimensionCache != previousDimensionCache_) {
         VkDeviceSize dimSize = static_cast<VkDeviceSize>(dimensionCache.size()) * sizeof(DimensionData);
         createBuffer(physicalDevice, dimSize,
                      VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
                      VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, dimensionBuffer, dimensionMemory);
 
-        VulkanResource<VkBuffer, PFN_vkDestroyBuffer> stagingBuffer(device_, VK_NULL_HANDLE, vkDestroyBuffer);
-        VulkanResource<VkDeviceMemory, PFN_vkFreeMemory> stagingMemory(device_, VK_NULL_HANDLE, vkFreeMemory);
+        VulkanResource<VkBuffer, PFN_vkDestroyBuffer> stagingBuffer;
+        VulkanResource<VkDeviceMemory, PFN_vkFreeMemory> stagingMemory;
         createBuffer(physicalDevice, dimSize,
                      VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
                      VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
@@ -633,7 +719,9 @@ void VulkanRTX::updateRTX(
         VkCommandBuffer cmdBuffer = allocateTransientCommandBuffer(commandPool);
         VkCommandBufferBeginInfo beginInfo{
             .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
-            .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT
+            .pNext = nullptr,
+            .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
+            .pInheritanceInfo = nullptr
         };
         VK_CHECK(vkBeginCommandBuffer(cmdBuffer, &beginInfo), "Failed to begin command buffer");
         VkBufferCopy copyRegion{ .srcOffset = 0, .dstOffset = 0, .size = dimSize };
@@ -648,7 +736,12 @@ void VulkanRTX::updateRTX(
     std::osyncstream(std::cout) << GREEN << "[INFO] RTX update completed successfully" << RESET << std::endl;
 }
 
-void VulkanRTX::denoiseImage(VkCommandBuffer cmdBuffer, VkImage inputImage, VkImageView inputImageView, VkImage outputImage, VkImageView outputImageView) {
+void VulkanRTX::denoiseImage(
+    VkCommandBuffer cmdBuffer,
+    VkImage inputImage,
+    VkImageView inputImageView,
+    VkImage outputImage,
+    VkImageView outputImageView) {
     if (!cmdBuffer || !inputImageView || !outputImageView) {
         std::osyncstream(std::cerr) << MAGENTA << "[ERROR] Null denoise params: cmd buffer, input view, or output view" << RESET << std::endl;
         throw VulkanRTXException("Null denoise params: cmd buffer, input view, or output view.");
@@ -659,56 +752,82 @@ void VulkanRTX::denoiseImage(VkCommandBuffer cmdBuffer, VkImage inputImage, VkIm
     VkShaderModule denoiseModule = createShaderModule("assets/shaders/denoise.spv");
     VkPipelineShaderStageCreateInfo stage{
         .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+        .pNext = nullptr,
+        .flags = 0,
         .stage = VK_SHADER_STAGE_COMPUTE_BIT,
         .module = denoiseModule,
-        .pName = "main"
+        .pName = "main",
+        .pSpecializationInfo = nullptr
     };
 
     VkPipelineLayoutCreateInfo layoutInfo{
         .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+        .pNext = nullptr,
+        .flags = 0,
         .setLayoutCount = 1,
-        .pSetLayouts = dsLayout_.getPtr()
+        .pSetLayouts = dsLayout_.getPtr(),
+        .pushConstantRangeCount = 0,
+        .pPushConstantRanges = nullptr
     };
     VkPipelineLayout denoiseLayout;
     VK_CHECK(vkCreatePipelineLayout(device_, &layoutInfo, nullptr, &denoiseLayout), "Denoise layout creation failed.");
 
     VkComputePipelineCreateInfo pipelineInfo{
         .sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
+        .pNext = nullptr,
+        .flags = 0,
         .stage = stage,
-        .layout = denoiseLayout
+        .layout = denoiseLayout,
+        .basePipelineHandle = VK_NULL_HANDLE,
+        .basePipelineIndex = -1
     };
     VkPipeline denoisePipeline;
     VK_CHECK(vkCreateComputePipelines(device_, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &denoisePipeline), "Denoise pipeline creation failed.");
 
-    std::array imageInfos{
-        VkDescriptorImageInfo{ .imageView = inputImageView, .imageLayout = VK_IMAGE_LAYOUT_GENERAL },
-        VkDescriptorImageInfo{ .imageView = outputImageView, .imageLayout = VK_IMAGE_LAYOUT_GENERAL }
-    };
-    std::array writes{
-        VkWriteDescriptorSet{
+    std::array<VkDescriptorImageInfo, 2> imageInfos = {{
+        {
+            .sampler = VK_NULL_HANDLE,
+            .imageView = inputImageView,
+            .imageLayout = VK_IMAGE_LAYOUT_GENERAL
+        },
+        {
+            .sampler = VK_NULL_HANDLE,
+            .imageView = outputImageView,
+            .imageLayout = VK_IMAGE_LAYOUT_GENERAL
+        }
+    }};
+    std::array<VkWriteDescriptorSet, 2> writes = {{
+        {
             .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+            .pNext = nullptr,
             .dstSet = ds_.get(),
             .dstBinding = static_cast<uint32_t>(DescriptorBindings::StorageImage),
             .dstArrayElement = 0,
             .descriptorCount = 1,
             .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
-            .pImageInfo = &imageInfos[0]
+            .pImageInfo = &imageInfos[0],
+            .pBufferInfo = nullptr,
+            .pTexelBufferView = nullptr
         },
-        VkWriteDescriptorSet{
+        {
             .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+            .pNext = nullptr,
             .dstSet = ds_.get(),
             .dstBinding = static_cast<uint32_t>(DescriptorBindings::DenoiseImage),
             .dstArrayElement = 0,
             .descriptorCount = 1,
             .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
-            .pImageInfo = &imageInfos[1]
+            .pImageInfo = &imageInfos[1],
+            .pBufferInfo = nullptr,
+            .pTexelBufferView = nullptr
         }
-    };
+    }};
     vkUpdateDescriptorSets(device_, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
 
-    std::array barriers{
-        VkImageMemoryBarrier{
+    std::array<VkImageMemoryBarrier, 2> barriers = {{
+        {
             .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+            .pNext = nullptr,
             .srcAccessMask = 0,
             .dstAccessMask = VK_ACCESS_SHADER_READ_BIT,
             .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
@@ -718,8 +837,9 @@ void VulkanRTX::denoiseImage(VkCommandBuffer cmdBuffer, VkImage inputImage, VkIm
             .image = inputImage,
             .subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1}
         },
-        VkImageMemoryBarrier{
+        {
             .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+            .pNext = nullptr,
             .srcAccessMask = 0,
             .dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT,
             .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
@@ -729,7 +849,7 @@ void VulkanRTX::denoiseImage(VkCommandBuffer cmdBuffer, VkImage inputImage, VkIm
             .image = outputImage,
             .subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1}
         }
-    };
+    }};
     vkCmdPipelineBarrier(cmdBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
                          VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 2, barriers.data());
 
@@ -758,3 +878,5 @@ void VulkanRTX::denoiseImage(VkCommandBuffer cmdBuffer, VkImage inputImage, VkIm
     vkDestroyShaderModule(device_, denoiseModule, nullptr);
     std::osyncstream(std::cout) << GREEN << "[INFO] Image denoising completed for extent=" << extent_.width << "x" << extent_.height << RESET << std::endl;
 }
+
+} // namespace VulkanRTX
