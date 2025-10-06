@@ -15,6 +15,7 @@
 #include <format>
 #include <syncstream>
 #include <source_location>
+#include <array> // Added for std::array
 #include "engine/core.hpp"
 
 // ANSI color codes for consistent logging
@@ -53,13 +54,13 @@ struct QueueFamilyIndices {
     std::optional<uint32_t> graphicsFamily;
     std::optional<uint32_t> presentFamily;
     
-    [[nodiscard]] consteval bool isComplete() const noexcept {
+    [[nodiscard]] constexpr bool isComplete() const noexcept { // Changed consteval to constexpr
         return graphicsFamily.has_value() && presentFamily.has_value();
     }
 };
 
 struct DeviceRequirements {
-    static constexpr const char* extensions[] = {
+    static constexpr std::array<const char*, 6> extensions = { // Changed to std::array
         VK_KHR_SWAPCHAIN_EXTENSION_NAME,
         VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME,
         VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,
