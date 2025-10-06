@@ -14,6 +14,7 @@
 #include <format>
 #include <syncstream>
 #include <iostream>
+#include <fstream>
 #include <vulkan/vulkan.h>
 #include <array>
 #include <atomic>
@@ -46,8 +47,22 @@ struct LogMessage {
 
 class Logger {
 public:
-    Logger() : logQueue_{}, head_(0), tail_(0), running_(true) {
-        // Start async logging thread
+    // Default constructor
+    Logger() : logQueue_{}, head_(0), tail_(0), running_(true), level_(LogLevel::Info) {
+        worker_ = std::make_unique<std::jthread>([this](std::stop_token stoken) {
+            processLogQueue(stoken);
+        });
+    }
+
+    // Constructor with log level and file
+    Logger(LogLevel level, const std::string& filename)
+        : logQueue_{}, head_(0), tail_(0), running_(true), level_(level) {
+        if (!filename.empty()) {
+            logFile_.open(filename, std::ios::out | std::ios::app);
+            if (!logFile_.is_open()) {
+                std::osyncstream(std::cerr) << "Failed to open log file: " << filename << std::endl;
+            }
+        }
         worker_ = std::make_unique<std::jthread>([this](std::stop_token stoken) {
             processLogQueue(stoken);
         });
@@ -55,11 +70,18 @@ public:
 
     ~Logger() {
         stop();
+        if (logFile_.is_open()) {
+            logFile_.close();
+        }
     }
 
     // Log method for asynchronous logging
     template<typename... Args>
     void log(LogLevel level, std::string_view message, const std::source_location& location, const Args&... args) const {
+        if (static_cast<int>(level) < static_cast<int>(level_.load(std::memory_order_relaxed))) {
+            return; // Skip logging if level is below threshold
+        }
+
         std::string formatted;
         try {
             formatted = std::vformat(message, std::make_format_args(args...));
@@ -129,8 +151,13 @@ private:
                                 case LogLevel::Error:   color = MAGENTA; levelStr = "[ERROR]"; break;
                             }
 
-                            std::osyncstream(std::cout) << color << levelStr << " [" << msg.location.file_name() << ":"
-                                                        << msg.location.line() << "] " << msg.formattedMessage << RESET << std::endl;
+                            std::string output = std::format("{} {} [{}:{}] {}{}", 
+                                                             color, levelStr, msg.location.file_name(),
+                                                             msg.location.line(), msg.formattedMessage, RESET);
+                            std::osyncstream(std::cout) << output << std::endl;
+                            if (logFile_.is_open()) {
+                                std::osyncstream(logFile_) << output << std::endl;
+                            }
                         }
                     }
                 }
@@ -142,6 +169,8 @@ private:
     mutable std::atomic<size_t> head_;
     mutable std::atomic<size_t> tail_;
     std::atomic<bool> running_;
+    std::atomic<LogLevel> level_;
+    std::ofstream logFile_;
     std::unique_ptr<std::jthread> worker_;
 };
 
