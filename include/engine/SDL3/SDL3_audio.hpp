@@ -3,39 +3,53 @@
 
 // Configures and manages audio streams and devices for AMOURANTH RTX Engine, October 2025
 // Thread-safe with C++20 features; no mutexes required.
-// Dependencies: SDL3, C++20 standard library.
+// Dependencies: SDL3, C++20 standard library, logging.hpp.
 // Usage: Call initAudio with AudioConfig to set up audio device and stream.
 // Zachary Geurts 2025
 
 #include <SDL3/SDL_audio.h>
 #include <functional>
 #include <string>
-#include <syncstream> // Added for std::osyncstream
 #include <vector>
-
-// ANSI color codes for consistent logging
-#define RESET "\033[0m"
-#define MAGENTA "\033[1;35m" // Bold magenta for errors
-#define CYAN "\033[1;36m"    // Bold cyan for debug
-#define YELLOW "\033[1;33m"  // Bold yellow for warnings
-#define GREEN "\033[1;32m"   // Bold green for info
+#include "engine/logging.hpp"
+#include <format>
 
 namespace SDL3Initializer {
 
-    // Configuration for audio initialization
-    struct AudioConfig {
-        int frequency = 44100;
-        SDL_AudioFormat format = SDL_AUDIO_S16LE;
-        int channels = 2;
-        std::function<void(Uint8*, int)> callback;
-    };
+struct AudioConfig {
+    int frequency = 44100;
+    SDL_AudioFormat format = SDL_AUDIO_S16LE;
+    int channels = 8; // 8-channel audio
+    std::function<void(Uint8*, int)> callback;
+};
 
-    // Initializes audio device and stream
-    void initAudio(const AudioConfig& c, SDL_AudioDeviceID& audioDevice, SDL_AudioStream*& audioStream);
+void initAudio(const AudioConfig& c, SDL_AudioDeviceID& audioDevice, SDL_AudioStream*& audioStream, const Logging::Logger& logger);
 
-    // Gets audio device ID
-    SDL_AudioDeviceID getAudioDevice(const SDL_AudioDeviceID& audioDevice);
+SDL_AudioDeviceID getAudioDevice(const SDL_AudioDeviceID& audioDevice, const Logging::Logger& logger);
 
-}
+} // namespace SDL3Initializer
+
+// Custom formatter for SDL_AudioFormat
+namespace std {
+template<>
+struct formatter<SDL_AudioFormat, char> {
+    constexpr auto parse(format_parse_context& ctx) { return ctx.begin(); }
+
+    template<typename FormatContext>
+    auto format(SDL_AudioFormat format, FormatContext& ctx) const {
+        switch (format) {
+            case SDL_AUDIO_U8: return format_to(ctx.out(), "SDL_AUDIO_U8");
+            case SDL_AUDIO_S8: return format_to(ctx.out(), "SDL_AUDIO_S8");
+            case SDL_AUDIO_S16LE: return format_to(ctx.out(), "SDL_AUDIO_S16LE");
+            case SDL_AUDIO_S16BE: return format_to(ctx.out(), "SDL_AUDIO_S16BE");
+            case SDL_AUDIO_S32LE: return format_to(ctx.out(), "SDL_AUDIO_S32LE");
+            case SDL_AUDIO_S32BE: return format_to(ctx.out(), "SDL_AUDIO_S32BE");
+            case SDL_AUDIO_F32LE: return format_to(ctx.out(), "SDL_AUDIO_F32LE");
+            case SDL_AUDIO_F32BE: return format_to(ctx.out(), "SDL_AUDIO_F32BE");
+            default: return format_to(ctx.out(), "Unknown SDL_AudioFormat({})", static_cast<int>(format));
+        }
+    }
+};
+} // namespace std
 
 #endif // SDL3_AUDIO_HPP

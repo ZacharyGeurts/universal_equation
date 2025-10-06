@@ -1,6 +1,5 @@
 #ifndef VULKAN_FUNC_SWAPCHAIN_HPP
 #define VULKAN_FUNC_SWAPCHAIN_HPP
-
 // AMOURANTH RTX Engine, October 2025 - Vulkan swapchain utilities for surface format, swapchain, and framebuffer creation.
 // Supports Windows/Linux (X11/Wayland); no mutexes; compatible with voxel geometry rendering.
 // Dependencies: Vulkan 1.3+, C++20 standard library.
@@ -9,7 +8,7 @@
 
 #include <vulkan/vulkan.h>
 #include <vector>
-#include "engine/core.hpp" // For Logging::Logger
+#include "engine/logging.hpp" // For Logging::Logger
 
 namespace VulkanInitializer {
 
@@ -49,7 +48,7 @@ public:
     const std::vector<VkFramebuffer>& getFramebuffers() const { return swapchainFramebuffers_; }
 
     void initializeSwapchain() {
-        logger_.log(Logging::LogLevel::Info, "Initializing swapchain");
+        logger_.log(Logging::LogLevel::Info, "Initializing swapchain", std::source_location::current());
         VkSurfaceFormatKHR format = selectSurfaceFormat(physicalDevice_, surface_, logger_);
         swapchainFormat_ = format.format;
         createSwapchain(physicalDevice_, device_, surface_, swapchain_, swapchainImages_, swapchainImageViews_,
@@ -57,12 +56,12 @@ public:
     }
 
     void initializeFramebuffers(VkRenderPass renderPass) {
-        logger_.log(Logging::LogLevel::Info, "Initializing framebuffers");
+        logger_.log(Logging::LogLevel::Info, "Initializing framebuffers", std::source_location::current());
         createFramebuffers(device_, renderPass, swapchainImageViews_, swapchainFramebuffers_, width_, height_, logger_);
     }
 
     void cleanup() {
-        logger_.log(Logging::LogLevel::Info, "Cleaning up swapchain resources");
+        logger_.log(Logging::LogLevel::Info, "Cleaning up swapchain resources", std::source_location::current());
         for (auto& framebuffer : swapchainFramebuffers_) {
             if (framebuffer != VK_NULL_HANDLE) {
                 vkDestroyFramebuffer(device_, framebuffer, nullptr);
@@ -81,7 +80,7 @@ public:
             vkDestroySwapchainKHR(device_, swapchain_, nullptr);
             swapchain_ = VK_NULL_HANDLE;
         }
-        logger_.log(Logging::LogLevel::Debug, "Swapchain cleanup completed");
+        logger_.log(Logging::LogLevel::Debug, "Swapchain cleanup completed", std::source_location::current());
     }
 
 private:

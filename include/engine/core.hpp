@@ -6,11 +6,12 @@
 // Manages physics via UniversalEquation (ue_init.hpp) and input via handleinput.hpp.
 // Uses 256-byte PushConstants for rasterization and ray tracing pipelines.
 // Supports sphere, quad, triangle, and voxel geometries for fast 3D rendering.
-// Dependencies: Vulkan 1.3+, SDL3, GLM, ue_init.hpp, handleinput.hpp.
+// Dependencies: Vulkan 1.3+, SDL3, GLM, ue_init.hpp, handleinput.hpp, logging.hpp.
 // Usage: Instantiate AMOURANTH with DimensionalNavigator; call render and update for gameplay.
 // Zachary Geurts 2025
 
-#include "ue_init.hpp" // Moved to top to define DimensionData, EnergyResult, etc.
+#include "ue_init.hpp" // For DimensionData, EnergyResult, etc.
+#include "logging.hpp" // For Logging::Logger and ANSI color codes
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <SDL3/SDL.h>
@@ -20,15 +21,7 @@
 #include <stdexcept>
 #include <numbers>
 #include <format>
-#include <syncstream>
 #include <span>
-
-// ANSI color codes for consistent logging
-#define RESET "\033[0m"
-#define MAGENTA "\033[1;35m" // Bold magenta for errors
-#define CYAN "\033[1;36m"    // Bold cyan for debug
-#define YELLOW "\033[1;33m"  // Bold yellow for warnings
-#define GREEN "\033[1;32m"   // Bold green for info
 
 static constexpr int kMaxRenderedDimensions = 9;
 
@@ -41,8 +34,10 @@ static_assert(sizeof(PushConstants) == 256, "PushConstants must be 256 bytes");
 
 class DimensionalNavigator {
 public:
-    DimensionalNavigator(const std::string& name, int width, int height)
-        : name_(name), width_(width), height_(height), mode_(1), zoomLevel_(1.0f), wavePhase_(0.0f) {
+    DimensionalNavigator(const std::string& name, int width, int height, const Logging::Logger& logger)
+        : name_(name), width_(width), height_(height), mode_(1), zoomLevel_(1.0f), wavePhase_(0.0f), logger_(logger) {
+        logger_.log(Logging::LogLevel::Info, "Initializing DimensionalNavigator with name={}, width={}, height={}",
+                    std::source_location::current(), name, width, height);
         initializeCache();
     }
 
@@ -51,7 +46,7 @@ public:
     float getWavePhase() const { return wavePhase_; }
     std::span<const DimensionData> getCache() const { return cache_; }
     int getWidth() const { return width_; }
-    int getHeight() const { return height_; } // Fixed typo
+    int getHeight() const { return height_; }
     void setMode(int mode) { mode_ = glm::clamp(mode, 1, 9); }
     void setZoomLevel(float zoom) { zoomLevel_ = std::max(0.1f, zoom); }
     void setWavePhase(float phase) { wavePhase_ = phase; }
@@ -66,6 +61,8 @@ private:
             cache_[i].darkMatter = 0.0;
             cache_[i].darkEnergy = 0.0;
         }
+        logger_.log(Logging::LogLevel::Debug, "DimensionalNavigator cache initialized with {} entries",
+                    std::source_location::current(), cache_.size());
     }
 
     std::string name_;
@@ -74,32 +71,38 @@ private:
     float zoomLevel_;
     float wavePhase_;
     std::vector<DimensionData> cache_;
+    const Logging::Logger& logger_;
 };
 
 class AMOURANTH {
 public:
-    AMOURANTH(DimensionalNavigator* navigator) :
-        ue_(8, 8, 2.5, 0.0072973525693, true),
-        simulator_(navigator),
-        mode_(1),
-        wavePhase_(0.0f),
-        waveSpeed_(1.0f),
-        zoomLevel_(1.0f),
-        isPaused_(false),
-        userCamPos_(0.0f),
-        isUserCamActive_(false),
-        width_(navigator ? navigator->getWidth() : 800),
-        height_(navigator ? navigator->getHeight() : 600) {
+    AMOURANTH(DimensionalNavigator* navigator, const Logging::Logger& logger)
+        : ue_(8, 8, 2.5, 0.0072973525693, true),
+          simulator_(navigator),
+          mode_(1),
+          wavePhase_(0.0f),
+          waveSpeed_(1.0f),
+          zoomLevel_(1.0f),
+          isPaused_(false),
+          userCamPos_(0.0f),
+          isUserCamActive_(false),
+          width_(navigator ? navigator->getWidth() : 800),
+          height_(navigator ? navigator->getHeight() : 600),
+          logger_(logger) {
         if (!navigator) {
-            std::osyncstream(std::cerr) << MAGENTA << "[ERROR] AMOURANTH: Null DimensionalNavigator provided" << RESET << std::endl;
-            throw std::runtime_error("AMOURANTH: Null DimensionalNavigator provided.");
+            logger_.log(Logging::LogLevel::Error, "Null DimensionalNavigator provided",
+                        std::source_location::current());
+            throw std::runtime_error("AMOURANTH: Null DimensionalNavigator provided");
         }
+        logger_.log(Logging::LogLevel::Info, "Initializing AMOURANTH with width={}, height={}",
+                    std::source_location::current(), width_, height_);
         initializeSphereGeometry();
         initializeQuadGeometry();
         initializeTriangleGeometry();
         initializeVoxelGeometry();
         initializeCalculator();
-        std::osyncstream(std::cout) << GREEN << "[INFO] AMOURANTH initialized successfully" << RESET << std::endl;
+        logger_.log(Logging::LogLevel::Info, "AMOURANTH initialized successfully",
+                    std::source_location::current());
     }
 
     void render(uint32_t imageIndex, VkBuffer vertexBuffer, VkCommandBuffer commandBuffer,
@@ -173,6 +176,7 @@ private:
     bool isUserCamActive_;
     int width_;
     int height_;
+    const Logging::Logger& logger_;
 };
 
 #include "handleinput.hpp"
@@ -209,6 +213,7 @@ void renderMode9(AMOURANTH* amouranth, uint32_t imageIndex, VkBuffer vertexBuffe
 // Inline implementations
 inline void AMOURANTH::render(uint32_t imageIndex, VkBuffer vertexBuffer, VkCommandBuffer commandBuffer,
                               VkBuffer indexBuffer, VkPipelineLayout pipelineLayout, VkDescriptorSet descriptorSet) {
+    logger_.log(Logging::LogLevel::Debug, "Rendering frame for image index {}", std::source_location::current(), imageIndex);
     switch (simulator_->getMode()) {
         case 1: renderMode1(this, imageIndex, vertexBuffer, commandBuffer, indexBuffer, simulator_->getZoomLevel(), width_, height_, simulator_->getWavePhase(), getCache(), pipelineLayout, descriptorSet); break;
         case 2: renderMode2(this, imageIndex, vertexBuffer, commandBuffer, indexBuffer, simulator_->getZoomLevel(), width_, height_, simulator_->getWavePhase(), getCache(), pipelineLayout, descriptorSet); break;
@@ -229,6 +234,8 @@ inline void AMOURANTH::update(float deltaTime) {
         simulator_->setWavePhase(wavePhase_);
         ue_.advanceCycle();
         updateCache();
+        logger_.log(Logging::LogLevel::Debug, "Updated simulation with deltaTime={:.3f}, wavePhase={:.3f}",
+                    std::source_location::current(), deltaTime, wavePhase_);
     }
 }
 
@@ -240,17 +247,20 @@ inline void AMOURANTH::updateCache() {
         cache_[i].darkMatter = result.darkMatter;
         cache_[i].darkEnergy = result.darkEnergy;
     }
+    logger_.log(Logging::LogLevel::Debug, "Updated cache with {} entries", std::source_location::current(), cache_.size());
 }
 
 inline void AMOURANTH::updateZoom(bool zoomIn) {
     zoomLevel_ *= zoomIn ? 1.1f : 0.9f;
     zoomLevel_ = std::max(0.1f, zoomLevel_);
     simulator_->setZoomLevel(zoomLevel_);
+    logger_.log(Logging::LogLevel::Debug, "Updated zoom level to {:.3f}", std::source_location::current(), zoomLevel_);
 }
 
 inline void AMOURANTH::setMode(int mode) {
     mode_ = mode;
     simulator_->setMode(mode_);
+    logger_.log(Logging::LogLevel::Info, "Set rendering mode to {}", std::source_location::current(), mode_);
 }
 
 inline void AMOURANTH::initializeSphereGeometry() {
@@ -276,11 +286,15 @@ inline void AMOURANTH::initializeSphereGeometry() {
             sphereIndices_.push_back(first + 1);
         }
     }
+    logger_.log(Logging::LogLevel::Info, "Initialized sphere geometry with {} vertices, {} indices",
+                std::source_location::current(), sphereVertices_.size(), sphereIndices_.size());
 }
 
 inline void AMOURANTH::initializeQuadGeometry() {
     quadVertices_ = {{-1.0f, -1.0f, 0.0f}, {1.0f, -1.0f, 0.0f}, {1.0f, 1.0f, 0.0f}, {-1.0f, 1.0f, 0.0f}};
     quadIndices_ = {0, 1, 2, 2, 3, 0};
+    logger_.log(Logging::LogLevel::Info, "Initialized quad geometry with {} vertices, {} indices",
+                std::source_location::current(), quadVertices_.size(), quadIndices_.size());
 }
 
 inline void AMOURANTH::initializeTriangleGeometry() {
@@ -290,6 +304,8 @@ inline void AMOURANTH::initializeTriangleGeometry() {
         {0.5f, -0.5f, 0.0f}   // Bottom-right vertex
     };
     triangleIndices_ = {0, 1, 2};
+    logger_.log(Logging::LogLevel::Info, "Initialized triangle geometry with {} vertices, {} indices",
+                std::source_location::current(), triangleVertices_.size(), triangleIndices_.size());
 }
 
 inline void AMOURANTH::initializeVoxelGeometry() {
@@ -319,12 +335,15 @@ inline void AMOURANTH::initializeVoxelGeometry() {
         // Top face (y = 0.5)
         3, 2, 6,  6, 7, 3
     };
+    logger_.log(Logging::LogLevel::Info, "Initialized voxel geometry with {} vertices, {} indices",
+                std::source_location::current(), voxelVertices_.size(), voxelIndices_.size());
 }
 
 inline void AMOURANTH::initializeCalculator() {
     try {
         if (getDebug()) {
-            std::osyncstream(std::cout) << CYAN << "[DEBUG] Initializing cache for UniversalEquation" << RESET << std::endl;
+            logger_.log(Logging::LogLevel::Debug, "Initializing cache for UniversalEquation",
+                        std::source_location::current());
         }
         cache_.clear();
         cache_.resize(kMaxRenderedDimensions);
@@ -335,11 +354,10 @@ inline void AMOURANTH::initializeCalculator() {
             cache_[i].darkMatter = 0.0;
             cache_[i].darkEnergy = 0.0;
         }
-        if (getDebug()) {
-            std::osyncstream(std::cout) << GREEN << "[INFO] Cache initialized successfully" << RESET << std::endl;
-        }
+        logger_.log(Logging::LogLevel::Info, "Cache initialized successfully with {} entries",
+                    std::source_location::current(), cache_.size());
     } catch (const std::exception& e) {
-        std::osyncstream(std::cerr) << MAGENTA << "[ERROR] Cache initialization failed: " << e.what() << RESET << std::endl;
+        logger_.log(Logging::LogLevel::Error, "Cache initialization failed: {}", std::source_location::current(), e.what());
         throw;
     }
 }

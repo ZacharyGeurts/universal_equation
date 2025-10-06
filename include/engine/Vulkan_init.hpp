@@ -1,6 +1,5 @@
 #ifndef VULKAN_INIT_HPP
 #define VULKAN_INIT_HPP
-
 // AMOURANTH RTX Engine, October 2025 - VulkanRenderer for Vulkan initialization and rendering.
 // Initializes Vulkan resources, including swapchain, pipeline, and geometry buffers (vertex, index, quad, voxel).
 // Thread-safe with no mutexes; designed for Windows/Linux (X11/Wayland).
@@ -13,10 +12,11 @@
 #include <vector>
 #include <glm/glm.hpp>
 #include <stdexcept>
-#include <functional>
-#include <format>
 #include <span>
+#include "engine/logging.hpp"
 #include "engine/Vulkan/Vulkan_func.hpp"
+#include "engine/Vulkan/Vulkan_func_swapchain.hpp"
+#include "engine/Vulkan/Vulkan_func_pipe.hpp"
 
 struct VulkanContext {
     VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
@@ -67,9 +67,7 @@ public:
         std::span<const glm::vec3> vertices, std::span<const uint32_t> indices,
         VkShaderModule vertShaderModule, VkShaderModule fragShaderModule,
         int width, int height,
-        std::function<void(const std::string&)> logger = [](const std::string& msg) {
-            std::cerr << std::format("Vulkan: {}\n", msg);
-        });
+        const Logging::Logger& logger);
 
     ~VulkanRenderer();
 
@@ -82,7 +80,7 @@ private:
     VulkanContext context_;
     VkInstance instance_ = VK_NULL_HANDLE;  // Not owned; caller manages
     VkSurfaceKHR surface_ = VK_NULL_HANDLE;  // Not owned; caller manages
-    std::function<void(const std::string&)> logger_;
+    const Logging::Logger& logger_;
 
     void initializeVulkan(
         std::span<const glm::vec3> vertices, std::span<const uint32_t> indices,

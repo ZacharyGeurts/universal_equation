@@ -27,6 +27,7 @@
 #include "engine/SDL3_init.hpp"
 #include "engine/Vulkan_init.hpp"
 #include "engine/core.hpp"
+#include "engine/logging.hpp" // Added for Logging::Logger
 #include "handleinput.hpp"
 
 class DimensionalNavigator;
@@ -53,7 +54,7 @@ public:
           inFlightFences_(), vertexBuffer_(VK_NULL_HANDLE), vertexBufferMemory_(VK_NULL_HANDLE),
           indexBuffer_(VK_NULL_HANDLE), indexBufferMemory_(VK_NULL_HANDLE),
           graphicsFamily_(UINT32_MAX), presentFamily_(UINT32_MAX), width_(std::max(1280, width)), height_(std::max(720, height)),
-          amouranth_(nullptr), input_(nullptr) {
+          amouranth_(nullptr), input_(nullptr), logger_() {
         try {
             omp_set_num_threads(omp_get_max_threads());
             sdlInitializer_.initialize(title, width_, height_);
@@ -62,13 +63,14 @@ public:
             surface_ = sdlInitializer_.getVkSurface();
             simulator_ = new DimensionalNavigator("Dimensional Navigator", width_, height_);
             amouranth_ = new AMOURANTH(simulator_);
-            input_ = new HandleInput(amouranth_, simulator_);
+            input_ = new HandleInput(amouranth_, simulator_, logger_);
             input_->setCallbacks(); // Set default input handlers
             initializeVulkan();
             amouranth_->setMode(1);
             amouranth_->updateCache();
+            logger_.log(Logging::LogLevel::Info, "Application initialized successfully", std::source_location::current());
         } catch (const std::exception& e) {
-            std::cerr << "Init failed: " << e.what() << "\n";
+            logger_.log(Logging::LogLevel::Error, "Initialization failed: {}", std::source_location::current(), e.what());
             cleanup();
             throw;
         }
@@ -88,7 +90,7 @@ public:
                 width_ = std::max(1280, w);
                 height_ = std::max(720, h);
                 try { recreateSwapchain(); } catch (const std::exception& e) {
-                    std::cerr << "Swapchain recreation failed: " << e.what() << "\n";
+                    logger_.log(Logging::LogLevel::Error, "Swapchain recreation failed: {}", std::source_location::current(), e.what());
                     throw;
                 }
             },
@@ -154,6 +156,7 @@ private:
     int width_, height_;
     AMOURANTH* amouranth_;
     HandleInput* input_;
+    Logging::Logger logger_; // Added logger member
 
     inline void initializeVulkan() {
         VulkanInitializer::initializeVulkan(
@@ -165,19 +168,21 @@ private:
             sphereStagingBuffer_, sphereStagingBufferMemory_, indexStagingBuffer_, indexStagingBufferMemory_,
             descriptorSetLayout_, descriptorPool_, descriptorSet_, sampler_,
             vertShaderModule_, fragShaderModule_,
-            amouranth_->getSphereVertices(), amouranth_->getSphereIndices(), width_, height_);
+            amouranth_->getSphereVertices(), amouranth_->getSphereIndices(), width_, height_, logger_);
 
         VulkanInitializer::initializeQuadBuffers(
             vulkanDevice_, physicalDevice_, commandPool_, graphicsQueue_,
             quadVertexBuffer_, quadVertexBufferMemory_, quadIndexBuffer_, quadIndexBufferMemory_,
             quadStagingBuffer_, quadStagingBufferMemory_, quadIndexStagingBuffer_, quadIndexStagingBufferMemory_,
-            amouranth_->getQuadVertices(), amouranth_->getQuadIndices());
+            amouranth_->getQuadVertices(), amouranth_->getQuadIndices(), logger_);
     }
 
     inline void recreateSwapchain() {
         if (vulkanDevice_ != VK_NULL_HANDLE) {
             VkResult result = vkDeviceWaitIdle(vulkanDevice_);
-            if (result != VK_SUCCESS) std::cerr << "vkDeviceWaitIdle failed: " << result << "\n";
+            if (result != VK_SUCCESS) {
+                logger_.log(Logging::LogLevel::Error, "vkDeviceWaitIdle failed: {}", std::source_location::current(), result);
+            }
         }
         // Destroy quad buffers before cleanupVulkan
         if (quadVertexBuffer_ != VK_NULL_HANDLE) {
@@ -219,7 +224,7 @@ private:
             vertexBuffer_, vertexBufferMemory_, indexBuffer_, indexBufferMemory_,
             descriptorSetLayout_, descriptorPool_, descriptorSet_, sampler_,
             sphereStagingBuffer_, sphereStagingBufferMemory_, indexStagingBuffer_, indexStagingBufferMemory_,
-            vertShaderModule_, fragShaderModule_);
+            vertShaderModule_, fragShaderModule_, logger_);
         descriptorSetLayout_ = VK_NULL_HANDLE;
         descriptorPool_ = VK_NULL_HANDLE;
         descriptorSet_ = VK_NULL_HANDLE;
@@ -257,7 +262,9 @@ private:
     inline void cleanup() {
         if (vulkanDevice_ != VK_NULL_HANDLE) {
             VkResult result = vkDeviceWaitIdle(vulkanDevice_);
-            if (result != VK_SUCCESS) std::cerr << "vkDeviceWaitIdle failed: " << result << "\n";
+            if (result != VK_SUCCESS) {
+                logger_.log(Logging::LogLevel::Error, "vkDeviceWaitIdle failed: {}", std::source_location::current(), result);
+            }
         }
         // Destroy quad buffers before cleanupVulkan
         if (quadVertexBuffer_ != VK_NULL_HANDLE) {
@@ -299,7 +306,7 @@ private:
             vertexBuffer_, vertexBufferMemory_, indexBuffer_, indexBufferMemory_,
             descriptorSetLayout_, descriptorPool_, descriptorSet_, sampler_,
             sphereStagingBuffer_, sphereStagingBufferMemory_, indexStagingBuffer_, indexStagingBufferMemory_,
-            vertShaderModule_, fragShaderModule_);
+            vertShaderModule_, fragShaderModule_, logger_);
         sdlInitializer_.cleanup();
         delete input_;
         delete amouranth_;
@@ -345,11 +352,17 @@ private:
         uint32_t imageIndex;
         VkResult result = vkAcquireNextImageKHR(vulkanDevice_, swapchain_, UINT64_MAX, imageAvailableSemaphores_[currentFrame], VK_NULL_HANDLE, &imageIndex);
         if (result == VK_ERROR_OUT_OF_DATE_KHR) { recreateSwapchain(); return; }
-        if (result != VK_SUCCESS) throw std::runtime_error("Failed to acquire swapchain image: " + std::to_string(result));
+        if (result != VK_SUCCESS) {
+            logger_.log(Logging::LogLevel::Error, "Failed to acquire swapchain image: {}", std::source_location::current(), result);
+            throw std::runtime_error("Failed to acquire swapchain image: " + std::to_string(result));
+        }
 
         vkResetCommandBuffer(commandBuffers_[imageIndex], 0);
         VkCommandBufferBeginInfo beginInfo = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO, nullptr, 0, nullptr };
-        if (vkBeginCommandBuffer(commandBuffers_[imageIndex], &beginInfo) != VK_SUCCESS) throw std::runtime_error("Failed to begin command buffer");
+        if (vkBeginCommandBuffer(commandBuffers_[imageIndex], &beginInfo) != VK_SUCCESS) {
+            logger_.log(Logging::LogLevel::Error, "Failed to begin command buffer", std::source_location::current());
+            throw std::runtime_error("Failed to begin command buffer");
+        }
 
         VkClearValue clearColor = { {{0.1f, 0.1f, 0.1f, 1.0f}} };
         VkRenderPassBeginInfo renderPassInfo = {
@@ -360,21 +373,30 @@ private:
         vkCmdBindPipeline(commandBuffers_[imageIndex], VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_);
         amouranth_->render(imageIndex, vertexBuffer_, commandBuffers_[imageIndex], indexBuffer_, pipelineLayout_, descriptorSet_);
         vkCmdEndRenderPass(commandBuffers_[imageIndex]);
-        if (vkEndCommandBuffer(commandBuffers_[imageIndex]) != VK_SUCCESS) throw std::runtime_error("Failed to end command buffer");
+        if (vkEndCommandBuffer(commandBuffers_[imageIndex]) != VK_SUCCESS) {
+            logger_.log(Logging::LogLevel::Error, "Failed to end command buffer", std::source_location::current());
+            throw std::runtime_error("Failed to end command buffer");
+        }
 
         VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
         VkSubmitInfo submitInfo = {
             VK_STRUCTURE_TYPE_SUBMIT_INFO, nullptr, 1, &imageAvailableSemaphores_[currentFrame], waitStages,
             1, &commandBuffers_[imageIndex], 1, &renderFinishedSemaphores_[currentFrame]
         };
-        if (vkQueueSubmit(graphicsQueue_, 1, &submitInfo, inFlightFences_[currentFrame]) != VK_SUCCESS) throw std::runtime_error("Failed to submit queue");
+        if (vkQueueSubmit(graphicsQueue_, 1, &submitInfo, inFlightFences_[currentFrame]) != VK_SUCCESS) {
+            logger_.log(Logging::LogLevel::Error, "Failed to submit queue", std::source_location::current());
+            throw std::runtime_error("Failed to submit queue");
+        }
 
         VkPresentInfoKHR presentInfo = {
             VK_STRUCTURE_TYPE_PRESENT_INFO_KHR, nullptr, 1, &renderFinishedSemaphores_[currentFrame], 1, &swapchain_, &imageIndex, nullptr
         };
         result = vkQueuePresentKHR(presentQueue_, &presentInfo);
         if (result == VK_ERROR_OUT_OF_DATE_KHR) { recreateSwapchain(); return; }
-        if (result != VK_SUCCESS) throw std::runtime_error("Failed to present queue: " + std::to_string(result));
+        if (result != VK_SUCCESS) {
+            logger_.log(Logging::LogLevel::Error, "Failed to present queue: {}", std::source_location::current(), result);
+            throw std::runtime_error("Failed to present queue: " + std::to_string(result));
+        }
 
         currentFrame = (currentFrame + 1) % imageCount;
     }

@@ -1,13 +1,11 @@
-// AMOURANTH RTX Engine, October 2025 - SDL3Initializer for SDL3 and Vulkan integration.
-// Initializes SDL subsystems, window, Vulkan, audio, font, and input with thread-safe event processing.
-// Supports Windows and Linux (X11/Wayland); no mutexes or threads for rendering.
-// Dependencies: SDL3, SDL3_ttf, Vulkan 1.3+, C++20 standard library.
-// Usage: Initialize with title, size, and flags; run eventLoop with render and resize callbacks.
-// Potential Issues: Ensure Vulkan extensions (VK_KHR_surface, platform-specific) and NVIDIA GPU selection for hybrid systems.
-// Zachary Geurts 2025
-
 #ifndef SDL3_INIT_HPP
 #define SDL3_INIT_HPP
+
+// Initializes SDL3 and Vulkan surface for AMOURANTH RTX Engine, October 2025
+// Thread-safe with C++20 features; no mutexes required.
+// Dependencies: SDL3, SDL3_ttf, Vulkan 1.3+, logging.hpp.
+// Usage: Initialize with title, size, and flags; run eventLoop with render and resize callbacks.
+// Zachary Geurts 2025
 
 #include <SDL3/SDL.h>
 #include <SDL3_ttf/SDL_ttf.h>
@@ -17,9 +15,7 @@
 #include <string>
 #include <memory>
 #include <map>
-#include <fstream>
-#include <sstream>
-#include <format>
+#include "engine/logging.hpp"
 #include "engine/SDL3/SDL3_window.hpp"
 #include "engine/SDL3/SDL3_vulkan.hpp"
 #include "engine/SDL3/SDL3_audio.hpp"
@@ -42,7 +38,7 @@ public:
     using GamepadAxisCallback = std::function<void(const SDL_GamepadAxisEvent&)>;
     using GamepadConnectCallback = std::function<void(bool, SDL_JoystickID, SDL_Gamepad*)>;
 
-    SDL3Initializer();
+    SDL3Initializer(const Logging::Logger& logger);
     ~SDL3Initializer();
     SDL3Initializer(const SDL3Initializer&) = delete;
     SDL3Initializer& operator=(const SDL3Initializer&) = delete;
@@ -63,13 +59,11 @@ public:
     SDL_AudioDeviceID getAudioDevice() const { return m_audioDevice; }
     const std::map<SDL_JoystickID, SDL_Gamepad*>& getGamepads() const { return m_inputManager.getGamepads(); }
     TTF_Font* getFont() const { return m_fontManager.getFont(); }
+    bool isConsoleOpen() const { return m_consoleOpen; }
     void exportLog(const std::string& filename) const;
     std::vector<std::string> getVulkanExtensions() const;
-    bool isConsoleOpen() const { return m_consoleOpen; }
 
 private:
-    void logMessage(const std::string& message) const;
-
     std::unique_ptr<SDL_Window, SDLWindowDeleter> m_window;
     std::unique_ptr<std::remove_pointer_t<VkInstance>, VulkanInstanceDeleter> m_instance;
     std::unique_ptr<std::remove_pointer_t<VkSurfaceKHR>, VulkanSurfaceDeleter> m_surface;
@@ -77,8 +71,7 @@ private:
     SDL_AudioStream* m_audioStream = nullptr;
     SDL3Font m_fontManager;
     SDL3Input m_inputManager;
-    mutable std::ofstream logFile;
-    mutable std::stringstream logStream;
+    const Logging::Logger& logger_;
     bool m_useVulkan;
     bool m_consoleOpen = false;
 };

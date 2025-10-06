@@ -6,6 +6,7 @@
 // Zachary Geurts 2025
 
 #include "engine/Vulkan/Vulkan_func_pipe.hpp"
+#include "engine/logging.hpp" // For Logging::Logger
 #include <stdexcept>
 #include <fstream>
 #include <format>
@@ -26,6 +27,23 @@ std::string vkResultToString(VkResult result) {
         case VK_ERROR_INCOMPATIBLE_DRIVER: return "VK_ERROR_INCOMPATIBLE_DRIVER";
         case VK_ERROR_LAYER_NOT_PRESENT: return "VK_ERROR_LAYER_NOT_PRESENT";
         default: return std::to_string(static_cast<int>(result));
+    }
+}
+
+// Helper function to convert VkFormat to string for logging
+std::string vkFormatToString(VkFormat format) {
+    switch (format) {
+        case VK_FORMAT_UNDEFINED: return "VK_FORMAT_UNDEFINED";
+        case VK_FORMAT_R8G8B8A8_SRGB: return "VK_FORMAT_R8G8B8A8_SRGB";
+        case VK_FORMAT_R8G8B8A8_UNORM: return "VK_FORMAT_R8G8B8A8_UNORM";
+        case VK_FORMAT_B8G8R8A8_SRGB: return "VK_FORMAT_B8G8R8A8_SRGB";
+        case VK_FORMAT_B8G8R8A8_UNORM: return "VK_FORMAT_B8G8R8A8_UNORM";
+        case VK_FORMAT_R32G32B32_SFLOAT: return "VK_FORMAT_R32G32B32_SFLOAT";
+        case VK_FORMAT_R32G32B32A32_SFLOAT: return "VK_FORMAT_R32G32B32A32_SFLOAT";
+        case VK_FORMAT_D32_SFLOAT: return "VK_FORMAT_D32_SFLOAT";
+        case VK_FORMAT_S8_UINT: return "VK_FORMAT_S8_UINT";
+        case VK_FORMAT_D24_UNORM_S8_UINT: return "VK_FORMAT_D24_UNORM_S8_UINT";
+        default: return std::to_string(static_cast<int>(format));
     }
 }
 
@@ -72,7 +90,7 @@ VkShaderModule createShaderModule(VkDevice device, const std::string& filename, 
 }
 
 void createRenderPass(VkDevice device, VkRenderPass& renderPass, VkFormat format, const Logging::Logger& logger) {
-    logger.log(Logging::LogLevel::Info, "Creating render pass with format: {}", std::source_location::current(), format);
+    logger.log(Logging::LogLevel::Info, "Creating render pass with format: {}", std::source_location::current(), vkFormatToString(format));
 
     VkAttachmentDescription colorAttachment{
         .flags = 0,

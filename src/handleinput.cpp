@@ -6,23 +6,26 @@
 
 #include "handleinput.hpp"
 #include "engine/core.hpp"
-#include <iostream>
-#include <syncstream> // Added for std::osyncstream
+#include "engine/logging.hpp"
+#include <format>
 
-// ANSI color codes for consistent logging
-#define RESET "\033[0m"
-#define MAGENTA "\033[1;35m" // Bold magenta for errors
-#define CYAN "\033[1;36m"    // Bold cyan for debug
-#define YELLOW "\033[1;33m"  // Bold yellow for warnings
-#define GREEN "\033[1;32m"   // Bold green for info
-
-HandleInput::HandleInput(AMOURANTH* amouranth, DimensionalNavigator* navigator)
-    : amouranth_(amouranth), navigator_(navigator) {
+HandleInput::HandleInput(AMOURANTH* amouranth, DimensionalNavigator* navigator, const Logging::Logger& logger)
+    : amouranth_(amouranth), navigator_(navigator), logger_(logger) {
     if (!amouranth || !navigator) {
-        std::osyncstream(std::cerr) << MAGENTA << "[ERROR] HandleInput: Null AMOURANTH or DimensionalNavigator provided" << RESET << std::endl;
+        logger_.log(Logging::LogLevel::Error, "HandleInput: Null AMOURANTH or DimensionalNavigator provided", std::source_location::current());
         throw std::runtime_error("HandleInput: Null AMOURANTH or DimensionalNavigator provided.");
     }
-    std::osyncstream(std::cout) << GREEN << "[INFO] HandleInput initialized successfully" << RESET << std::endl;
+    // Set default callbacks
+    keyboardCallback_ = [this](const SDL_KeyboardEvent& key) { defaultKeyboardHandler(key); };
+    mouseButtonCallback_ = [this](const SDL_MouseButtonEvent& mb) { defaultMouseButtonHandler(mb); };
+    mouseMotionCallback_ = [this](const SDL_MouseMotionEvent& mm) { defaultMouseMotionHandler(mm); };
+    mouseWheelCallback_ = [this](const SDL_MouseWheelEvent& mw) { defaultMouseWheelHandler(mw); };
+    textInputCallback_ = [this](const SDL_TextInputEvent& ti) { defaultTextInputHandler(ti); };
+    touchCallback_ = [this](const SDL_TouchFingerEvent& tf) { defaultTouchHandler(tf); };
+    gamepadButtonCallback_ = [this](const SDL_GamepadButtonEvent& gb) { defaultGamepadButtonHandler(gb); };
+    gamepadAxisCallback_ = [this](const SDL_GamepadAxisEvent& ga) { defaultGamepadAxisHandler(ga); };
+    gamepadConnectCallback_ = [this](bool connected, SDL_JoystickID id, SDL_Gamepad* pad) { defaultGamepadConnectHandler(connected, id, pad); };
+    logger_.log(Logging::LogLevel::Info, "HandleInput initialized successfully", std::source_location::current());
 }
 
 void HandleInput::setCallbacks(
@@ -36,7 +39,6 @@ void HandleInput::setCallbacks(
     GamepadAxisCallback ga,
     GamepadConnectCallback gc
 ) {
-    // Removed std::mutex and std::lock_guard
     keyboardCallback_ = kb ? kb : [this](const SDL_KeyboardEvent& key) { defaultKeyboardHandler(key); };
     mouseButtonCallback_ = mb ? mb : [this](const SDL_MouseButtonEvent& mb) { defaultMouseButtonHandler(mb); };
     mouseMotionCallback_ = mm ? mm : [this](const SDL_MouseMotionEvent& mm) { defaultMouseMotionHandler(mm); };
@@ -46,75 +48,76 @@ void HandleInput::setCallbacks(
     gamepadButtonCallback_ = gb ? gb : [this](const SDL_GamepadButtonEvent& gb) { defaultGamepadButtonHandler(gb); };
     gamepadAxisCallback_ = ga ? ga : [this](const SDL_GamepadAxisEvent& ga) { defaultGamepadAxisHandler(ga); };
     gamepadConnectCallback_ = gc ? gc : [this](bool connected, SDL_JoystickID id, SDL_Gamepad* pad) { defaultGamepadConnectHandler(connected, id, pad); };
-    std::osyncstream(std::cout) << GREEN << "[INFO] Input callbacks set successfully" << RESET << std::endl;
+    logger_.log(Logging::LogLevel::Info, "Input callbacks set successfully", std::source_location::current());
 }
 
 void HandleInput::defaultKeyboardHandler(const SDL_KeyboardEvent& key) {
-    // Removed std::mutex and std::lock_guard
     if (key.type == SDL_EVENT_KEY_DOWN) {
-        std::osyncstream(std::cout) << CYAN << "[DEBUG] Handling key down: " << key.key << RESET << std::endl;
-        switch (key.key) {
-            case SDLK_PLUS: case SDLK_KP_PLUS:
+        logger_.log(Logging::LogLevel::Debug, "Handling key down: scancode={}", std::source_location::current(), SDL_GetScancodeName(key.scancode));
+        switch (key.scancode) {
+            case SDL_SCANCODE_1: case SDL_SCANCODE_2: case SDL_SCANCODE_3: case SDL_SCANCODE_4:
+            case SDL_SCANCODE_5: case SDL_SCANCODE_6: case SDL_SCANCODE_7: case SDL_SCANCODE_8: case SDL_SCANCODE_9:
+                amouranth_->setMode(key.scancode - SDL_SCANCODE_1 + 1);
+                navigator_->setMode(key.scancode - SDL_SCANCODE_1 + 1);
+                break;
+            case SDL_SCANCODE_KP_PLUS: case SDL_SCANCODE_EQUALS:
                 amouranth_->updateZoom(true);
                 break;
-            case SDLK_MINUS: case SDLK_KP_MINUS:
+            case SDL_SCANCODE_KP_MINUS: case SDL_SCANCODE_MINUS:
                 amouranth_->updateZoom(false);
                 break;
-            case SDLK_I:
-                amouranth_->adjustInfluence(0.1);
+            case SDL_SCANCODE_I:
+                amouranth_->adjustInfluence(0.1f);
                 break;
-            case SDLK_O:
-                amouranth_->adjustInfluence(-0.1);
+            case SDL_SCANCODE_O:
+                amouranth_->adjustInfluence(-0.1f);
                 break;
-            case SDLK_J:
-                amouranth_->adjustDarkMatter(0.1);
+            case SDL_SCANCODE_J:
+                amouranth_->adjustDarkMatter(0.1f);
                 break;
-            case SDLK_K:
-                amouranth_->adjustDarkMatter(-0.1);
+            case SDL_SCANCODE_K:
+                amouranth_->adjustDarkMatter(-0.1f);
                 break;
-            case SDLK_N:
-                amouranth_->adjustDarkEnergy(0.1);
+            case SDL_SCANCODE_N:
+                amouranth_->adjustDarkEnergy(0.1f);
                 break;
-            case SDLK_M:
-                amouranth_->adjustDarkEnergy(-0.1);
+            case SDL_SCANCODE_M:
+                amouranth_->adjustDarkEnergy(-0.1f);
                 break;
-            case SDLK_P:
+            case SDL_SCANCODE_P:
                 amouranth_->togglePause();
                 break;
-            case SDLK_C:
+            case SDL_SCANCODE_C:
                 amouranth_->toggleUserCam();
                 break;
-            case SDLK_W:
+            case SDL_SCANCODE_W:
                 if (amouranth_->isUserCamActive()) amouranth_->moveUserCam(0.0f, 0.0f, -0.1f);
                 break;
-            case SDLK_S:
+            case SDL_SCANCODE_S:
                 if (amouranth_->isUserCamActive()) amouranth_->moveUserCam(0.0f, 0.0f, 0.1f);
                 break;
-            case SDLK_A:
+            case SDL_SCANCODE_A:
                 if (amouranth_->isUserCamActive()) amouranth_->moveUserCam(-0.1f, 0.0f, 0.0f);
                 break;
-            case SDLK_D:
+            case SDL_SCANCODE_D:
                 if (amouranth_->isUserCamActive()) amouranth_->moveUserCam(0.1f, 0.0f, 0.0f);
                 break;
-            case SDLK_Q:
+            case SDL_SCANCODE_Q:
                 if (amouranth_->isUserCamActive()) amouranth_->moveUserCam(0.0f, 0.1f, 0.0f);
                 break;
-            case SDLK_E:
+            case SDL_SCANCODE_E:
                 if (amouranth_->isUserCamActive()) amouranth_->moveUserCam(0.0f, -0.1f, 0.0f);
                 break;
-            case SDLK_1: case SDLK_2: case SDLK_3: case SDLK_4: case SDLK_5:
-            case SDLK_6: case SDLK_7: case SDLK_8: case SDLK_9:
-                amouranth_->setMode(key.key - SDLK_0);
-                navigator_->setMode(key.key - SDLK_0);
+            default:
+                logger_.log(Logging::LogLevel::Debug, "Unhandled key scancode: {}", std::source_location::current(), SDL_GetScancodeName(key.scancode));
                 break;
         }
     }
 }
 
 void HandleInput::defaultMouseButtonHandler(const SDL_MouseButtonEvent& mb) {
-    // Removed std::mutex and std::lock_guard
     if (mb.type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
-        std::osyncstream(std::cout) << CYAN << "[DEBUG] Handling mouse button down: " << mb.button << RESET << std::endl;
+        logger_.log(Logging::LogLevel::Debug, "Handling mouse button down: button={}", std::source_location::current(), mb.button);
         if (mb.button == SDL_BUTTON_LEFT) {
             amouranth_->toggleUserCam();
         } else if (mb.button == SDL_BUTTON_RIGHT) {
@@ -124,18 +127,16 @@ void HandleInput::defaultMouseButtonHandler(const SDL_MouseButtonEvent& mb) {
 }
 
 void HandleInput::defaultMouseMotionHandler(const SDL_MouseMotionEvent& mm) {
-    // Removed std::mutex and std::lock_guard
     if (amouranth_->isUserCamActive()) {
         float dx = mm.xrel * 0.005f;
         float dy = mm.yrel * 0.005f;
-        std::osyncstream(std::cout) << CYAN << "[DEBUG] Handling mouse motion: dx=" << dx << ", dy=" << dy << RESET << std::endl;
+        logger_.log(Logging::LogLevel::Debug, "Handling mouse motion: dx={}, dy={}", std::source_location::current(), dx, dy);
         amouranth_->moveUserCam(-dx, -dy, 0.0f);
     }
 }
 
 void HandleInput::defaultMouseWheelHandler(const SDL_MouseWheelEvent& mw) {
-    // Removed std::mutex and std::lock_guard
-    std::osyncstream(std::cout) << CYAN << "[DEBUG] Handling mouse wheel: y=" << mw.y << RESET << std::endl;
+    logger_.log(Logging::LogLevel::Debug, "Handling mouse wheel: y={}", std::source_location::current(), mw.y);
     if (mw.y > 0) {
         amouranth_->updateZoom(true);
     } else if (mw.y < 0) {
@@ -143,30 +144,27 @@ void HandleInput::defaultMouseWheelHandler(const SDL_MouseWheelEvent& mw) {
     }
 }
 
-void HandleInput::defaultTextInputHandler([[maybe_unused]] const SDL_TextInputEvent& ti) {
-    // Placeholder
-    std::osyncstream(std::cout) << CYAN << "[DEBUG] Handling text input" << RESET << std::endl;
+void HandleInput::defaultTextInputHandler(const SDL_TextInputEvent& ti) {
+    logger_.log(Logging::LogLevel::Debug, "Handling text input: text={}", std::source_location::current(), ti.text);
 }
 
 void HandleInput::defaultTouchHandler(const SDL_TouchFingerEvent& tf) {
-    // Removed std::mutex and std::lock_guard
     if (tf.type == SDL_EVENT_FINGER_DOWN) {
-        std::osyncstream(std::cout) << CYAN << "[DEBUG] Handling touch down" << RESET << std::endl;
+        logger_.log(Logging::LogLevel::Debug, "Handling touch down", std::source_location::current());
         amouranth_->toggleUserCam();
     } else if (tf.type == SDL_EVENT_FINGER_MOTION) {
         if (amouranth_->isUserCamActive()) {
             float dx = tf.dx * 0.1f;
             float dy = tf.dy * 0.1f;
-            std::osyncstream(std::cout) << CYAN << "[DEBUG] Handling touch motion: dx=" << dx << ", dy=" << dy << RESET << std::endl;
+            logger_.log(Logging::LogLevel::Debug, "Handling touch motion: dx={}, dy={}", std::source_location::current(), dx, dy);
             amouranth_->moveUserCam(-dx, -dy, 0.0f);
         }
     }
 }
 
 void HandleInput::defaultGamepadButtonHandler(const SDL_GamepadButtonEvent& gb) {
-    // Removed std::mutex and std::lock_guard
     if (gb.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN) {
-        std::osyncstream(std::cout) << CYAN << "[DEBUG] Handling gamepad button down: " << gb.button << RESET << std::endl;
+        logger_.log(Logging::LogLevel::Debug, "Handling gamepad button down: button={}", std::source_location::current(), gb.button);
         switch (gb.button) {
             case SDL_GAMEPAD_BUTTON_SOUTH:
                 amouranth_->togglePause();
@@ -181,20 +179,19 @@ void HandleInput::defaultGamepadButtonHandler(const SDL_GamepadButtonEvent& gb) 
                 amouranth_->updateZoom(false);
                 break;
             case SDL_GAMEPAD_BUTTON_DPAD_LEFT:
-                amouranth_->adjustInfluence(-0.1);
+                amouranth_->adjustInfluence(-0.1f);
                 break;
             case SDL_GAMEPAD_BUTTON_DPAD_RIGHT:
-                amouranth_->adjustInfluence(0.1);
+                amouranth_->adjustInfluence(0.1f);
                 break;
         }
     }
 }
 
 void HandleInput::defaultGamepadAxisHandler(const SDL_GamepadAxisEvent& ga) {
-    // Removed std::mutex and std::lock_guard
     if (amouranth_->isUserCamActive()) {
         float value = ga.value / 32768.0f;
-        std::osyncstream(std::cout) << CYAN << "[DEBUG] Handling gamepad axis: axis=" << ga.axis << ", value=" << value << RESET << std::endl;
+        logger_.log(Logging::LogLevel::Debug, "Handling gamepad axis: axis={}, value={}", std::source_location::current(), ga.axis, value);
         if (ga.axis == SDL_GAMEPAD_AXIS_LEFTX) {
             amouranth_->moveUserCam(value * 0.1f, 0.0f, 0.0f);
         } else if (ga.axis == SDL_GAMEPAD_AXIS_LEFTY) {
@@ -205,11 +202,11 @@ void HandleInput::defaultGamepadAxisHandler(const SDL_GamepadAxisEvent& ga) {
     }
 }
 
-void HandleInput::defaultGamepadConnectHandler(bool connected, SDL_JoystickID id, [[maybe_unused]] SDL_Gamepad* pad) {
-    // Removed std::mutex and std::lock_guard
+void HandleInput::defaultGamepadConnectHandler(bool connected, SDL_JoystickID id, SDL_Gamepad* pad) {
+    const char* gamepadName = pad ? SDL_GetGamepadName(pad) : "Unknown";
     if (connected) {
-        std::osyncstream(std::cerr) << GREEN << "[INFO] Gamepad connected: ID " << id << RESET << std::endl;
+        logger_.log(Logging::LogLevel::Info, "Gamepad connected: ID {}, Name {}", std::source_location::current(), id, gamepadName);
     } else {
-        std::osyncstream(std::cerr) << YELLOW << "[WARNING] Gamepad disconnected: ID " << id << RESET << std::endl;
+        logger_.log(Logging::LogLevel::Warning, "Gamepad disconnected: ID {}, Name {}", std::source_location::current(), id, gamepadName);
     }
 }

@@ -1,351 +1,271 @@
-// SDL3_input.cpp
-// AMOURANTH RTX Engine September 2025 - Implementation of SDL3Input class for input handling.
-// Provides methods for initializing input, polling events, handling keyboard, mouse, touch, and gamepad inputs,
-// and managing worker threads for asynchronous gamepad event processing.
-// Dependencies: SDL3 (SDL.h, SDL_mouse.h, SDL_gamepad.h), C++17 standard library.
+// Input handling for AMOURANTH RTX Engine, October 2025
+// Manages SDL3 input events for keyboard, mouse, gamepad, and touch.
+// Thread-safe with C++20 features; no mutexes required.
+// Dependencies: SDL3, C++20 standard library, logging.hpp.
 // Zachary Geurts 2025
 
 #include "engine/SDL3/SDL3_input.hpp"
-#include <algorithm>
-#include <sched.h>
+#include <stdexcept>
+#include <format>
+#include <fstream>
 
 namespace SDL3Initializer {
 
-SDL3Input::SDL3Input(const std::string& logFilePath)
-    : logFile(logFilePath, std::ios::app) {
-    logMessage("Constructing SDL3Input");
-}
+void SDL3Input::initialize(LogCallback logCallback) {
+    m_logCallback = logCallback;
+    if (m_logCallback) {
+        m_logCallback("Initializing SDL3Input");
+    }
+    logger_.log(Logging::LogLevel::Info, "Initializing SDL3Input", std::source_location::current());
 
-SDL3Input::~SDL3Input() {
-    logMessage("Destructing SDL3Input");
-    {
-        std::unique_lock<std::mutex> lock(taskMutex);
-        stopWorkers = true;
-        taskCond.notify_all();
-    }
-    for (auto& thread : workerThreads) {
-        if (thread.joinable()) thread.join();
-    }
-    cleanup();
-    if (logFile.is_open()) {
-        logFile.close();
-    }
-}
-
-void SDL3Input::initialize(GamepadConnectCallback gc) {
-    // Set SDL thread priority to default to avoid glibc priority errors
-    SDL_SetHint(SDL_HINT_THREAD_PRIORITY_POLICY, "default");
-    logMessage("Initializing input system");
     SDL_SetHint(SDL_HINT_JOYSTICK_HIDAPI, "1");
-
-    // Enumerate and open connected gamepads
-    logMessage("Getting connected joysticks");
     int numJoysticks;
     SDL_JoystickID* joysticks = SDL_GetJoysticks(&numJoysticks);
     if (joysticks) {
-        std::unique_lock<std::mutex> lock(gamepadMutex);
         for (int i = 0; i < numJoysticks; ++i) {
             if (SDL_IsGamepad(joysticks[i])) {
-                logMessage("Found gamepad: ID " + std::to_string(joysticks[i]));
+                logger_.log(Logging::LogLevel::Info, "Found gamepad: ID {}", std::source_location::current(), joysticks[i]);
                 if (auto gp = SDL_OpenGamepad(joysticks[i])) {
-                    logMessage("Opened gamepad: ID " + std::to_string(joysticks[i]));
-                    gamepads[joysticks[i]] = gp;
-                    if (gc) gc(true, joysticks[i], gp);
+                    logger_.log(Logging::LogLevel::Info, "Opened gamepad: ID {}", std::source_location::current(), joysticks[i]);
+                    m_gamepads[joysticks[i]] = gp;
+                    if (m_gamepadConnectCallback) {
+                        m_gamepadConnectCallback(true, joysticks[i], gp);
+                    }
                 }
             }
         }
         SDL_free(joysticks);
     }
-
-    // Start worker threads for gamepad event processing
-    startWorkerThreads(std::min(4, static_cast<int>(std::thread::hardware_concurrency())));
-}
-
-void SDL3Input::setCallbacks(KeyboardCallback kb, MouseButtonCallback mb, MouseMotionCallback mm,
-                             MouseWheelCallback mw, TextInputCallback ti, TouchCallback tc,
-                             GamepadButtonCallback gb, GamepadAxisCallback ga, GamepadConnectCallback gc,
-                             ResizeCallback onResize) {
-    logMessage("Setting input callbacks");
-    m_kb = std::move(kb);
-    m_mb = std::move(mb);
-    m_mm = std::move(mm);
-    m_mw = std::move(mw);
-    m_ti = std::move(ti);
-    m_tc = std::move(tc);
-    m_gb = std::move(gb);
-    m_ga = std::move(ga);
-    m_gc = std::move(gc);
-    m_onResize = std::move(onResize);
 }
 
 bool SDL3Input::pollEvents(SDL_Window* window, SDL_AudioDeviceID audioDevice, bool& consoleOpen, bool exitOnClose) {
-    SDL_Event e;
-    while (SDL_PollEvent(&e)) {
-        logMessage("Processing SDL event type: " + std::to_string(e.type));
-        switch (e.type) {
+    SDL_Event event;
+    while (SDL_PollEvent(&event)) {
+        logger_.log(Logging::LogLevel::Debug, "Processing SDL event type: {}", std::source_location::current(), event.type);
+        switch (event.type) {
             case SDL_EVENT_QUIT:
-                logMessage("Quit event received");
-                return !exitOnClose;
             case SDL_EVENT_WINDOW_CLOSE_REQUESTED:
-                logMessage("Window close requested");
+                if (m_logCallback) m_logCallback("Received SDL_EVENT_QUIT or SDL_EVENT_WINDOW_CLOSE_REQUESTED");
+                logger_.log(Logging::LogLevel::Info, "Quit or window close event received", std::source_location::current());
                 return !exitOnClose;
             case SDL_EVENT_WINDOW_RESIZED:
-                logMessage("Window resized to " + std::to_string(e.window.data1) + "x" + std::to_string(e.window.data2));
-                if (m_onResize) m_onResize(e.window.data1, e.window.data2);
+                if (m_logCallback) m_logCallback(std::format("Window resized: width={}, height={}", event.window.data1, event.window.data2));
+                logger_.log(Logging::LogLevel::Info, "Window resized: width={}, height={}", std::source_location::current(), event.window.data1, event.window.data2);
+                if (m_resizeCallback) m_resizeCallback(event.window.data1, event.window.data2);
                 break;
             case SDL_EVENT_KEY_DOWN:
-                logMessage("Key down event: " + std::string(SDL_GetKeyName(e.key.key)));
-                handleKeyboard(e.key, window, audioDevice, consoleOpen);
-                if (m_kb) m_kb(e.key);
+                handleKeyboard(event.key, window, audioDevice, consoleOpen);
+                if (m_keyboardCallback) m_keyboardCallback(event.key);
+                if (m_logCallback) m_logCallback(std::format("Key down event: {}", SDL_GetKeyName(event.key.key)));
+                break;
+            case SDL_EVENT_KEY_UP:
+                if (m_keyboardCallback) m_keyboardCallback(event.key);
+                if (m_logCallback) m_logCallback(std::format("Key up event: {}", SDL_GetKeyName(event.key.key)));
                 break;
             case SDL_EVENT_MOUSE_BUTTON_DOWN:
             case SDL_EVENT_MOUSE_BUTTON_UP:
-                logMessage("Mouse button event: " + std::string(e.type == SDL_EVENT_MOUSE_BUTTON_DOWN ? "Down" : "Up"));
-                handleMouseButton(e.button, window);
-                if (m_mb) m_mb(e.button);
+                handleMouseButton(event.button, window);
+                if (m_mouseButtonCallback) m_mouseButtonCallback(event.button);
+                if (m_logCallback) m_logCallback(std::format("Mouse button event: button {}", event.button.button));
                 break;
             case SDL_EVENT_MOUSE_MOTION:
-                logMessage("Mouse motion event at (" + std::to_string(e.motion.x) + ", " + std::to_string(e.motion.y) + ")");
-                if (m_mm) m_mm(e.motion);
+                if (m_mouseMotionCallback) m_mouseMotionCallback(event.motion);
+                if (m_logCallback) m_logCallback(std::format("Mouse motion event: xrel={}, yrel={}", event.motion.xrel, event.motion.yrel));
                 break;
             case SDL_EVENT_MOUSE_WHEEL:
-                logMessage("Mouse wheel event");
-                if (m_mw) m_mw(e.wheel);
+                if (m_mouseWheelCallback) m_mouseWheelCallback(event.wheel);
+                if (m_logCallback) m_logCallback(std::format("Mouse wheel event: x={}, y={}", event.wheel.x, event.wheel.y));
                 break;
             case SDL_EVENT_TEXT_INPUT:
-                logMessage("Text input event: " + std::string(e.text.text));
-                if (m_ti) m_ti(e.text);
+                if (m_textInputCallback) m_textInputCallback(event.text);
+                if (m_logCallback) m_logCallback(std::format("Text input event: {}", event.text.text));
                 break;
             case SDL_EVENT_FINGER_DOWN:
             case SDL_EVENT_FINGER_UP:
             case SDL_EVENT_FINGER_MOTION:
-                logMessage("Touch event: " + std::string(e.type == SDL_EVENT_FINGER_DOWN ? "Down" : e.type == SDL_EVENT_FINGER_UP ? "Up" : "Motion"));
-                handleTouch(e.tfinger);
-                if (m_tc) m_tc(e.tfinger);
+                handleTouch(event.tfinger);
+                if (m_touchCallback) m_touchCallback(event.tfinger);
+                if (m_logCallback) m_logCallback(std::format("Touch event: finger {}", event.tfinger.fingerID));
                 break;
             case SDL_EVENT_GAMEPAD_BUTTON_DOWN:
             case SDL_EVENT_GAMEPAD_BUTTON_UP:
-                logMessage("Gamepad button event: " + std::string(e.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN ? "Down" : "Up"));
-                handleGamepadButton(e.gbutton, audioDevice);
-                if (m_gb) {
-                    SDL_GamepadButtonEvent eventCopy = e.gbutton;
-                    std::unique_lock<std::mutex> lock(taskMutex);
-                    taskQueue.push([eventCopy, this]() { m_gb(eventCopy); });
-                    taskCond.notify_one();
-                }
+                handleGamepadButton(event.gbutton, audioDevice);
+                if (m_gamepadButtonCallback) m_gamepadButtonCallback(event.gbutton);
+                if (m_logCallback) m_logCallback(std::format("Gamepad button event: button {}", event.gbutton.button));
                 break;
             case SDL_EVENT_GAMEPAD_AXIS_MOTION:
-                logMessage("Gamepad axis motion event");
-                if (m_ga) {
-                    SDL_GamepadAxisEvent eventCopy = e.gaxis;
-                    std::unique_lock<std::mutex> lock(taskMutex);
-                    taskQueue.push([eventCopy, this]() { m_ga(eventCopy); });
-                    taskCond.notify_one();
-                }
+                if (m_gamepadAxisCallback) m_gamepadAxisCallback(event.gaxis);
+                if (m_logCallback) m_logCallback(std::format("Gamepad axis event: axis {}, value {}", event.gaxis.axis, event.gaxis.value));
                 break;
             case SDL_EVENT_GAMEPAD_ADDED:
-                logMessage("Gamepad added: ID " + std::to_string(e.gdevice.which));
-                if (auto gp = SDL_OpenGamepad(e.gdevice.which)) {
-                    std::unique_lock<std::mutex> lock(gamepadMutex);
-                    logMessage("Opened gamepad: ID " + std::to_string(e.gdevice.which));
-                    gamepads[e.gdevice.which] = gp;
-                    if (m_gc) m_gc(true, e.gdevice.which, gp);
-                }
-                break;
             case SDL_EVENT_GAMEPAD_REMOVED:
-                logMessage("Gamepad removed: ID " + std::to_string(e.gdevice.which));
-                {
-                    std::unique_lock<std::mutex> lock(gamepadMutex);
-                    if (auto it = gamepads.find(e.gdevice.which); it != gamepads.end()) {
-                        logMessage("Closing gamepad: ID " + std::to_string(e.gdevice.which));
-                        SDL_CloseGamepad(it->second);
-                        if (m_gc) m_gc(false, e.gdevice.which, nullptr);
-                        gamepads.erase(it);
-                    }
-                }
+                handleGamepadConnection(event.gdevice);
+                if (m_logCallback) m_logCallback(std::format("Gamepad event: type={}, which={}", event.gdevice.type, event.gdevice.which));
                 break;
         }
     }
     return true;
 }
 
+void SDL3Input::setCallbacks(KeyboardCallback kb, MouseButtonCallback mb, MouseMotionCallback mm,
+                             MouseWheelCallback mw, TextInputCallback ti, TouchCallback tc,
+                             GamepadButtonCallback gb, GamepadAxisCallback ga, GamepadConnectCallback gc,
+                             ResizeCallback onResize) {
+    m_keyboardCallback = kb;
+    m_mouseButtonCallback = mb;
+    m_mouseMotionCallback = mm;
+    m_mouseWheelCallback = mw;
+    m_textInputCallback = ti;
+    m_touchCallback = tc;
+    m_gamepadButtonCallback = gb;
+    m_gamepadAxisCallback = ga;
+    m_gamepadConnectCallback = gc;
+    m_resizeCallback = onResize;
+    if (m_logCallback) m_logCallback("Input callbacks set");
+    logger_.log(Logging::LogLevel::Info, "Input callbacks set", std::source_location::current());
+}
+
 void SDL3Input::enableTextInput(SDL_Window* window, bool enable) {
-    logMessage(enable ? "Enabling text input" : "Disabling text input");
     if (enable) {
         SDL_StartTextInput(window);
+        if (m_logCallback) m_logCallback("Text input enabled");
+        logger_.log(Logging::LogLevel::Info, "Text input enabled", std::source_location::current());
     } else {
         SDL_StopTextInput(window);
-    }
-}
-
-const std::map<SDL_JoystickID, SDL_Gamepad*>& SDL3Input::getGamepads() const {
-    std::lock_guard<std::mutex> lock(gamepadMutex);
-    return gamepads;
-}
-
-void SDL3Input::exportLog(const std::string& filename) const {
-    logMessage("Exporting log to " + filename);
-    std::ofstream out(filename, std::ios::app);
-    if (out.is_open()) {
-        out << logStream.str();
-        out.close();
-        std::cout << "Exported log to " << filename << "\n";
-    } else {
-        std::cerr << "Failed to export log to " << filename << "\n";
+        if (m_logCallback) m_logCallback("Text input disabled");
+        logger_.log(Logging::LogLevel::Info, "Text input disabled", std::source_location::current());
     }
 }
 
 void SDL3Input::handleKeyboard(const SDL_KeyboardEvent& k, SDL_Window* window, SDL_AudioDeviceID audioDevice, bool& consoleOpen) {
-    if (k.type != SDL_EVENT_KEY_DOWN) {
-        logMessage("Ignoring non-key-down event");
-        return;
-    }
-    logMessage("Handling key: " + std::string(SDL_GetKeyName(k.key)));
+    if (k.type != SDL_EVENT_KEY_DOWN) return;
+    logger_.log(Logging::LogLevel::Debug, "Handling key: {}", std::source_location::current(), SDL_GetKeyName(k.key));
     switch (k.key) {
         case SDLK_F:
-            logMessage("Toggling fullscreen mode");
             {
                 Uint32 flags = SDL_GetWindowFlags(window);
                 bool isFullscreen = flags & SDL_WINDOW_FULLSCREEN;
                 SDL_SetWindowFullscreen(window, isFullscreen ? 0 : SDL_WINDOW_FULLSCREEN);
+                logger_.log(Logging::LogLevel::Info, "Toggling fullscreen mode", std::source_location::current());
             }
             break;
         case SDLK_ESCAPE:
-            logMessage("Pushing quit event");
             {
                 SDL_Event evt{.type = SDL_EVENT_QUIT};
                 SDL_PushEvent(&evt);
+                logger_.log(Logging::LogLevel::Info, "Pushing quit event", std::source_location::current());
             }
             break;
         case SDLK_SPACE:
-            logMessage("Toggling audio pause/resume");
             if (audioDevice) {
                 if (SDL_AudioDevicePaused(audioDevice)) {
                     SDL_ResumeAudioDevice(audioDevice);
                 } else {
                     SDL_PauseAudioDevice(audioDevice);
                 }
+                logger_.log(Logging::LogLevel::Info, "Toggling audio pause/resume", std::source_location::current());
             }
             break;
         case SDLK_M:
-            logMessage("Toggling audio mute");
             if (audioDevice) {
                 float gain = SDL_GetAudioDeviceGain(audioDevice);
                 SDL_SetAudioDeviceGain(audioDevice, gain == 0.0f ? 1.0f : 0.0f);
-                logMessage("Audio " + std::string(gain == 0.0f ? "unmuted" : "muted"));
+                logger_.log(Logging::LogLevel::Info, "Toggling audio {}", std::source_location::current(), gain == 0.0f ? "unmuted" : "muted");
             }
             break;
         case SDLK_GRAVE:
-            logMessage("Toggling console");
             consoleOpen = !consoleOpen;
+            logger_.log(Logging::LogLevel::Info, "Toggling console", std::source_location::current());
             break;
     }
 }
 
 void SDL3Input::handleMouseButton(const SDL_MouseButtonEvent& b, SDL_Window* window) {
-    logMessage((b.type == SDL_EVENT_MOUSE_BUTTON_DOWN ? "Pressed" : "Released") + std::string(" mouse button ") +
-               (b.button == SDL_BUTTON_LEFT ? "Left" : b.button == SDL_BUTTON_RIGHT ? "Right" : "Middle") +
-               " at (" + std::to_string(b.x) + ", " + std::to_string(b.y) + ")");
+    logger_.log(Logging::LogLevel::Debug, "{} mouse button {} at ({}, {})",
+                std::source_location::current(),
+                b.type == SDL_EVENT_MOUSE_BUTTON_DOWN ? "Pressed" : "Released",
+                b.button == SDL_BUTTON_LEFT ? "Left" : b.button == SDL_BUTTON_RIGHT ? "Right" : "Middle",
+                b.x, b.y);
     if (b.type == SDL_EVENT_MOUSE_BUTTON_DOWN && b.button == SDL_BUTTON_RIGHT) {
-        logMessage("Toggling relative mouse mode");
         bool relative = SDL_GetWindowRelativeMouseMode(window);
         SDL_SetWindowRelativeMouseMode(window, !relative);
+        logger_.log(Logging::LogLevel::Info, "Toggling relative mouse mode", std::source_location::current());
     }
 }
 
 void SDL3Input::handleTouch(const SDL_TouchFingerEvent& t) {
-    logMessage("Touch " + std::string(t.type == SDL_EVENT_FINGER_DOWN ? "DOWN" : t.type == SDL_EVENT_FINGER_UP ? "UP" : "MOTION") +
-               " fingerID: " + std::to_string(t.fingerID) + " at (" + std::to_string(t.x) + ", " + std::to_string(t.y) +
-               ") pressure: " + std::to_string(t.pressure));
+    logger_.log(Logging::LogLevel::Debug, "Touch {} fingerID: {} at ({}, {}) pressure: {}",
+                std::source_location::current(),
+                t.type == SDL_EVENT_FINGER_DOWN ? "DOWN" : t.type == SDL_EVENT_FINGER_UP ? "UP" : "MOTION",
+                t.fingerID, t.x, t.y, t.pressure);
 }
 
 void SDL3Input::handleGamepadButton(const SDL_GamepadButtonEvent& g, SDL_AudioDeviceID audioDevice) {
     if (g.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN) {
-        logMessage("Gamepad button down: ");
+        logger_.log(Logging::LogLevel::Debug, "Gamepad button down: {}", std::source_location::current(), g.button);
         switch (g.button) {
             case SDL_GAMEPAD_BUTTON_SOUTH:
-                logMessage("South (A/Cross) pressed");
+                logger_.log(Logging::LogLevel::Info, "South (A/Cross) pressed", std::source_location::current());
                 break;
             case SDL_GAMEPAD_BUTTON_EAST:
-                logMessage("East (B/Circle) pressed");
                 {
-                    logMessage("Pushing quit event");
                     SDL_Event evt{.type = SDL_EVENT_QUIT};
                     SDL_PushEvent(&evt);
+                    logger_.log(Logging::LogLevel::Info, "East (B/Circle) pressed, pushing quit event", std::source_location::current());
                 }
                 break;
             case SDL_GAMEPAD_BUTTON_WEST:
-                logMessage("West (X/Square) pressed");
+                logger_.log(Logging::LogLevel::Info, "West (X/Square) pressed", std::source_location::current());
                 break;
             case SDL_GAMEPAD_BUTTON_NORTH:
-                logMessage("North (Y/Triangle) pressed");
+                logger_.log(Logging::LogLevel::Info, "North (Y/Triangle) pressed", std::source_location::current());
                 break;
             case SDL_GAMEPAD_BUTTON_START:
-                logMessage("Start pressed");
                 if (audioDevice) {
-                    logMessage("Toggling audio pause/resume");
                     if (SDL_AudioDevicePaused(audioDevice)) {
                         SDL_ResumeAudioDevice(audioDevice);
                     } else {
                         SDL_PauseAudioDevice(audioDevice);
                     }
+                    logger_.log(Logging::LogLevel::Info, "Start pressed, toggling audio pause/resume", std::source_location::current());
                 }
                 break;
             default:
-                logMessage("Button " + std::to_string(static_cast<int>(g.button)) + " pressed");
+                logger_.log(Logging::LogLevel::Info, "Button {} pressed", std::source_location::current(), static_cast<int>(g.button));
                 break;
         }
     } else {
-        logMessage("Gamepad button " + std::to_string(static_cast<int>(g.button)) + " released");
+        logger_.log(Logging::LogLevel::Debug, "Gamepad button {} released", std::source_location::current(), static_cast<int>(g.button));
     }
 }
 
-void SDL3Input::startWorkerThreads(int numThreads) {
-    logMessage("Starting " + std::to_string(numThreads) + " worker threads for gamepad events");
-    for (int i = 0; i < numThreads; ++i) {
-        workerThreads.emplace_back([this] {
-            // Set thread to use default scheduling policy to avoid glibc error
-            sched_param param = {};
-            param.sched_priority = 0; // Default for SCHED_OTHER
-            pthread_setschedparam(pthread_self(), SCHED_OTHER, &param);
-            
-            while (true) {
-                std::vector<std::function<void()>> tasks;
-                {
-                    std::unique_lock<std::mutex> lock(taskMutex);
-                    taskCond.wait(lock, [this] { return !taskQueue.empty() || stopWorkers; });
-                    if (stopWorkers && taskQueue.empty()) break;
-                    while (!taskQueue.empty() && tasks.size() < 10) {
-                        tasks.push_back(std::move(taskQueue.front()));
-                        taskQueue.pop();
-                    }
-                }
-                for (auto& task : tasks) {
-                    logMessage("Worker thread processing task");
-                    task();
-                }
-            }
-        });
+void SDL3Input::handleGamepadConnection(const SDL_GamepadDeviceEvent& e) {
+    if (e.type == SDL_EVENT_GAMEPAD_ADDED) {
+        if (auto gp = SDL_OpenGamepad(e.which)) {
+            m_gamepads[e.which] = gp;
+            if (m_gamepadConnectCallback) m_gamepadConnectCallback(true, e.which, gp);
+            logger_.log(Logging::LogLevel::Info, "Gamepad connected: ID {}", std::source_location::current(), e.which);
+        }
+    } else if (e.type == SDL_EVENT_GAMEPAD_REMOVED) {
+        auto it = m_gamepads.find(e.which);
+        if (it != m_gamepads.end()) {
+            if (m_gamepadConnectCallback) m_gamepadConnectCallback(false, e.which, it->second);
+            SDL_CloseGamepad(it->second);
+            m_gamepads.erase(it);
+            logger_.log(Logging::LogLevel::Info, "Gamepad disconnected: ID {}", std::source_location::current(), e.which);
+        }
     }
 }
 
-void SDL3Input::cleanup() {
-    logMessage("Cleaning up input system");
-    std::unique_lock<std::mutex> lock(gamepadMutex);
-    for (auto& [id, gp] : gamepads) {
-        logMessage("Closing gamepad: ID " + std::to_string(id));
-        SDL_CloseGamepad(gp);
-    }
-    gamepads.clear();
-}
-
-void SDL3Input::logMessage(const std::string& message) const {
-    std::string timestamp = "[" + std::to_string(SDL_GetTicks()) + "ms] " + message;
-    std::cout << timestamp << "\n";
-    logStream << timestamp << "\n";
-    if (logFile.is_open()) {
-        logFile << timestamp << "\n";
-        logFile.flush();
+void SDL3Input::exportLog(const std::string& filename) const {
+    logger_.log(Logging::LogLevel::Info, "Exporting input log to {}", std::source_location::current(), filename);
+    std::ofstream out(filename, std::ios::app);
+    if (out.is_open()) {
+        out << "SDL3Input log\n";
+        out.close();
+        logger_.log(Logging::LogLevel::Info, "Exported input log to {}", std::source_location::current(), filename);
+    } else {
+        logger_.log(Logging::LogLevel::Error, "Failed to export input log to {}", std::source_location::current(), filename);
     }
 }
 
