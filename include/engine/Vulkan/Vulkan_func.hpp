@@ -1,18 +1,16 @@
-#ifndef VULKAN_FUNC_HPP
-#define VULKAN_FUNC_HPP
-
 // AMOURANTH RTX Engine, October 2025 - Vulkan utility functions for device setup, buffer management, and cleanup.
 // Supports Windows/Linux (X11/Wayland); no mutexes; voxel geometry support.
 // Dependencies: Vulkan 1.3+, GLM, C++20 standard library.
 // Usage: Used by VulkanRenderer for initialization and cleanup; supports vertex, index, quad, and voxel buffers.
 // Zachary Geurts 2025
 
+#ifndef VULKAN_FUNC_HPP
+#define VULKAN_FUNC_HPP
+
 #include <vulkan/vulkan.h>
 #include <vector>
 #include <string>
-#include <functional>
 #include <span>
-#include <format>
 #include <optional>
 #include "engine/core.hpp"
 
@@ -31,22 +29,36 @@ struct DeviceRequirements {
         VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,
         VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME,
         VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME,
-        VK_KHR_MAINTENANCE4_EXTENSION_NAME
+        VK_KHR_MAINTENANCE_4_EXTENSION_NAME // Fixed: Added underscore
     };
     VkPhysicalDeviceRayTracingPipelineFeaturesKHR rayTracingFeatures = {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_FEATURES_KHR,
-        .rayTracingPipeline = VK_TRUE
+        .pNext = nullptr, // Explicitly initialize
+        .rayTracingPipeline = VK_TRUE,
+        .rayTracingPipelineShaderGroupHandleCaptureReplay = VK_FALSE,
+        .rayTracingPipelineShaderGroupHandleCaptureReplayMixed = VK_FALSE,
+        .rayTracingPipelineTraceRaysIndirect = VK_FALSE,
+        .rayTraversalPrimitiveCulling = VK_FALSE
     };
     VkPhysicalDeviceAccelerationStructureFeaturesKHR accelerationStructureFeatures = {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR,
-        .accelerationStructure = VK_TRUE
+        .pNext = nullptr, // Explicitly initialize
+        .accelerationStructure = VK_TRUE,
+        .accelerationStructureCaptureReplay = VK_FALSE,
+        .accelerationStructureIndirectBuild = VK_FALSE,
+        .accelerationStructureHostCommands = VK_FALSE,
+        .descriptorBindingAccelerationStructureUpdateAfterBind = VK_FALSE
     };
     VkPhysicalDeviceBufferDeviceAddressFeatures bufferDeviceAddressFeatures = {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_BUFFER_DEVICE_ADDRESS_FEATURES,
-        .bufferDeviceAddress = VK_TRUE
+        .pNext = nullptr, // Explicitly initialize
+        .bufferDeviceAddress = VK_TRUE,
+        .bufferDeviceAddressCaptureReplay = VK_FALSE,
+        .bufferDeviceAddressMultiDevice = VK_FALSE
     };
     VkPhysicalDeviceMaintenance4Features maintenance4Features = {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAINTENANCE_4_FEATURES,
+        .pNext = nullptr, // Explicitly initialize
         .maintenance4 = VK_TRUE
     };
 };
@@ -96,8 +108,7 @@ void cleanupVulkan(
     VkShaderModule& vertShaderModule, VkShaderModule& fragShaderModule);
 
 void createPhysicalDevice(VkInstance instance, VkPhysicalDevice& physicalDevice, uint32_t& graphicsFamily,
-                         uint32_t& presentFamily, VkSurfaceKHR surface, bool preferNvidia,
-                         std::function<void(const std::string&)> logMessage);
+                         uint32_t& presentFamily, VkSurfaceKHR surface, bool preferNvidia);
 
 void createLogicalDevice(VkPhysicalDevice physicalDevice, VkDevice& device, VkQueue& graphicsQueue,
                          VkQueue& presentQueue, uint32_t graphicsFamily, uint32_t presentFamily);

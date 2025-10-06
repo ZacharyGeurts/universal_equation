@@ -11,8 +11,8 @@
 #include <SDL3/SDL.h>
 #include <functional>
 #include <stdexcept>
+#include "engine/core.hpp" // Assumes AMOURANTH is defined here
 
-class AMOURANTH;
 class DimensionalNavigator;
 
 class HandleInput {
@@ -78,18 +78,18 @@ public:
 private:
     void defaultKeyboardHandler(const SDL_KeyboardEvent& key) {
         if (key.type == SDL_EVENT_KEY_DOWN) {
-            switch (key.keysym.sym) {
+            switch (key.key) {
                 case SDLK_1: case SDLK_2: case SDLK_3: case SDLK_4:
                 case SDLK_5: case SDLK_6: case SDLK_7: case SDLK_8: case SDLK_9:
-                    amouranth_->setMode(key.keysym.sym - SDLK_0); break;
-                case SDLK_p: amouranth_->togglePause(); break;
-                case SDLK_c: amouranth_->toggleUserCam(); break;
-                case SDLK_i: amouranth_->adjustInfluence(0.1); break;
-                case SDLK_k: amouranth_->adjustInfluence(-0.1); break;
-                case SDLK_m: amouranth_->adjustDarkMatter(0.1); break;
-                case SDLK_n: amouranth_->adjustDarkMatter(-0.1); break;
-                case SDLK_e: amouranth_->adjustDarkEnergy(0.1); break;
-                case SDLK_r: amouranth_->adjustDarkEnergy(-0.1); break;
+                    amouranth_->setMode(key.key - SDLK_0); break;
+                case SDLK_P: amouranth_->togglePause(); break;
+                case SDLK_C: amouranth_->toggleUserCam(); break;
+                case SDLK_I: amouranth_->adjustInfluence(0.1); break;
+                case SDLK_K: amouranth_->adjustInfluence(-0.1); break;
+                case SDLK_M: amouranth_->adjustDarkMatter(0.1); break;
+                case SDLK_N: amouranth_->adjustDarkMatter(-0.1); break;
+                case SDLK_E: amouranth_->adjustDarkEnergy(0.1); break;
+                case SDLK_R: amouranth_->adjustDarkEnergy(-0.1); break;
             }
         }
     }

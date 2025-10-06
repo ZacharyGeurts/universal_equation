@@ -1,14 +1,28 @@
-// handleinput.cpp
-#include <iostream>
-#include <mutex>
+// Input handling implementation for AMOURANTH RTX Engine, October 2025
+// Manages SDL3 input events for keyboard, mouse, gamepad, and touch.
+// Thread-safe with C++20 features; no mutexes required.
+// Dependencies: SDL3, C++20 standard library.
+// Zachary Geurts 2025
+
 #include "handleinput.hpp"
 #include "engine/core.hpp"
+#include <iostream>
+#include <syncstream> // Added for std::osyncstream
+
+// ANSI color codes for consistent logging
+#define RESET "\033[0m"
+#define MAGENTA "\033[1;35m" // Bold magenta for errors
+#define CYAN "\033[1;36m"    // Bold cyan for debug
+#define YELLOW "\033[1;33m"  // Bold yellow for warnings
+#define GREEN "\033[1;32m"   // Bold green for info
 
 HandleInput::HandleInput(AMOURANTH* amouranth, DimensionalNavigator* navigator)
     : amouranth_(amouranth), navigator_(navigator) {
     if (!amouranth || !navigator) {
+        std::osyncstream(std::cerr) << MAGENTA << "[ERROR] HandleInput: Null AMOURANTH or DimensionalNavigator provided" << RESET << std::endl;
         throw std::runtime_error("HandleInput: Null AMOURANTH or DimensionalNavigator provided.");
     }
+    std::osyncstream(std::cout) << GREEN << "[INFO] HandleInput initialized successfully" << RESET << std::endl;
 }
 
 void HandleInput::setCallbacks(
@@ -22,7 +36,7 @@ void HandleInput::setCallbacks(
     GamepadAxisCallback ga,
     GamepadConnectCallback gc
 ) {
-    std::lock_guard<std::mutex> lock(inputMutex_);
+    // Removed std::mutex and std::lock_guard
     keyboardCallback_ = kb ? kb : [this](const SDL_KeyboardEvent& key) { defaultKeyboardHandler(key); };
     mouseButtonCallback_ = mb ? mb : [this](const SDL_MouseButtonEvent& mb) { defaultMouseButtonHandler(mb); };
     mouseMotionCallback_ = mm ? mm : [this](const SDL_MouseMotionEvent& mm) { defaultMouseMotionHandler(mm); };
@@ -32,11 +46,13 @@ void HandleInput::setCallbacks(
     gamepadButtonCallback_ = gb ? gb : [this](const SDL_GamepadButtonEvent& gb) { defaultGamepadButtonHandler(gb); };
     gamepadAxisCallback_ = ga ? ga : [this](const SDL_GamepadAxisEvent& ga) { defaultGamepadAxisHandler(ga); };
     gamepadConnectCallback_ = gc ? gc : [this](bool connected, SDL_JoystickID id, SDL_Gamepad* pad) { defaultGamepadConnectHandler(connected, id, pad); };
+    std::osyncstream(std::cout) << GREEN << "[INFO] Input callbacks set successfully" << RESET << std::endl;
 }
 
 void HandleInput::defaultKeyboardHandler(const SDL_KeyboardEvent& key) {
-    std::lock_guard<std::mutex> lock(inputMutex_);
+    // Removed std::mutex and std::lock_guard
     if (key.type == SDL_EVENT_KEY_DOWN) {
+        std::osyncstream(std::cout) << CYAN << "[DEBUG] Handling key down: " << key.key << RESET << std::endl;
         switch (key.key) {
             case SDLK_PLUS: case SDLK_KP_PLUS:
                 amouranth_->updateZoom(true);
@@ -96,8 +112,9 @@ void HandleInput::defaultKeyboardHandler(const SDL_KeyboardEvent& key) {
 }
 
 void HandleInput::defaultMouseButtonHandler(const SDL_MouseButtonEvent& mb) {
-    std::lock_guard<std::mutex> lock(inputMutex_);
+    // Removed std::mutex and std::lock_guard
     if (mb.type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
+        std::osyncstream(std::cout) << CYAN << "[DEBUG] Handling mouse button down: " << mb.button << RESET << std::endl;
         if (mb.button == SDL_BUTTON_LEFT) {
             amouranth_->toggleUserCam();
         } else if (mb.button == SDL_BUTTON_RIGHT) {
@@ -107,16 +124,18 @@ void HandleInput::defaultMouseButtonHandler(const SDL_MouseButtonEvent& mb) {
 }
 
 void HandleInput::defaultMouseMotionHandler(const SDL_MouseMotionEvent& mm) {
-    std::lock_guard<std::mutex> lock(inputMutex_);
+    // Removed std::mutex and std::lock_guard
     if (amouranth_->isUserCamActive()) {
         float dx = mm.xrel * 0.005f;
         float dy = mm.yrel * 0.005f;
+        std::osyncstream(std::cout) << CYAN << "[DEBUG] Handling mouse motion: dx=" << dx << ", dy=" << dy << RESET << std::endl;
         amouranth_->moveUserCam(-dx, -dy, 0.0f);
     }
 }
 
 void HandleInput::defaultMouseWheelHandler(const SDL_MouseWheelEvent& mw) {
-    std::lock_guard<std::mutex> lock(inputMutex_);
+    // Removed std::mutex and std::lock_guard
+    std::osyncstream(std::cout) << CYAN << "[DEBUG] Handling mouse wheel: y=" << mw.y << RESET << std::endl;
     if (mw.y > 0) {
         amouranth_->updateZoom(true);
     } else if (mw.y < 0) {
@@ -126,24 +145,28 @@ void HandleInput::defaultMouseWheelHandler(const SDL_MouseWheelEvent& mw) {
 
 void HandleInput::defaultTextInputHandler([[maybe_unused]] const SDL_TextInputEvent& ti) {
     // Placeholder
+    std::osyncstream(std::cout) << CYAN << "[DEBUG] Handling text input" << RESET << std::endl;
 }
 
 void HandleInput::defaultTouchHandler(const SDL_TouchFingerEvent& tf) {
-    std::lock_guard<std::mutex> lock(inputMutex_);
+    // Removed std::mutex and std::lock_guard
     if (tf.type == SDL_EVENT_FINGER_DOWN) {
+        std::osyncstream(std::cout) << CYAN << "[DEBUG] Handling touch down" << RESET << std::endl;
         amouranth_->toggleUserCam();
     } else if (tf.type == SDL_EVENT_FINGER_MOTION) {
         if (amouranth_->isUserCamActive()) {
             float dx = tf.dx * 0.1f;
             float dy = tf.dy * 0.1f;
+            std::osyncstream(std::cout) << CYAN << "[DEBUG] Handling touch motion: dx=" << dx << ", dy=" << dy << RESET << std::endl;
             amouranth_->moveUserCam(-dx, -dy, 0.0f);
         }
     }
 }
 
 void HandleInput::defaultGamepadButtonHandler(const SDL_GamepadButtonEvent& gb) {
-    std::lock_guard<std::mutex> lock(inputMutex_);
+    // Removed std::mutex and std::lock_guard
     if (gb.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN) {
+        std::osyncstream(std::cout) << CYAN << "[DEBUG] Handling gamepad button down: " << gb.button << RESET << std::endl;
         switch (gb.button) {
             case SDL_GAMEPAD_BUTTON_SOUTH:
                 amouranth_->togglePause();
@@ -168,9 +191,10 @@ void HandleInput::defaultGamepadButtonHandler(const SDL_GamepadButtonEvent& gb) 
 }
 
 void HandleInput::defaultGamepadAxisHandler(const SDL_GamepadAxisEvent& ga) {
-    std::lock_guard<std::mutex> lock(inputMutex_);
+    // Removed std::mutex and std::lock_guard
     if (amouranth_->isUserCamActive()) {
         float value = ga.value / 32768.0f;
+        std::osyncstream(std::cout) << CYAN << "[DEBUG] Handling gamepad axis: axis=" << ga.axis << ", value=" << value << RESET << std::endl;
         if (ga.axis == SDL_GAMEPAD_AXIS_LEFTX) {
             amouranth_->moveUserCam(value * 0.1f, 0.0f, 0.0f);
         } else if (ga.axis == SDL_GAMEPAD_AXIS_LEFTY) {
@@ -182,10 +206,10 @@ void HandleInput::defaultGamepadAxisHandler(const SDL_GamepadAxisEvent& ga) {
 }
 
 void HandleInput::defaultGamepadConnectHandler(bool connected, SDL_JoystickID id, [[maybe_unused]] SDL_Gamepad* pad) {
-    std::lock_guard<std::mutex> lock(inputMutex_);
+    // Removed std::mutex and std::lock_guard
     if (connected) {
-        std::cerr << "Gamepad connected: ID " << id << "\n";
+        std::osyncstream(std::cerr) << GREEN << "[INFO] Gamepad connected: ID " << id << RESET << std::endl;
     } else {
-        std::cerr << "Gamepad disconnected: ID " << id << "\n";
+        std::osyncstream(std::cerr) << YELLOW << "[WARNING] Gamepad disconnected: ID " << id << RESET << std::endl;
     }
 }

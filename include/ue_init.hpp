@@ -19,6 +19,8 @@
 #include <syncstream>
 #include <omp.h>
 
+class AMOURANTH; // Forward declaration, assuming defined in core.hpp
+
 struct DimensionData {
     int dimension;
     double observable;
@@ -52,8 +54,6 @@ struct Ball {
     Ball(const glm::vec3& pos, const glm::vec3& vel, float m, float r, float start)
         : position(pos), velocity(vel), acceleration(0.0f), mass(m), radius(r), startTime(start) {}
 };
-
-class AMOURANTH;
 
 // Custom formatters for std::atomic types
 template <>
@@ -115,7 +115,8 @@ public:
         debug_(debug),
         wavePhase_(0.0),
         simulationTime_(0.0),
-        needsUpdate_(true) {
+        needsUpdate_(true),
+        navigator_(nullptr) {
         if (debug_) {
             std::osyncstream(std::cout) << std::format("[DEBUG] Constructing UniversalEquation: maxDimensions={}, mode={}, influence={}, alpha={}, debug={}\n",
                                                        maxDimensions_, mode_, influence_, alpha_, debug_);
@@ -365,7 +366,7 @@ private:
     mutable std::vector<glm::vec3> projectedVerts_;
     mutable std::atomic<double> avgProjScale_;
     mutable std::vector<Ball> balls_;
-    mutable std::atomic<bool> needsUpdate_;
+    std::atomic<bool> needsUpdate_; // Added missing member
     AMOURANTH* navigator_;
 
     void initializeNCube() {

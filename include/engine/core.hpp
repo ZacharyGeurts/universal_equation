@@ -10,8 +10,6 @@
 // Usage: Instantiate AMOURANTH with DimensionalNavigator; call render and update for gameplay.
 // Zachary Geurts 2025
 
-static constexpr int kMaxRenderedDimensions = 9;
-
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <SDL3/SDL.h>
@@ -21,9 +19,17 @@ static constexpr int kMaxRenderedDimensions = 9;
 #include <stdexcept>
 #include <numbers>
 #include <format>
+#include <syncstream> // Added for std::osyncstream
 #include <span>
-#include "ue_init.hpp"
-#include "handleinput.hpp"
+
+// ANSI color codes for consistent logging
+#define RESET "\033[0m"
+#define MAGENTA "\033[1;35m" // Bold magenta for errors
+#define CYAN "\033[1;36m"    // Bold cyan for debug
+#define YELLOW "\033[1;33m"  // Bold yellow for warnings
+#define GREEN "\033[1;32m"   // Bold green for info
+
+static constexpr int kMaxRenderedDimensions = 9;
 
 struct PushConstants {
     alignas(16) glm::mat4 model;       // 64 bytes
@@ -31,8 +37,6 @@ struct PushConstants {
     alignas(16) glm::vec4 extra[8];    // 128 bytes
 };
 static_assert(sizeof(PushConstants) == 256, "PushConstants must be 256 bytes");
-
-class AMOURANTH;
 
 class DimensionalNavigator {
 public:
@@ -85,12 +89,16 @@ public:
         isUserCamActive_(false),
         width_(navigator ? navigator->getWidth() : 800),
         height_(navigator ? navigator->getHeight() : 600) {
-        if (!navigator) throw std::runtime_error("AMOURANTH: Null DimensionalNavigator provided.");
+        if (!navigator) {
+            std::osyncstream(std::cerr) << MAGENTA << "[ERROR] AMOURANTH: Null DimensionalNavigator provided" << RESET << std::endl;
+            throw std::runtime_error("AMOURANTH: Null DimensionalNavigator provided.");
+        }
         initializeSphereGeometry();
         initializeQuadGeometry();
         initializeTriangleGeometry();
         initializeVoxelGeometry();
         initializeCalculator();
+        std::osyncstream(std::cout) << GREEN << "[INFO] AMOURANTH initialized successfully" << RESET << std::endl;
     }
 
     void render(uint32_t imageIndex, VkBuffer vertexBuffer, VkCommandBuffer commandBuffer,
@@ -165,6 +173,10 @@ private:
     int width_;
     int height_;
 };
+
+// Include dependencies after AMOURANTH definition to avoid circular dependencies
+#include "ue_init.hpp"
+#include "handleinput.hpp"
 
 // Forward declarations for mode-specific rendering
 void renderMode1(AMOURANTH* amouranth, uint32_t imageIndex, VkBuffer vertexBuffer, VkCommandBuffer commandBuffer,
@@ -313,7 +325,7 @@ inline void AMOURANTH::initializeVoxelGeometry() {
 inline void AMOURANTH::initializeCalculator() {
     try {
         if (getDebug()) {
-            std::cout << std::format("[DEBUG] Initializing cache for UniversalEquation\n");
+            std::osyncstream(std::cout) << CYAN << "[DEBUG] Initializing cache for UniversalEquation" << RESET << std::endl;
         }
         cache_.clear();
         cache_.resize(kMaxRenderedDimensions);
@@ -325,10 +337,10 @@ inline void AMOURANTH::initializeCalculator() {
             cache_[i].darkEnergy = 0.0;
         }
         if (getDebug()) {
-            std::cout << std::format("[DEBUG] Cache initialized successfully\n");
+            std::osyncstream(std::cout) << GREEN << "[INFO] Cache initialized successfully" << RESET << std::endl;
         }
     } catch (const std::exception& e) {
-        std::cerr << std::format("[ERROR] Cache initialization failed: {}\n", e.what());
+        std::osyncstream(std::cerr) << MAGENTA << "[ERROR] Cache initialization failed: " << e.what() << RESET << std::endl;
         throw;
     }
 }

@@ -1,6 +1,12 @@
-// AMOURANTH RTX © 2025 by Zachary Geurts gzac5314@gmail.com is licensed under CC BY-NC 4.0
 #ifndef VULKAN_RTX_HPP
 #define VULKAN_RTX_HPP
+
+// AMOURANTH RTX Engine © 2025 by Zachary Geurts gzac5314@gmail.com is licensed under CC BY-NC 4.0
+// Vulkan ray-tracing utilities for acceleration structures, shader binding tables, and pipeline setup.
+// Supports Windows/Linux (X11/Wayland); no mutexes; voxel geometry via glm::vec3 vertices.
+// Dependencies: Vulkan 1.3+, GLM, C++20 standard library.
+// Usage: Manages ray-tracing pipeline, BLAS/TLAS, and descriptors for voxel rendering.
+// Zachary Geurts 2025
 
 #include <vulkan/vulkan.h>
 #include <glm/glm.hpp>
@@ -9,14 +15,13 @@
 #include <memory>
 #include <stdexcept>
 #include <span>
-#include <mutex>
 #include <string>
+#include <format>
 
-// Macro to check Vulkan API calls
 #define VK_CHECK(call, msg) do { \
     VkResult result = (call); \
     if (result != VK_SUCCESS) { \
-        throw VulkanRTXException(std::string(msg) + " (Error code: " + std::to_string(result) + ")"); \
+        throw VulkanRTXException(std::format("{} (Error code: {})", msg, result)); \
     } \
 } while (0)
 
@@ -60,7 +65,6 @@ enum class ShaderFeatures : uint32_t {
 
 class VulkanRTX {
 public:
-    // Resource management template
     template <typename T, typename DestroyFuncType>
     class VulkanResource {
     public:
@@ -136,7 +140,7 @@ public:
         }
 
         VkDescriptorSet get() const { return set_; }
-        VkDescriptorSet* getPtr() { return &set_; } // Added to fix compilation error
+        VkDescriptorSet* getPtr() { return &set_; }
 
     private:
         VkDevice device_;
@@ -160,23 +164,50 @@ public:
         ShaderBindingTable& operator=(ShaderBindingTable&& other) noexcept;
     };
 
-    // Vulkan extension function pointers
-    PFN_vkGetBufferDeviceAddress vkGetBufferDeviceAddressFunc;
-    PFN_vkGetAccelerationStructureDeviceAddressKHR vkGetASDeviceAddressFunc;
-    PFN_vkCreateAccelerationStructureKHR vkCreateASFunc;
-    PFN_vkCmdBuildAccelerationStructuresKHR vkCmdBuildASFunc;
-    PFN_vkGetAccelerationStructureBuildSizesKHR vkGetASBuildSizesFunc;
-    PFN_vkCmdTraceRaysKHR vkCmdTraceRaysKHR;
-    PFN_vkCreateRayTracingPipelinesKHR vkCreateRayTracingPipelinesKHR;
-    PFN_vkGetRayTracingShaderGroupHandlesKHR vkGetRayTracingShaderGroupHandlesKHR;
-    PFN_vkDestroyAccelerationStructureKHR vkDestroyASFunc;
-    PFN_vkCmdCopyAccelerationStructureKHR vkCmdCopyAccelerationStructureKHR;
-    PFN_vkCmdWriteAccelerationStructuresPropertiesKHR vkCmdWriteASPropertiesFunc;
-
-    // Constructor
     VulkanRTX(VkDevice device, const std::vector<std::string>& shaderPaths);
 
-    // Methods
+    void setDevice(VkDevice device) { device_ = device; }
+    VkDevice getDevice() const { return device_; }
+
+    void setShaderPaths(const std::vector<std::string>& paths) { shaderPaths_ = paths; }
+    const std::vector<std::string>& getShaderPaths() const { return shaderPaths_; }
+
+    void setDescriptorSetLayout(const VulkanResource<VkDescriptorSetLayout, PFN_vkDestroyDescriptorSetLayout>& layout) { dsLayout_ = layout; }
+    VulkanResource<VkDescriptorSetLayout, PFN_vkDestroyDescriptorSetLayout>& getDescriptorSetLayout() { return dsLayout_; }
+
+    void setDescriptorPool(const VulkanResource<VkDescriptorPool, PFN_vkDestroyDescriptorPool>& pool) { dsPool_ = pool; }
+    VulkanResource<VkDescriptorPool, PFN_vkDestroyDescriptorPool>& getDescriptorPool() { return dsPool_; }
+
+    void setDescriptorSet(const VulkanDescriptorSet& set) { ds_ = set; }
+    VulkanDescriptorSet& getDescriptorSet() { return ds_; }
+
+    void setRayTracingPipelineLayout(const VulkanResource<VkPipelineLayout, PFN_vkDestroyPipelineLayout>& layout) { rtPipelineLayout_ = layout; }
+    VulkanResource<VkPipelineLayout, PFN_vkDestroyPipelineLayout>& getRayTracingPipelineLayout() { return rtPipelineLayout_; }
+
+    void setRayTracingPipeline(const VulkanResource<VkPipeline, PFN_vkDestroyPipeline>& pipeline) { rtPipeline_ = pipeline; }
+    VulkanResource<VkPipeline, PFN_vkDestroyPipeline>& getRayTracingPipeline() { return rtPipeline_; }
+
+    void setBottomLevelASBuffer(const VulkanResource<VkBuffer, PFN_vkDestroyBuffer>& buffer) { blasBuffer_ = buffer; }
+    VulkanResource<VkBuffer, PFN_vkDestroyBuffer>& getBottomLevelASBuffer() { return blasBuffer_; }
+
+    void setBottomLevelASMemory(const VulkanResource<VkDeviceMemory, PFN_vkFreeMemory>& memory) { blasMemory_ = memory; }
+    VulkanResource<VkDeviceMemory, PFN_vkFreeMemory>& getBottomLevelASMemory() { return blasMemory_; }
+
+    void setTopLevelASBuffer(const VulkanResource<VkBuffer, PFN_vkDestroyBuffer>& buffer) { tlasBuffer_ = buffer; }
+    VulkanResource<VkBuffer, PFN_vkDestroyBuffer>& getTopLevelASBuffer() { return tlasBuffer_; }
+
+    void setTopLevelASMemory(const VulkanResource<VkDeviceMemory, PFN_vkFreeMemory>& memory) { tlasMemory_ = memory; }
+    VulkanResource<VkDeviceMemory, PFN_vkFreeMemory>& getTopLevelASMemory() { return tlasMemory_; }
+
+    void setShaderBindingTable(const ShaderBindingTable& sbt) { sbt_ = sbt; }
+    ShaderBindingTable& getShaderBindingTable() { return sbt_; }
+
+    void setBottomLevelAS(const VulkanResource<VkAccelerationStructureKHR, PFN_vkDestroyAccelerationStructureKHR>& blas) { blas_ = blas; }
+    VulkanResource<VkAccelerationStructureKHR, PFN_vkDestroyAccelerationStructureKHR>& getBottomLevelAS() { return blas_; }
+
+    void setTopLevelAS(const VulkanResource<VkAccelerationStructureKHR, PFN_vkDestroyAccelerationStructureKHR>& tlas) { tlas_ = tlas; }
+    VulkanResource<VkAccelerationStructureKHR, PFN_vkDestroyAccelerationStructureKHR>& getTopLevelAS() { return tlas_; }
+
     void createBottomLevelAS(VkPhysicalDevice physicalDevice, VkCommandPool commandPool, VkQueue queue,
                              const std::vector<std::tuple<VkBuffer, VkBuffer, uint32_t, uint32_t, uint64_t>>& geometries);
     void createTopLevelAS(VkPhysicalDevice physicalDevice, VkCommandPool commandPool, VkQueue queue,
@@ -212,7 +243,6 @@ public:
     void updateDescriptors(VkBuffer cameraBuffer, VkBuffer materialBuffer, VkBuffer dimensionBuffer);
     VkShaderModule createShaderModule(const std::string& filename);
     bool shaderFileExists(const std::string& filename) const;
-    void loadShadersAsync(std::vector<VkShaderModule>& modules, const std::vector<std::string>& paths);
     void buildShaderGroups(std::vector<VkRayTracingShaderGroupCreateInfoKHR>& groups,
                            const std::vector<VkPipelineShaderStageCreateInfo>& stages);
     bool hasShaderFeature(ShaderFeatures feature) const {
@@ -239,8 +269,19 @@ private:
     std::vector<DimensionData> previousDimensionCache_;
     VulkanResource<VkAccelerationStructureKHR, PFN_vkDestroyAccelerationStructureKHR> blas_;
     VulkanResource<VkAccelerationStructureKHR, PFN_vkDestroyAccelerationStructureKHR> tlas_;
-    static std::mutex functionPtrMutex_;
-    static std::mutex shaderModuleMutex_;
+
+    // Vulkan extension function pointers
+    PFN_vkGetBufferDeviceAddress vkGetBufferDeviceAddressFunc = nullptr;
+    PFN_vkGetAccelerationStructureDeviceAddressKHR vkGetASDeviceAddressFunc = nullptr;
+    PFN_vkCreateAccelerationStructureKHR vkCreateASFunc = nullptr;
+    PFN_vkCmdBuildAccelerationStructuresKHR vkCmdBuildASFunc = nullptr;
+    PFN_vkGetAccelerationStructureBuildSizesKHR vkGetASBuildSizesFunc = nullptr;
+    PFN_vkCmdTraceRaysKHR vkCmdTraceRaysKHR = nullptr;
+    PFN_vkCreateRayTracingPipelinesKHR vkCreateRayTracingPipelinesKHR = nullptr;
+    PFN_vkGetRayTracingShaderGroupHandlesKHR vkGetRayTracingShaderGroupHandlesKHR = nullptr;
+    PFN_vkDestroyAccelerationStructureKHR vkDestroyASFunc = nullptr;
+    PFN_vkCmdCopyAccelerationStructureKHR vkCmdCopyAccelerationStructureKHR = nullptr;
+    PFN_vkCmdWriteAccelerationStructuresPropertiesKHR vkCmdWriteASPropertiesFunc = nullptr;
 };
 
 #endif // VULKAN_RTX_HPP
