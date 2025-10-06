@@ -1,5 +1,6 @@
 // Vulkan_RTX.hpp
-#pragma once
+#ifndef VULKAN_RTX_HPP
+#define VULKAN_RTX_HPP
 
 #include <vulkan/vulkan.h>
 #include <glm/glm.hpp>
@@ -121,7 +122,6 @@ struct PushConstants {
     glm::mat4 viewInverse;
     glm::mat4 projInverse;
     uint32_t frame;
-    // Add other necessary fields
 };
 
 struct DimensionData {
@@ -177,6 +177,7 @@ public:
                      VkMemoryPropertyFlags properties, VulkanResource<VkBuffer, PFN_vkDestroyBuffer>& buffer,
                      VulkanResource<VkDeviceMemory, PFN_vkFreeMemory>& memory);
     uint32_t findMemoryType(VkPhysicalDevice physicalDevice, uint32_t typeFilter, VkMemoryPropertyFlags props);
+    void compactAccelerationStructures(VkPhysicalDevice physicalDevice, VkCommandPool commandPool, VkQueue queue);
     void createBottomLevelAS(VkPhysicalDevice physicalDevice, VkCommandPool commandPool, VkQueue queue,
                              const std::vector<std::tuple<VkBuffer, VkBuffer, uint32_t, uint32_t, uint64_t>>& geometries);
     void createTopLevelAS(VkPhysicalDevice physicalDevice, VkCommandPool commandPool, VkQueue queue,

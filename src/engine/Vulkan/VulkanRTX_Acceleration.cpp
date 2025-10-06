@@ -1,7 +1,4 @@
-// AMOURANTH RTX Engine, October 2025 - Vulkan ray-tracing acceleration structure management.
-// Dependencies: Vulkan 1.3+, GLM, C++20 standard library.
-// Zachary Geurts 2025
-
+// VulkanRTX_Acceleration.cpp
 #include "engine/Vulkan/Vulkan_RTX.hpp"
 #include <stdexcept>
 #include <format>
@@ -10,55 +7,16 @@
 #include <iostream>
 #include <cstring>
 
-// ANSI color codes for consistent logging
-#define RESET "\033[0m"
-#define MAGENTA "\033[1;35m" // Bold magenta for errors
-#define CYAN "\033[1;36m"    // Bold cyan for debug
-#define YELLOW "\033[1;33m"  // Bold yellow for warnings
-#define GREEN "\033[1;32m"   // Bold green for info
-
-namespace std {
-// Custom formatter for VkResult to enable std::format support
-template <>
-struct formatter<VkResult, char> {
-    template <typename ParseContext>
-    constexpr auto parse(ParseContext& ctx) {
-        return ctx.begin();
-    }
-
-    template <typename FormatContext>
-    auto format(VkResult value, FormatContext& ctx) const {
-        std::string_view name;
-        switch (value) {
-            case VK_SUCCESS: name = "VK_SUCCESS"; break;
-            case VK_NOT_READY: name = "VK_NOT_READY"; break;
-            case VK_TIMEOUT: name = "VK_TIMEOUT"; break;
-            case VK_EVENT_SET: name = "VK_EVENT_SET"; break;
-            case VK_EVENT_RESET: name = "VK_EVENT_RESET"; break;
-            case VK_INCOMPLETE: name = "VK_INCOMPLETE"; break;
-            case VK_ERROR_OUT_OF_HOST_MEMORY: name = "VK_ERROR_OUT_OF_HOST_MEMORY"; break;
-            case VK_ERROR_OUT_OF_DEVICE_MEMORY: name = "VK_ERROR_OUT_OF_DEVICE_MEMORY"; break;
-            case VK_ERROR_INITIALIZATION_FAILED: name = "VK_ERROR_INITIALIZATION_FAILED"; break;
-            case VK_ERROR_DEVICE_LOST: name = "VK_ERROR_DEVICE_LOST"; break;
-            case VK_ERROR_MEMORY_MAP_FAILED: name = "VK_ERROR_MEMORY_MAP_FAILED"; break;
-            case VK_ERROR_LAYER_NOT_PRESENT: name = "VK_ERROR_LAYER_NOT_PRESENT"; break;
-            case VK_ERROR_EXTENSION_NOT_PRESENT: name = "VK_ERROR_EXTENSION_NOT_PRESENT"; break;
-            case VK_ERROR_FEATURE_NOT_PRESENT: name = "VK_ERROR_FEATURE_NOT_PRESENT"; break;
-            case VK_ERROR_INCOMPATIBLE_DRIVER: name = "VK_ERROR_INCOMPATIBLE_DRIVER"; break;
-            case VK_ERROR_TOO_MANY_OBJECTS: name = "VK_ERROR_TOO_MANY_OBJECTS"; break;
-            case VK_ERROR_FORMAT_NOT_SUPPORTED: name = "VK_ERROR_FORMAT_NOT_SUPPORTED"; break;
-            default: name = "UNKNOWN_VK_RESULT"; break;
-        }
-        return format_to(ctx.out(), "{}", name);
-    }
-};
-} // namespace std
-
 namespace VulkanRTX {
 
 void VulkanRTX::createBuffer(VkPhysicalDevice physicalDevice, VkDeviceSize size, VkBufferUsageFlags usage,
                              VkMemoryPropertyFlags properties, VulkanResource<VkBuffer, PFN_vkDestroyBuffer>& buffer,
                              VulkanResource<VkDeviceMemory, PFN_vkFreeMemory>& memory) {
+    if (!physicalDevice || size == 0) {
+        std::osyncstream(std::cerr) << MAGENTA << "[ERROR] Invalid buffer params: null device or zero size" << RESET << std::endl;
+        throw VulkanRTXException(std::format("Invalid buffer params: null device or size={}.", size));
+    }
+
     std::osyncstream(std::cout) << GREEN << "[INFO] Creating Vulkan buffer of size: " << size << RESET << std::endl;
 
     VkBufferCreateInfo bufferInfo{
@@ -72,52 +30,32 @@ void VulkanRTX::createBuffer(VkPhysicalDevice physicalDevice, VkDeviceSize size,
         .pQueueFamilyIndices = nullptr
     };
     VkBuffer vkBuffer;
-    VkResult result = vkCreateBuffer(device_, &bufferInfo, nullptr, &vkBuffer);
-    if (result != VK_SUCCESS) {
-        auto error = std::format("vkCreateBuffer failed (Error code: {})", result);
-        std::osyncstream(std::cout) << MAGENTA << "[ERROR] " << error << RESET << std::endl;
-        throw std::runtime_error(error);
-    }
+    VK_CHECK(vkCreateBuffer(device_, &bufferInfo, nullptr, &vkBuffer), std::format("Buffer creation failed for size={}.", size));
     buffer = VulkanResource<VkBuffer, PFN_vkDestroyBuffer>(vkBuffer, device_, vkDestroyBuffer);
 
     VkMemoryRequirements memRequirements;
     vkGetBufferMemoryRequirements(device_, vkBuffer, &memRequirements);
 
-    VkPhysicalDeviceMemoryProperties memProperties;
-    vkGetPhysicalDeviceMemoryProperties(physicalDevice, &memProperties);
-    uint32_t memoryTypeIndex = 0;
-    for (uint32_t i = 0; i < memProperties.memoryTypeCount; ++i) {
-        if ((memRequirements.memoryTypeBits & (1 << i)) &&
-            (memProperties.memoryTypes[i].propertyFlags & properties) == properties) {
-            memoryTypeIndex = i;
-            break;
-        }
-    }
-
     VkMemoryAllocateInfo allocInfo{
         .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
         .pNext = nullptr,
         .allocationSize = memRequirements.size,
-        .memoryTypeIndex = memoryTypeIndex
+        .memoryTypeIndex = findMemoryType(physicalDevice, memRequirements.memoryTypeBits, properties)
     };
     VkDeviceMemory vkMemory;
-    result = vkAllocateMemory(device_, &allocInfo, nullptr, &vkMemory);
-    if (result != VK_SUCCESS) {
-        auto error = std::format("vkAllocateMemory failed (Error code: {})", result);
-        std::osyncstream(std::cout) << MAGENTA << "[ERROR] " << error << RESET << std::endl;
-        throw std::runtime_error(error);
-    }
+    VK_CHECK(vkAllocateMemory(device_, &allocInfo, nullptr, &vkMemory), "Memory allocation failed.");
     memory = VulkanResource<VkDeviceMemory, PFN_vkFreeMemory>(vkMemory, device_, vkFreeMemory);
 
-    result = vkBindBufferMemory(device_, vkBuffer, vkMemory, 0);
-    if (result != VK_SUCCESS) {
-        auto error = std::format("vkBindBufferMemory failed (Error code: {})", result);
-        std::osyncstream(std::cout) << MAGENTA << "[ERROR] " << error << RESET << std::endl;
-        throw std::runtime_error(error);
-    }
+    VK_CHECK(vkBindBufferMemory(device_, vkBuffer, vkMemory, 0), "Buffer memory binding failed.");
+    std::osyncstream(std::cout) << GREEN << "[INFO] Created buffer with size=" << size << RESET << std::endl;
 }
 
 void VulkanRTX::compactAccelerationStructures(VkPhysicalDevice physicalDevice, VkCommandPool commandPool, VkQueue queue) {
+    if (!physicalDevice || !commandPool || !queue) {
+        std::osyncstream(std::cerr) << MAGENTA << "[ERROR] Invalid compact params: null device, pool, or queue" << RESET << std::endl;
+        throw VulkanRTXException("Invalid compact params: null device, pool, or queue.");
+    }
+
     std::osyncstream(std::cout) << GREEN << "[INFO] Compacting acceleration structures" << RESET << std::endl;
 
     VkQueryPoolCreateInfo queryPoolInfo{
@@ -129,12 +67,7 @@ void VulkanRTX::compactAccelerationStructures(VkPhysicalDevice physicalDevice, V
         .pipelineStatistics = 0
     };
     VkQueryPool queryPool;
-    VkResult result = vkCreateQueryPool(device_, &queryPoolInfo, nullptr, &queryPool);
-    if (result != VK_SUCCESS) {
-        auto error = std::format("vkCreateQueryPool failed (Error code: {})", result);
-        std::osyncstream(std::cout) << MAGENTA << "[ERROR] " << error << RESET << std::endl;
-        throw std::runtime_error(error);
-    }
+    VK_CHECK(vkCreateQueryPool(device_, &queryPoolInfo, nullptr, &queryPool), "Query pool creation failed.");
 
     VkCommandBuffer commandBuffer = allocateTransientCommandBuffer(commandPool);
     VkCommandBufferBeginInfo beginInfo{
@@ -143,115 +76,93 @@ void VulkanRTX::compactAccelerationStructures(VkPhysicalDevice physicalDevice, V
         .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
         .pInheritanceInfo = nullptr
     };
-    result = vkBeginCommandBuffer(commandBuffer, &beginInfo);
-    if (result != VK_SUCCESS) {
-        auto error = std::format("vkBeginCommandBuffer failed (Error code: {})", result);
-        std::osyncstream(std::cout) << MAGENTA << "[ERROR] " << error << RESET << std::endl;
-        throw std::runtime_error(error);
-    }
+    VK_CHECK(vkBeginCommandBuffer(commandBuffer, &beginInfo), "Failed to begin command buffer.");
 
     std::vector<VkAccelerationStructureKHR> structures = { blas_.get(), tlas_.get() };
     vkCmdResetQueryPool(commandBuffer, queryPool, 0, 2);
     for (uint32_t i = 0; i < structures.size(); ++i) {
-        vkCmdWriteAccelerationStructuresPropertiesKHR(
-            commandBuffer, 1, &structures[i], VK_QUERY_TYPE_ACCELERATION_STRUCTURE_COMPACTED_SIZE_KHR, queryPool, i);
+        if (structures[i]) {
+            vkCmdWriteAccelerationStructuresPropertiesKHR(
+                commandBuffer, 1, &structures[i], VK_QUERY_TYPE_ACCELERATION_STRUCTURE_COMPACTED_SIZE_KHR, queryPool, i);
+        }
     }
 
-    result = vkEndCommandBuffer(commandBuffer);
-    if (result != VK_SUCCESS) {
-        auto error = std::format("vkEndCommandBuffer failed (Error code: {})", result);
-        std::osyncstream(std::cout) << MAGENTA << "[ERROR] " << error << RESET << std::endl;
-        throw std::runtime_error(error);
-    }
-
+    VK_CHECK(vkEndCommandBuffer(commandBuffer), "Failed to end command buffer.");
     submitAndWaitTransient(commandBuffer, queue, commandPool);
 
     VkDeviceSize compactedSizes[2];
-    result = vkGetQueryPoolResults(device_, queryPool, 0, 2, sizeof(compactedSizes), compactedSizes, sizeof(VkDeviceSize), VK_QUERY_RESULT_64_BIT);
-    if (result != VK_SUCCESS) {
-        auto error = std::format("vkGetQueryPoolResults failed (Error code: {})", result);
-        std::osyncstream(std::cout) << MAGENTA << "[ERROR] " << error << RESET << std::endl;
-        throw std::runtime_error(error);
-    }
+    VK_CHECK(vkGetQueryPoolResults(device_, queryPool, 0, 2, sizeof(compactedSizes), compactedSizes, sizeof(VkDeviceSize), VK_QUERY_RESULT_64_BIT),
+             "Failed to get query pool results.");
 
     for (uint32_t i = 0; i < structures.size(); ++i) {
-        VulkanResource<VkBuffer, PFN_vkDestroyBuffer> newBuffer;
-        VulkanResource<VkDeviceMemory, PFN_vkFreeMemory> newMemory;
-        createBuffer(physicalDevice, compactedSizes[i],
-                     VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
-                     VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, newBuffer, newMemory);
+        if (structures[i] && compactedSizes[i] > 0) {
+            VulkanResource<VkBuffer, PFN_vkDestroyBuffer> newBuffer;
+            VulkanResource<VkDeviceMemory, PFN_vkFreeMemory> newMemory;
+            createBuffer(physicalDevice, compactedSizes[i],
+                         VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+                         VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, newBuffer, newMemory);
 
-        VkAccelerationStructureCreateInfoKHR createInfo{
-            .sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR,
-            .pNext = nullptr,
-            .createFlags = 0,
-            .buffer = newBuffer.get(),
-            .offset = 0,
-            .size = compactedSizes[i],
-            .type = (i == 0) ? VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR : VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR,
-            .deviceAddress = 0
-        };
-        VkAccelerationStructureKHR newAS;
-        result = vkCreateAccelerationStructureKHR(device_, &createInfo, nullptr, &newAS);
-        if (result != VK_SUCCESS) {
-            auto error = std::format("vkCreateAccelerationStructureKHR failed (Error code: {})", result);
-            std::osyncstream(std::cout) << MAGENTA << "[ERROR] " << error << RESET << std::endl;
-            throw std::runtime_error(error);
-        }
+            VkAccelerationStructureCreateInfoKHR createInfo{
+                .sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR,
+                .pNext = nullptr,
+                .createFlags = 0,
+                .buffer = newBuffer.get(),
+                .offset = 0,
+                .size = compactedSizes[i],
+                .type = (i == 0) ? VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR : VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR,
+                .deviceAddress = 0
+            };
+            VkAccelerationStructureKHR newAS;
+            VK_CHECK(vkCreateAccelerationStructureKHR(device_, &createInfo, nullptr, &newAS), "Failed to create compacted acceleration structure.");
 
-        commandBuffer = allocateTransientCommandBuffer(commandPool);
-        beginInfo = {
-            .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
-            .pNext = nullptr,
-            .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
-            .pInheritanceInfo = nullptr
-        };
-        result = vkBeginCommandBuffer(commandBuffer, &beginInfo);
-        if (result != VK_SUCCESS) {
-            auto error = std::format("vkBeginCommandBuffer failed (Error code: {})", result);
-            std::osyncstream(std::cout) << MAGENTA << "[ERROR] " << error << RESET << std::endl;
-            throw std::runtime_error(error);
-        }
+            commandBuffer = allocateTransientCommandBuffer(commandPool);
+            VK_CHECK(vkBeginCommandBuffer(commandBuffer, &beginInfo), "Failed to begin command buffer for copy.");
 
-        VkCopyAccelerationStructureInfoKHR copyInfo{
-            .sType = VK_STRUCTURE_TYPE_COPY_ACCELERATION_STRUCTURE_INFO_KHR,
-            .pNext = nullptr,
-            .src = structures[i],
-            .dst = newAS,
-            .mode = VK_COPY_ACCELERATION_STRUCTURE_MODE_COMPACT_KHR
-        };
-        vkCmdCopyAccelerationStructureKHR(commandBuffer, &copyInfo);
+            VkCopyAccelerationStructureInfoKHR copyInfo{
+                .sType = VK_STRUCTURE_TYPE_COPY_ACCELERATION_STRUCTURE_INFO_KHR,
+                .pNext = nullptr,
+                .src = structures[i],
+                .dst = newAS,
+                .mode = VK_COPY_ACCELERATION_STRUCTURE_MODE_COMPACT_KHR
+            };
+            vkCmdCopyAccelerationStructureKHR(commandBuffer, &copyInfo);
 
-        result = vkEndCommandBuffer(commandBuffer);
-        if (result != VK_SUCCESS) {
-            auto error = std::format("vkEndCommandBuffer failed (Error code: {})", result);
-            std::osyncstream(std::cout) << MAGENTA << "[ERROR] " << error << RESET << std::endl;
-            throw std::runtime_error(error);
-        }
+            VK_CHECK(vkEndCommandBuffer(commandBuffer), "Failed to end command buffer for copy.");
+            submitAndWaitTransient(commandBuffer, queue, commandPool);
 
-        submitAndWaitTransient(commandBuffer, queue, commandPool);
-
-        if (i == 0) {
-            blasBuffer_ = std::move(newBuffer);
-            blasMemory_ = std::move(newMemory);
-            blas_ = VulkanResource<VkAccelerationStructureKHR, PFN_vkDestroyAccelerationStructureKHR>(newAS, device_, vkDestroyAccelerationStructureKHR);
-        } else {
-            tlasBuffer_ = std::move(newBuffer);
-            tlasMemory_ = std::move(newMemory);
-            tlas_ = VulkanResource<VkAccelerationStructureKHR, PFN_vkDestroyAccelerationStructureKHR>(newAS, device_, vkDestroyAccelerationStructureKHR);
+            if (i == 0) {
+                blasBuffer_ = std::move(newBuffer);
+                blasMemory_ = std::move(newMemory);
+                blas_ = VulkanResource<VkAccelerationStructureKHR, PFN_vkDestroyAccelerationStructureKHR>(newAS, device_, vkDestroyAccelerationStructureKHR);
+            } else {
+                tlasBuffer_ = std::move(newBuffer);
+                tlasMemory_ = std::move(newMemory);
+                tlas_ = VulkanResource<VkAccelerationStructureKHR, PFN_vkDestroyAccelerationStructureKHR>(newAS, device_, vkDestroyAccelerationStructureKHR);
+            }
         }
     }
 
     vkDestroyQueryPool(device_, queryPool, nullptr);
+    std::osyncstream(std::cout) << GREEN << "[INFO] Compacted acceleration structures" << RESET << std::endl;
 }
 
 void VulkanRTX::createBottomLevelAS(VkPhysicalDevice physicalDevice, VkCommandPool commandPool, VkQueue queue,
                                     const std::vector<std::tuple<VkBuffer, VkBuffer, uint32_t, uint32_t, uint64_t>>& geometries) {
+    if (geometries.empty()) {
+        std::osyncstream(std::cerr) << MAGENTA << "[ERROR] Invalid BLAS params: empty geometries" << RESET << std::endl;
+        throw VulkanRTXException("Invalid BLAS params: empty geometries.");
+    }
+
     std::osyncstream(std::cout) << GREEN << "[INFO] Creating bottom-level acceleration structure" << RESET << std::endl;
 
     std::vector<VkAccelerationStructureGeometryKHR> asGeometries;
-    std::vector<VkAccelerationStructureBuildRangeInfoKHR> buildRanges;
+    primitiveCounts_.clear();
+    primitiveCounts_.reserve(geometries.size());
     for (const auto& [vertexBuffer, indexBuffer, vertexCount, indexCount, stride] : geometries) {
+        if (!vertexBuffer || !indexBuffer || vertexCount == 0 || indexCount == 0 || stride == 0) {
+            std::osyncstream(std::cerr) << MAGENTA << "[ERROR] Invalid geometry: null buffer or zero count/stride" << RESET << std::endl;
+            throw VulkanRTXException("Invalid geometry: null buffer or zero count/stride.");
+        }
         VkAccelerationStructureGeometryKHR geometry{
             .sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR,
             .pNext = nullptr,
@@ -263,7 +174,7 @@ void VulkanRTX::createBottomLevelAS(VkPhysicalDevice physicalDevice, VkCommandPo
                     .vertexFormat = VK_FORMAT_R32G32B32_SFLOAT,
                     .vertexData = { .deviceAddress = getBufferDeviceAddress(vertexBuffer) },
                     .vertexStride = stride,
-                    .maxVertex = vertexCount,
+                    .maxVertex = vertexCount - 1,
                     .indexType = VK_INDEX_TYPE_UINT32,
                     .indexData = { .deviceAddress = getBufferDeviceAddress(indexBuffer) },
                     .transformData = { .deviceAddress = 0 }
@@ -272,7 +183,7 @@ void VulkanRTX::createBottomLevelAS(VkPhysicalDevice physicalDevice, VkCommandPo
             .flags = VK_GEOMETRY_OPAQUE_BIT_KHR
         };
         asGeometries.push_back(geometry);
-        buildRanges.push_back({
+        primitiveCounts_.push_back({
             .primitiveCount = indexCount / 3,
             .primitiveOffset = 0,
             .firstVertex = 0,
@@ -284,7 +195,7 @@ void VulkanRTX::createBottomLevelAS(VkPhysicalDevice physicalDevice, VkCommandPo
         .sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR,
         .pNext = nullptr,
         .type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR,
-        .flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_BUILD_BIT_KHR,
+        .flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR | VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_COMPACTION_BIT_KHR,
         .mode = VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR,
         .srcAccelerationStructure = VK_NULL_HANDLE,
         .dstAccelerationStructure = VK_NULL_HANDLE,
@@ -294,6 +205,10 @@ void VulkanRTX::createBottomLevelAS(VkPhysicalDevice physicalDevice, VkCommandPo
         .scratchData = { .deviceAddress = 0 }
     };
 
+    std::vector<uint32_t> primitiveCounts(asGeometries.size());
+    for (size_t i = 0; i < asGeometries.size(); ++i) {
+        primitiveCounts[i] = primitiveCounts_[i].primitiveCount;
+    }
     VkAccelerationStructureBuildSizesInfoKHR sizeInfo{
         .sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR,
         .pNext = nullptr,
@@ -301,10 +216,6 @@ void VulkanRTX::createBottomLevelAS(VkPhysicalDevice physicalDevice, VkCommandPo
         .updateScratchSize = 0,
         .buildScratchSize = 0
     };
-    std::vector<uint32_t> primitiveCounts(asGeometries.size());
-    for (size_t i = 0; i < asGeometries.size(); ++i) {
-        primitiveCounts[i] = buildRanges[i].primitiveCount;
-    }
     vkGetAccelerationStructureBuildSizesKHR(device_, VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR, &buildInfo,
                                            primitiveCounts.data(), &sizeInfo);
 
@@ -323,12 +234,7 @@ void VulkanRTX::createBottomLevelAS(VkPhysicalDevice physicalDevice, VkCommandPo
         .deviceAddress = 0
     };
     VkAccelerationStructureKHR blas;
-    VkResult result = vkCreateAccelerationStructureKHR(device_, &createInfo, nullptr, &blas);
-    if (result != VK_SUCCESS) {
-        auto error = std::format("vkCreateAccelerationStructureKHR failed (Error code: {})", result);
-        std::osyncstream(std::cout) << MAGENTA << "[ERROR] " << error << RESET << std::endl;
-        throw std::runtime_error(error);
-    }
+    VK_CHECK(vkCreateAccelerationStructureKHR(device_, &createInfo, nullptr, &blas), "Failed to create BLAS.");
     blas_ = VulkanResource<VkAccelerationStructureKHR, PFN_vkDestroyAccelerationStructureKHR>(blas, device_, vkDestroyAccelerationStructureKHR);
 
     VulkanResource<VkBuffer, PFN_vkDestroyBuffer> scratchBuffer;
@@ -347,39 +253,39 @@ void VulkanRTX::createBottomLevelAS(VkPhysicalDevice physicalDevice, VkCommandPo
         .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
         .pInheritanceInfo = nullptr
     };
-    result = vkBeginCommandBuffer(commandBuffer, &beginInfo);
-    if (result != VK_SUCCESS) {
-        auto error = std::format("vkBeginCommandBuffer failed (Error code: {})", result);
-        std::osyncstream(std::cout) << MAGENTA << "[ERROR] " << error << RESET << std::endl;
-        throw std::runtime_error(error);
-    }
+    VK_CHECK(vkBeginCommandBuffer(commandBuffer, &beginInfo), "Failed to begin command buffer.");
 
     std::vector<VkAccelerationStructureBuildRangeInfoKHR*> buildRangePtrs;
-    for (auto& range : buildRanges) {
+    for (auto& range : primitiveCounts_) {
         buildRangePtrs.push_back(&range);
     }
     vkCmdBuildAccelerationStructuresKHR(commandBuffer, 1, &buildInfo, buildRangePtrs.data());
 
-    result = vkEndCommandBuffer(commandBuffer);
-    if (result != VK_SUCCESS) {
-        auto error = std::format("vkEndCommandBuffer failed (Error code: {})", result);
-        std::osyncstream(std::cout) << MAGENTA << "[ERROR] " << error << RESET << std::endl;
-        throw std::runtime_error(error);
-    }
-
+    VK_CHECK(vkEndCommandBuffer(commandBuffer), "Failed to end command buffer.");
     submitAndWaitTransient(commandBuffer, queue, commandPool);
+    std::osyncstream(std::cout) << GREEN << "[INFO] Created BLAS with " << asGeometries.size() << " geometries" << RESET << std::endl;
 }
 
 void VulkanRTX::createTopLevelAS(VkPhysicalDevice physicalDevice, VkCommandPool commandPool, VkQueue queue,
                                  const std::vector<std::tuple<VkAccelerationStructureKHR, glm::mat4>>& instances) {
+    if (instances.empty()) {
+        std::osyncstream(std::cerr) << MAGENTA << "[ERROR] Invalid TLAS params: empty instances" << RESET << std::endl;
+        throw VulkanRTXException("Invalid TLAS params: empty instances.");
+    }
+
     std::osyncstream(std::cout) << GREEN << "[INFO] Creating top-level acceleration structure" << RESET << std::endl;
 
     std::vector<VkAccelerationStructureInstanceKHR> asInstances;
-    for (const auto& [blas, transform] : instances) {
+    for (size_t i = 0; i < instances.size(); ++i) {
+        const auto& [blas, transform] = instances[i];
+        if (!blas) {
+            std::osyncstream(std::cerr) << MAGENTA << "[ERROR] Null AS in instance at index " << i << RESET << std::endl;
+            throw VulkanRTXException(std::format("Null AS in instance at index {}.", i));
+        }
         VkTransformMatrixKHR transformMatrix;
-        for (int i = 0; i < 3; ++i) {
-            for (int j = 0; j < 4; ++j) {
-                transformMatrix.matrix[i][j] = transform[j][i]; // GLM is column-major, Vulkan expects row-major
+        for (int row = 0; row < 3; ++row) {
+            for (int col = 0; col < 4; ++col) {
+                transformMatrix.matrix[row][col] = transform[col][row]; // GLM is column-major, Vulkan expects row-major
             }
         }
         VkAccelerationStructureInstanceKHR instance{
@@ -395,13 +301,14 @@ void VulkanRTX::createTopLevelAS(VkPhysicalDevice physicalDevice, VkCommandPool 
 
     VulkanResource<VkBuffer, PFN_vkDestroyBuffer> instanceBuffer;
     VulkanResource<VkDeviceMemory, PFN_vkFreeMemory> instanceMemory;
-    createBuffer(physicalDevice, asInstances.size() * sizeof(VkAccelerationStructureInstanceKHR),
+    VkDeviceSize instanceSize = asInstances.size() * sizeof(VkAccelerationStructureInstanceKHR);
+    createBuffer(physicalDevice, instanceSize,
                  VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
                  VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, instanceBuffer, instanceMemory);
 
     void* mappedData;
-    vkMapMemory(device_, instanceMemory.get(), 0, asInstances.size() * sizeof(VkAccelerationStructureInstanceKHR), 0, &mappedData);
-    std::memcpy(mappedData, asInstances.data(), asInstances.size() * sizeof(VkAccelerationStructureInstanceKHR));
+    VK_CHECK(vkMapMemory(device_, instanceMemory.get(), 0, instanceSize, 0, &mappedData), "Instance buffer map failed.");
+    std::memcpy(mappedData, asInstances.data(), instanceSize);
     vkUnmapMemory(device_, instanceMemory.get());
 
     VkAccelerationStructureGeometryKHR geometry{
@@ -423,7 +330,7 @@ void VulkanRTX::createTopLevelAS(VkPhysicalDevice physicalDevice, VkCommandPool 
         .sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR,
         .pNext = nullptr,
         .type = VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR,
-        .flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_BUILD_BIT_KHR,
+        .flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR,
         .mode = VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR,
         .srcAccelerationStructure = VK_NULL_HANDLE,
         .dstAccelerationStructure = VK_NULL_HANDLE,
@@ -458,12 +365,7 @@ void VulkanRTX::createTopLevelAS(VkPhysicalDevice physicalDevice, VkCommandPool 
         .deviceAddress = 0
     };
     VkAccelerationStructureKHR tlas;
-    VkResult result = vkCreateAccelerationStructureKHR(device_, &createInfo, nullptr, &tlas);
-    if (result != VK_SUCCESS) {
-        auto error = std::format("vkCreateAccelerationStructureKHR failed (Error code: {})", result);
-        std::osyncstream(std::cout) << MAGENTA << "[ERROR] " << error << RESET << std::endl;
-        throw std::runtime_error(error);
-    }
+    VK_CHECK(vkCreateAccelerationStructureKHR(device_, &createInfo, nullptr, &tlas), "Failed to create TLAS.");
     tlas_ = VulkanResource<VkAccelerationStructureKHR, PFN_vkDestroyAccelerationStructureKHR>(tlas, device_, vkDestroyAccelerationStructureKHR);
 
     VulkanResource<VkBuffer, PFN_vkDestroyBuffer> scratchBuffer;
@@ -482,12 +384,7 @@ void VulkanRTX::createTopLevelAS(VkPhysicalDevice physicalDevice, VkCommandPool 
         .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
         .pInheritanceInfo = nullptr
     };
-    result = vkBeginCommandBuffer(commandBuffer, &beginInfo);
-    if (result != VK_SUCCESS) {
-        auto error = std::format("vkBeginCommandBuffer failed (Error code: {})", result);
-        std::osyncstream(std::cout) << MAGENTA << "[ERROR] " << error << RESET << std::endl;
-        throw std::runtime_error(error);
-    }
+    VK_CHECK(vkBeginCommandBuffer(commandBuffer, &beginInfo), "Failed to begin command buffer.");
 
     VkAccelerationStructureBuildRangeInfoKHR buildRange{
         .primitiveCount = primitiveCount,
@@ -498,35 +395,53 @@ void VulkanRTX::createTopLevelAS(VkPhysicalDevice physicalDevice, VkCommandPool 
     VkAccelerationStructureBuildRangeInfoKHR* buildRangePtr = &buildRange;
     vkCmdBuildAccelerationStructuresKHR(commandBuffer, 1, &buildInfo, &buildRangePtr);
 
-    result = vkEndCommandBuffer(commandBuffer);
-    if (result != VK_SUCCESS) {
-        auto error = std::format("vkEndCommandBuffer failed (Error code: {})", result);
-        std::osyncstream(std::cout) << MAGENTA << "[ERROR] " << error << RESET << std::endl;
-        throw std::runtime_error(error);
-    }
-
+    VK_CHECK(vkEndCommandBuffer(commandBuffer), "Failed to end command buffer.");
     submitAndWaitTransient(commandBuffer, queue, commandPool);
+    updateDescriptorSetForTLAS(tlas_.get());
+    std::osyncstream(std::cout) << GREEN << "[INFO] Created TLAS with " << asInstances.size() << " instances" << RESET << std::endl;
 }
 
 VkDeviceAddress VulkanRTX::getBufferDeviceAddress(VkBuffer buffer) const {
+    if (!buffer) {
+        std::osyncstream(std::cerr) << MAGENTA << "[ERROR] Invalid buffer device address" << RESET << std::endl;
+        throw VulkanRTXException("Invalid buffer device address.");
+    }
     VkBufferDeviceAddressInfo info{
         .sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO,
         .pNext = nullptr,
         .buffer = buffer
     };
-    return vkGetBufferDeviceAddress(device_, &info);
+    VkDeviceAddress address = vkGetBufferDeviceAddress(device_, &info);
+    if (address == 0) {
+        std::osyncstream(std::cerr) << MAGENTA << "[ERROR] Invalid buffer device address" << RESET << std::endl;
+        throw VulkanRTXException("Invalid buffer device address.");
+    }
+    return address;
 }
 
 VkDeviceAddress VulkanRTX::getAccelerationStructureDeviceAddress(VkAccelerationStructureKHR as) const {
+    if (!as) {
+        std::osyncstream(std::cerr) << MAGENTA << "[ERROR] Invalid AS device address" << RESET << std::endl;
+        throw VulkanRTXException("Invalid AS device address.");
+    }
     VkAccelerationStructureDeviceAddressInfoKHR info{
         .sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_DEVICE_ADDRESS_INFO_KHR,
         .pNext = nullptr,
         .accelerationStructure = as
     };
-    return vkGetAccelerationStructureDeviceAddressKHR(device_, &info);
+    VkDeviceAddress address = vkGetAccelerationStructureDeviceAddressKHR(device_, &info);
+    if (address == 0) {
+        std::osyncstream(std::cerr) << MAGENTA << "[ERROR] Invalid AS device address" << RESET << std::endl;
+        throw VulkanRTXException("Invalid AS device address.");
+    }
+    return address;
 }
 
 VkCommandBuffer VulkanRTX::allocateTransientCommandBuffer(VkCommandPool commandPool) {
+    if (!commandPool) {
+        std::osyncstream(std::cerr) << MAGENTA << "[ERROR] Invalid command pool" << RESET << std::endl;
+        throw VulkanRTXException("Invalid command pool.");
+    }
     VkCommandBufferAllocateInfo allocInfo{
         .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
         .pNext = nullptr,
@@ -535,16 +450,16 @@ VkCommandBuffer VulkanRTX::allocateTransientCommandBuffer(VkCommandPool commandP
         .commandBufferCount = 1
     };
     VkCommandBuffer commandBuffer;
-    VkResult result = vkAllocateCommandBuffers(device_, &allocInfo, &commandBuffer);
-    if (result != VK_SUCCESS) {
-        auto error = std::format("vkAllocateCommandBuffers failed (Error code: {})", result);
-        std::osyncstream(std::cout) << MAGENTA << "[ERROR] " << error << RESET << std::endl;
-        throw std::runtime_error(error);
-    }
+    VK_CHECK(vkAllocateCommandBuffers(device_, &allocInfo, &commandBuffer), "Transient command buffer allocation failed.");
+    std::osyncstream(std::cout) << GREEN << "[INFO] Allocated transient command buffer" << RESET << std::endl;
     return commandBuffer;
 }
 
 void VulkanRTX::submitAndWaitTransient(VkCommandBuffer commandBuffer, VkQueue queue, VkCommandPool commandPool) {
+    if (!commandBuffer || !queue || !commandPool) {
+        std::osyncstream(std::cerr) << MAGENTA << "[ERROR] Invalid submit params: null command buffer, queue, or pool" << RESET << std::endl;
+        throw VulkanRTXException("Invalid submit params: null command buffer, queue, or pool.");
+    }
     VkSubmitInfo submitInfo{
         .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
         .pNext = nullptr,
@@ -562,32 +477,21 @@ void VulkanRTX::submitAndWaitTransient(VkCommandBuffer commandBuffer, VkQueue qu
         .flags = 0
     };
     VkFence fence;
-    VkResult result = vkCreateFence(device_, &fenceInfo, nullptr, &fence);
-    if (result != VK_SUCCESS) {
-        auto error = std::format("vkCreateFence failed (Error code: {})", result);
-        std::osyncstream(std::cout) << MAGENTA << "[ERROR] " << error << RESET << std::endl;
-        throw std::runtime_error(error);
-    }
+    VK_CHECK(vkCreateFence(device_, &fenceInfo, nullptr, &fence), "Fence creation failed.");
 
-    result = vkQueueSubmit(queue, 1, &submitInfo, fence);
-    if (result != VK_SUCCESS) {
-        auto error = std::format("vkQueueSubmit failed (Error code: {})", result);
-        std::osyncstream(std::cout) << MAGENTA << "[ERROR] " << error << RESET << std::endl;
-        throw std::runtime_error(error);
-    }
-
-    result = vkWaitForFences(device_, 1, &fence, VK_TRUE, UINT64_MAX);
-    if (result != VK_SUCCESS) {
-        auto error = std::format("vkWaitForFences failed (Error code: {})", result);
-        std::osyncstream(std::cout) << MAGENTA << "[ERROR] " << error << RESET << std::endl;
-        throw std::runtime_error(error);
-    }
+    VK_CHECK(vkQueueSubmit(queue, 1, &submitInfo, fence), "Queue submit failed.");
+    VK_CHECK(vkWaitForFences(device_, 1, &fence, VK_TRUE, UINT64_MAX), "Fence wait failed.");
 
     vkDestroyFence(device_, fence, nullptr);
     vkFreeCommandBuffers(device_, commandPool, 1, &commandBuffer);
+    std::osyncstream(std::cout) << GREEN << "[INFO] Submitted and waited for transient command buffer" << RESET << std::endl;
 }
 
 void VulkanRTX::updateDescriptorSetForTLAS(VkAccelerationStructureKHR tlas) {
+    if (!tlas) {
+        std::osyncstream(std::cerr) << MAGENTA << "[ERROR] Null TLAS provided for descriptor update" << RESET << std::endl;
+        throw VulkanRTXException("Null TLAS provided for descriptor update.");
+    }
     std::osyncstream(std::cout) << GREEN << "[INFO] Updating descriptor set for TLAS" << RESET << std::endl;
 
     VkWriteDescriptorSetAccelerationStructureKHR asInfo{
@@ -601,7 +505,7 @@ void VulkanRTX::updateDescriptorSetForTLAS(VkAccelerationStructureKHR tlas) {
         .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
         .pNext = &asInfo,
         .dstSet = ds_.get(),
-        .dstBinding = 0,
+        .dstBinding = static_cast<uint32_t>(DescriptorBindings::TLAS),
         .dstArrayElement = 0,
         .descriptorCount = 1,
         .descriptorType = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR,
@@ -611,6 +515,7 @@ void VulkanRTX::updateDescriptorSetForTLAS(VkAccelerationStructureKHR tlas) {
     };
 
     vkUpdateDescriptorSets(device_, 1, &write, 0, nullptr);
+    std::osyncstream(std::cout) << GREEN << "[INFO] Updated descriptor set for TLAS" << RESET << std::endl;
 }
 
 } // namespace VulkanRTX
