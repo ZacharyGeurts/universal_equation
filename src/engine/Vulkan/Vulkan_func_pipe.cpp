@@ -11,33 +11,41 @@
 #include <format>
 #include <glm/glm.hpp>
 #include <syncstream>
-#include <iostream>
+#include <string>
 
-// ANSI color codes
-#define RESET "\033[0m"
-#define MAGENTA "\033[1;35m" // Bold magenta for errors
-#define CYAN "\033[1;36m"    // Bold cyan for debug
-#define YELLOW "\033[1;33m"  // Bold yellow for warnings
-#define GREEN "\033[1;32m"   // Bold green for info
-#define BOLD "\033[1m"
+// Helper function to convert VkResult to string for logging
+std::string vkResultToString(VkResult result) {
+    switch (result) {
+        case VK_SUCCESS: return "VK_SUCCESS";
+        case VK_ERROR_OUT_OF_HOST_MEMORY: return "VK_ERROR_OUT_OF_HOST_MEMORY";
+        case VK_ERROR_OUT_OF_DEVICE_MEMORY: return "VK_ERROR_OUT_OF_DEVICE_MEMORY";
+        case VK_ERROR_INITIALIZATION_FAILED: return "VK_ERROR_INITIALIZATION_FAILED";
+        case VK_ERROR_DEVICE_LOST: return "VK_ERROR_DEVICE_LOST";
+        case VK_ERROR_EXTENSION_NOT_PRESENT: return "VK_ERROR_EXTENSION_NOT_PRESENT";
+        case VK_ERROR_FEATURE_NOT_PRESENT: return "VK_ERROR_FEATURE_NOT_PRESENT";
+        case VK_ERROR_INCOMPATIBLE_DRIVER: return "VK_ERROR_INCOMPATIBLE_DRIVER";
+        case VK_ERROR_LAYER_NOT_PRESENT: return "VK_ERROR_LAYER_NOT_PRESENT";
+        default: return std::to_string(static_cast<int>(result));
+    }
+}
 
 namespace VulkanInitializer {
 
-VkShaderModule createShaderModule(VkDevice device, const std::string& filename) {
-    std::osyncstream(std::cout) << GREEN << "[INFO] Creating shader module from file: " << filename << RESET << std::endl;
+VkShaderModule createShaderModule(VkDevice device, const std::string& filename, const Logging::Logger& logger) {
+    logger.log(Logging::LogLevel::Info, "Creating shader module from file: {}", std::source_location::current(), filename);
 
     std::ifstream file(filename, std::ios::ate | std::ios::binary);
     if (!file.is_open()) {
-        std::osyncstream(std::cerr) << MAGENTA << "[ERROR] Failed to open shader file: " << filename << RESET << std::endl;
+        logger.log(Logging::LogLevel::Error, "Failed to open shader file: {}", std::source_location::current(), filename);
         throw std::runtime_error(std::format("Failed to open shader file: {}", filename));
     }
 
     size_t fileSize = static_cast<size_t>(file.tellg());
     if (fileSize == 0 || fileSize % 4 != 0) {
-        std::osyncstream(std::cerr) << MAGENTA << "[ERROR] Invalid shader file size (must be multiple of 4 bytes): " << filename << RESET << std::endl;
+        logger.log(Logging::LogLevel::Error, "Invalid shader file size (must be multiple of 4 bytes): {}", std::source_location::current(), filename);
         throw std::runtime_error(std::format("Invalid shader file size (must be multiple of 4 bytes): {}", filename));
     }
-    std::osyncstream(std::cout) << CYAN << "[DEBUG] Shader file size: " << fileSize << " bytes" << RESET << std::endl;
+    logger.log(Logging::LogLevel::Debug, "Shader file size: {} bytes", std::source_location::current(), fileSize);
 
     std::vector<char> buffer(fileSize);
     file.seekg(0);
@@ -46,6 +54,8 @@ VkShaderModule createShaderModule(VkDevice device, const std::string& filename) 
 
     VkShaderModuleCreateInfo createInfo{
         .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+        .pNext = nullptr,
+        .flags = 0,
         .codeSize = buffer.size(),
         .pCode = reinterpret_cast<const uint32_t*>(buffer.data())
     };
@@ -53,18 +63,19 @@ VkShaderModule createShaderModule(VkDevice device, const std::string& filename) 
     VkShaderModule shaderModule;
     VkResult result = vkCreateShaderModule(device, &createInfo, nullptr, &shaderModule);
     if (result != VK_SUCCESS) {
-        std::osyncstream(std::cerr) << MAGENTA << "[ERROR] Failed to create shader module from " << filename << ": " << result << RESET << std::endl;
-        throw std::runtime_error(std::format("Failed to create shader module from {}: {}", filename, result));
+        logger.log(Logging::LogLevel::Error, "Failed to create shader module from {}: {}", std::source_location::current(), filename, vkResultToString(result));
+        throw std::runtime_error(std::format("Failed to create shader module from {}: {}", filename, vkResultToString(result)));
     }
 
-    std::osyncstream(std::cout) << GREEN << "[INFO] Shader module created successfully for: " << filename << RESET << std::endl;
+    logger.log(Logging::LogLevel::Info, "Shader module created successfully for: {}", std::source_location::current(), filename);
     return shaderModule;
 }
 
-void createRenderPass(VkDevice device, VkRenderPass& renderPass, VkFormat format) {
-    std::osyncstream(std::cout) << GREEN << "[INFO] Creating render pass with format: " << format << RESET << std::endl;
+void createRenderPass(VkDevice device, VkRenderPass& renderPass, VkFormat format, const Logging::Logger& logger) {
+    logger.log(Logging::LogLevel::Info, "Creating render pass with format: {}", std::source_location::current(), format);
 
     VkAttachmentDescription colorAttachment{
+        .flags = 0,
         .format = format,
         .samples = VK_SAMPLE_COUNT_1_BIT,
         .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
@@ -81,9 +92,16 @@ void createRenderPass(VkDevice device, VkRenderPass& renderPass, VkFormat format
     };
 
     VkSubpassDescription subpass{
+        .flags = 0,
         .pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS,
+        .inputAttachmentCount = 0,
+        .pInputAttachments = nullptr,
         .colorAttachmentCount = 1,
-        .pColorAttachments = &colorAttachmentRef
+        .pColorAttachments = &colorAttachmentRef,
+        .pResolveAttachments = nullptr,
+        .pDepthStencilAttachment = nullptr,
+        .preserveAttachmentCount = 0,
+        .pPreserveAttachments = nullptr
     };
 
     VkSubpassDependency dependency{
@@ -91,11 +109,15 @@ void createRenderPass(VkDevice device, VkRenderPass& renderPass, VkFormat format
         .dstSubpass = 0,
         .srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
         .dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-        .dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT
+        .srcAccessMask = 0,
+        .dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+        .dependencyFlags = 0
     };
 
     VkRenderPassCreateInfo renderPassInfo{
         .sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
+        .pNext = nullptr,
+        .flags = 0,
         .attachmentCount = 1,
         .pAttachments = &colorAttachment,
         .subpassCount = 1,
@@ -106,41 +128,45 @@ void createRenderPass(VkDevice device, VkRenderPass& renderPass, VkFormat format
 
     VkResult result = vkCreateRenderPass(device, &renderPassInfo, nullptr, &renderPass);
     if (result != VK_SUCCESS) {
-        std::osyncstream(std::cerr) << MAGENTA << "[ERROR] Failed to create render pass: " << result << RESET << std::endl;
-        throw std::runtime_error(std::format("Failed to create render pass: {}", result));
+        logger.log(Logging::LogLevel::Error, "Failed to create render pass: {}", std::source_location::current(), vkResultToString(result));
+        throw std::runtime_error(std::format("Failed to create render pass: {}", vkResultToString(result)));
     }
 
-    std::osyncstream(std::cout) << GREEN << "[INFO] Render pass created successfully" << RESET << std::endl;
+    logger.log(Logging::LogLevel::Info, "Render pass created successfully", std::source_location::current());
 }
 
-void createDescriptorSetLayout(VkDevice device, VkDescriptorSetLayout& descriptorSetLayout) {
-    std::osyncstream(std::cout) << GREEN << "[INFO] Creating descriptor set layout for sampler" << RESET << std::endl;
+void createDescriptorSetLayout(VkDevice device, VkDescriptorSetLayout& descriptorSetLayout, const Logging::Logger& logger) {
+    logger.log(Logging::LogLevel::Info, "Creating descriptor set layout for sampler", std::source_location::current());
 
     VkDescriptorSetLayoutBinding samplerBinding{
         .binding = 0,
         .descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER,
         .descriptorCount = 1,
-        .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT
+        .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
+        .pImmutableSamplers = nullptr
     };
 
     VkDescriptorSetLayoutCreateInfo layoutInfo{
         .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+        .pNext = nullptr,
+        .flags = 0,
         .bindingCount = 1,
         .pBindings = &samplerBinding
     };
 
     VkResult result = vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &descriptorSetLayout);
     if (result != VK_SUCCESS) {
-        std::osyncstream(std::cerr) << MAGENTA << "[ERROR] Failed to create descriptor set layout: " << result << RESET << std::endl;
-        throw std::runtime_error(std::format("Failed to create descriptor set layout: {}", result));
+        logger.log(Logging::LogLevel::Error, "Failed to create descriptor set layout: {}", std::source_location::current(), vkResultToString(result));
+        throw std::runtime_error(std::format("Failed to create descriptor set layout: {}", vkResultToString(result)));
     }
 
-    std::osyncstream(std::cout) << GREEN << "[INFO] Descriptor set layout created successfully" << RESET << std::endl;
+    logger.log(Logging::LogLevel::Info, "Descriptor set layout created successfully", std::source_location::current());
 }
 
 void createDescriptorPoolAndSet(VkDevice device, VkDescriptorSetLayout descriptorSetLayout,
-                               VkDescriptorPool& descriptorPool, VkDescriptorSet& descriptorSet, VkSampler sampler) {
-    std::osyncstream(std::cout) << GREEN << "[INFO] Creating descriptor pool and set for sampler" << RESET << std::endl;
+                               VkDescriptorPool& descriptorPool, VkDescriptorSet& descriptorSet, VkSampler sampler,
+                               const Logging::Logger& logger) {
+    logger.log(Logging::LogLevel::Info, "Creating descriptor pool and set for sampler", std::source_location::current());
 
     VkDescriptorPoolSize poolSize{
         .type = VK_DESCRIPTOR_TYPE_SAMPLER,
@@ -149,6 +175,7 @@ void createDescriptorPoolAndSet(VkDevice device, VkDescriptorSetLayout descripto
 
     VkDescriptorPoolCreateInfo poolInfo{
         .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
+        .pNext = nullptr,
         .flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT,
         .maxSets = 1,
         .poolSizeCount = 1,
@@ -157,13 +184,14 @@ void createDescriptorPoolAndSet(VkDevice device, VkDescriptorSetLayout descripto
 
     VkResult result = vkCreateDescriptorPool(device, &poolInfo, nullptr, &descriptorPool);
     if (result != VK_SUCCESS) {
-        std::osyncstream(std::cerr) << MAGENTA << "[ERROR] Failed to create descriptor pool: " << result << RESET << std::endl;
-        throw std::runtime_error(std::format("Failed to create descriptor pool: {}", result));
+        logger.log(Logging::LogLevel::Error, "Failed to create descriptor pool: {}", std::source_location::current(), vkResultToString(result));
+        throw std::runtime_error(std::format("Failed to create descriptor pool: {}", vkResultToString(result)));
     }
-    std::osyncstream(std::cout) << CYAN << "[DEBUG] Created descriptor pool" << RESET << std::endl;
+    logger.log(Logging::LogLevel::Debug, "Created descriptor pool", std::source_location::current());
 
     VkDescriptorSetAllocateInfo allocInfo{
         .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+        .pNext = nullptr,
         .descriptorPool = descriptorPool,
         .descriptorSetCount = 1,
         .pSetLayouts = &descriptorSetLayout
@@ -171,10 +199,10 @@ void createDescriptorPoolAndSet(VkDevice device, VkDescriptorSetLayout descripto
 
     result = vkAllocateDescriptorSets(device, &allocInfo, &descriptorSet);
     if (result != VK_SUCCESS) {
-        std::osyncstream(std::cerr) << MAGENTA << "[ERROR] Failed to allocate descriptor set: " << result << RESET << std::endl;
-        throw std::runtime_error(std::format("Failed to allocate descriptor set: {}", result));
+        logger.log(Logging::LogLevel::Error, "Failed to allocate descriptor set: {}", std::source_location::current(), vkResultToString(result));
+        throw std::runtime_error(std::format("Failed to allocate descriptor set: {}", vkResultToString(result)));
     }
-    std::osyncstream(std::cout) << CYAN << "[DEBUG] Allocated descriptor set" << RESET << std::endl;
+    logger.log(Logging::LogLevel::Debug, "Allocated descriptor set", std::source_location::current());
 
     VkDescriptorImageInfo imageInfo{
         .sampler = sampler,
@@ -184,33 +212,39 @@ void createDescriptorPoolAndSet(VkDevice device, VkDescriptorSetLayout descripto
 
     VkWriteDescriptorSet descriptorWrite{
         .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+        .pNext = nullptr,
         .dstSet = descriptorSet,
         .dstBinding = 0,
         .dstArrayElement = 0,
         .descriptorCount = 1,
         .descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER,
-        .pImageInfo = &imageInfo
+        .pImageInfo = &imageInfo,
+        .pBufferInfo = nullptr,
+        .pTexelBufferView = nullptr
     };
 
     vkUpdateDescriptorSets(device, 1, &descriptorWrite, 0, nullptr);
-    std::osyncstream(std::cout) << GREEN << "[INFO] Descriptor pool and set created successfully" << RESET << std::endl;
+    logger.log(Logging::LogLevel::Info, "Descriptor pool and set created successfully", std::source_location::current());
 }
 
-void createSampler(VkDevice device, VkPhysicalDevice physicalDevice, VkSampler& sampler) {
-    std::osyncstream(std::cout) << GREEN << "[INFO] Creating sampler" << RESET << std::endl;
+void createSampler(VkDevice device, VkPhysicalDevice physicalDevice, VkSampler& sampler, const Logging::Logger& logger) {
+    logger.log(Logging::LogLevel::Info, "Creating sampler", std::source_location::current());
 
     VkPhysicalDeviceProperties properties;
     vkGetPhysicalDeviceProperties(physicalDevice, &properties);
-    std::osyncstream(std::cout) << CYAN << "[DEBUG] Max sampler anisotropy: " << properties.limits.maxSamplerAnisotropy << RESET << std::endl;
+    logger.log(Logging::LogLevel::Debug, "Max sampler anisotropy: {}", std::source_location::current(), properties.limits.maxSamplerAnisotropy);
 
     VkSamplerCreateInfo samplerInfo{
         .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+        .pNext = nullptr,
+        .flags = 0,
         .magFilter = VK_FILTER_LINEAR,
         .minFilter = VK_FILTER_LINEAR,
         .mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR,
         .addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT,
         .addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT,
         .addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+        .mipLodBias = 0.0f,
         .anisotropyEnable = VK_TRUE,
         .maxAnisotropy = properties.limits.maxSamplerAnisotropy,
         .compareEnable = VK_FALSE,
@@ -223,34 +257,41 @@ void createSampler(VkDevice device, VkPhysicalDevice physicalDevice, VkSampler& 
 
     VkResult result = vkCreateSampler(device, &samplerInfo, nullptr, &sampler);
     if (result != VK_SUCCESS) {
-        std::osyncstream(std::cerr) << MAGENTA << "[ERROR] Failed to create sampler: " << result << RESET << std::endl;
-        throw std::runtime_error(std::format("Failed to create sampler: {}", result));
+        logger.log(Logging::LogLevel::Error, "Failed to create sampler: {}", std::source_location::current(), vkResultToString(result));
+        throw std::runtime_error(std::format("Failed to create sampler: {}", vkResultToString(result)));
     }
 
-    std::osyncstream(std::cout) << GREEN << "[INFO] Sampler created successfully" << RESET << std::endl;
+    logger.log(Logging::LogLevel::Info, "Sampler created successfully", std::source_location::current());
 }
 
 void createGraphicsPipeline(VkDevice device, VkRenderPass renderPass, VkPipeline& pipeline,
                            VkPipelineLayout& pipelineLayout, VkDescriptorSetLayout& descriptorSetLayout,
-                           int width, int height, VkShaderModule& vertShaderModule, VkShaderModule& fragShaderModule) {
-    std::osyncstream(std::cout) << GREEN << "[INFO] Creating graphics pipeline with width=" << width << ", height=" << height << RESET << std::endl;
+                           int width, int height, VkShaderModule& vertShaderModule, VkShaderModule& fragShaderModule,
+                           const Logging::Logger& logger) {
+    logger.log(Logging::LogLevel::Info, "Creating graphics pipeline with width={}, height={}", std::source_location::current(), width, height);
 
     VkPipelineShaderStageCreateInfo vertShaderStageInfo{
         .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+        .pNext = nullptr,
+        .flags = 0,
         .stage = VK_SHADER_STAGE_VERTEX_BIT,
         .module = vertShaderModule,
-        .pName = "main"
+        .pName = "main",
+        .pSpecializationInfo = nullptr
     };
 
     VkPipelineShaderStageCreateInfo fragShaderStageInfo{
         .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+        .pNext = nullptr,
+        .flags = 0,
         .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
         .module = fragShaderModule,
-        .pName = "main"
+        .pName = "main",
+        .pSpecializationInfo = nullptr
     };
 
     VkPipelineShaderStageCreateInfo shaderStages[] = {vertShaderStageInfo, fragShaderStageInfo};
-    std::osyncstream(std::cout) << CYAN << "[DEBUG] Configured vertex and fragment shader stages" << RESET << std::endl;
+    logger.log(Logging::LogLevel::Debug, "Configured vertex and fragment shader stages", std::source_location::current());
 
     VkVertexInputBindingDescription bindingDescription{
         .binding = 0,
@@ -267,15 +308,19 @@ void createGraphicsPipeline(VkDevice device, VkRenderPass renderPass, VkPipeline
 
     VkPipelineVertexInputStateCreateInfo vertexInputInfo{
         .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
+        .pNext = nullptr,
+        .flags = 0,
         .vertexBindingDescriptionCount = 1,
         .pVertexBindingDescriptions = &bindingDescription,
         .vertexAttributeDescriptionCount = 1,
         .pVertexAttributeDescriptions = &attributeDescription
     };
-    std::osyncstream(std::cout) << CYAN << "[DEBUG] Configured vertex input for glm::vec3 vertices" << RESET << std::endl;
+    logger.log(Logging::LogLevel::Debug, "Configured vertex input for glm::vec3 vertices", std::source_location::current());
 
     VkPipelineInputAssemblyStateCreateInfo inputAssembly{
         .sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
+        .pNext = nullptr,
+        .flags = 0,
         .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
         .primitiveRestartEnable = VK_FALSE
     };
@@ -296,6 +341,8 @@ void createGraphicsPipeline(VkDevice device, VkRenderPass renderPass, VkPipeline
 
     VkPipelineViewportStateCreateInfo viewportState{
         .sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
+        .pNext = nullptr,
+        .flags = 0,
         .viewportCount = 1,
         .pViewports = &viewport,
         .scissorCount = 1,
@@ -304,31 +351,45 @@ void createGraphicsPipeline(VkDevice device, VkRenderPass renderPass, VkPipeline
 
     VkPipelineRasterizationStateCreateInfo rasterizer{
         .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
+        .pNext = nullptr,
+        .flags = 0,
         .depthClampEnable = VK_FALSE,
         .rasterizerDiscardEnable = VK_FALSE,
         .polygonMode = VK_POLYGON_MODE_FILL,
         .cullMode = VK_CULL_MODE_BACK_BIT,
         .frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE,
         .depthBiasEnable = VK_FALSE,
+        .depthBiasConstantFactor = 0.0f,
+        .depthBiasClamp = 0.0f,
+        .depthBiasSlopeFactor = 0.0f,
         .lineWidth = 1.0f
     };
 
     VkPipelineMultisampleStateCreateInfo multisampling{
         .sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
+        .pNext = nullptr,
+        .flags = 0,
         .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT,
         .sampleShadingEnable = VK_FALSE,
         .minSampleShading = 1.0f,
+        .pSampleMask = nullptr,
         .alphaToCoverageEnable = VK_FALSE,
         .alphaToOneEnable = VK_FALSE
     };
 
     VkPipelineDepthStencilStateCreateInfo depthStencil{
         .sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
+        .pNext = nullptr,
+        .flags = 0,
         .depthTestEnable = VK_FALSE,
         .depthWriteEnable = VK_FALSE,
         .depthCompareOp = VK_COMPARE_OP_LESS,
         .depthBoundsTestEnable = VK_FALSE,
-        .stencilTestEnable = VK_FALSE
+        .stencilTestEnable = VK_FALSE,
+        .front = {},
+        .back = {},
+        .minDepthBounds = 0.0f,
+        .maxDepthBounds = 1.0f
     };
 
     VkPipelineColorBlendAttachmentState colorBlendAttachment{
@@ -344,10 +405,13 @@ void createGraphicsPipeline(VkDevice device, VkRenderPass renderPass, VkPipeline
 
     VkPipelineColorBlendStateCreateInfo colorBlending{
         .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
+        .pNext = nullptr,
+        .flags = 0,
         .logicOpEnable = VK_FALSE,
         .logicOp = VK_LOGIC_OP_COPY,
         .attachmentCount = 1,
-        .pAttachments = &colorBlendAttachment
+        .pAttachments = &colorBlendAttachment,
+        .blendConstants = {0.0f, 0.0f, 0.0f, 0.0f}
     };
 
     VkPushConstantRange pushConstantRange{
@@ -355,10 +419,12 @@ void createGraphicsPipeline(VkDevice device, VkRenderPass renderPass, VkPipeline
         .offset = 0,
         .size = sizeof(PushConstants)
     };
-    std::osyncstream(std::cout) << CYAN << "[DEBUG] Configured pipeline states: vertex input, rasterization, multisampling, color blending" << RESET << std::endl;
+    logger.log(Logging::LogLevel::Debug, "Configured pipeline states: vertex input, rasterization, multisampling, color blending", std::source_location::current());
 
     VkPipelineLayoutCreateInfo pipelineLayoutInfo{
         .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+        .pNext = nullptr,
+        .flags = 0,
         .setLayoutCount = 1,
         .pSetLayouts = &descriptorSetLayout,
         .pushConstantRangeCount = 1,
@@ -367,22 +433,26 @@ void createGraphicsPipeline(VkDevice device, VkRenderPass renderPass, VkPipeline
 
     VkResult result = vkCreatePipelineLayout(device, &pipelineLayoutInfo, nullptr, &pipelineLayout);
     if (result != VK_SUCCESS) {
-        std::osyncstream(std::cerr) << MAGENTA << "[ERROR] Failed to create pipeline layout: " << result << RESET << std::endl;
-        throw std::runtime_error(std::format("Failed to create pipeline layout: {}", result));
+        logger.log(Logging::LogLevel::Error, "Failed to create pipeline layout: {}", std::source_location::current(), vkResultToString(result));
+        throw std::runtime_error(std::format("Failed to create pipeline layout: {}", vkResultToString(result)));
     }
-    std::osyncstream(std::cout) << CYAN << "[DEBUG] Created pipeline layout" << RESET << std::endl;
+    logger.log(Logging::LogLevel::Debug, "Created pipeline layout", std::source_location::current());
 
     VkGraphicsPipelineCreateInfo pipelineInfo{
         .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
+        .pNext = nullptr,
+        .flags = 0,
         .stageCount = 2,
         .pStages = shaderStages,
         .pVertexInputState = &vertexInputInfo,
         .pInputAssemblyState = &inputAssembly,
+        .pTessellationState = nullptr,
         .pViewportState = &viewportState,
         .pRasterizationState = &rasterizer,
         .pMultisampleState = &multisampling,
         .pDepthStencilState = &depthStencil,
         .pColorBlendState = &colorBlending,
+        .pDynamicState = nullptr,
         .layout = pipelineLayout,
         .renderPass = renderPass,
         .subpass = 0,
@@ -392,11 +462,11 @@ void createGraphicsPipeline(VkDevice device, VkRenderPass renderPass, VkPipeline
 
     result = vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &pipeline);
     if (result != VK_SUCCESS) {
-        std::osyncstream(std::cerr) << MAGENTA << "[ERROR] Failed to create graphics pipeline: " << result << RESET << std::endl;
-        throw std::runtime_error(std::format("Failed to create graphics pipeline: {}", result));
+        logger.log(Logging::LogLevel::Error, "Failed to create graphics pipeline: {}", std::source_location::current(), vkResultToString(result));
+        throw std::runtime_error(std::format("Failed to create graphics pipeline: {}", vkResultToString(result)));
     }
 
-    std::osyncstream(std::cout) << GREEN << "[INFO] Graphics pipeline created successfully" << RESET << std::endl;
+    logger.log(Logging::LogLevel::Info, "Graphics pipeline created successfully", std::source_location::current());
 }
 
 } // namespace VulkanInitializer

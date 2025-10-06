@@ -6,7 +6,8 @@
 #include <vector>
 #include <string>
 #include <glm/glm.hpp>
-#include "engine/core.hpp" // For PushConstants and Logging::Logger
+#include "engine/Vulkan/logging.hpp" // For Logging::Logger
+#include "engine/core.hpp"   // For PushConstants
 
 namespace VulkanInitializer {
 

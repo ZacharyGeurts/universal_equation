@@ -9,24 +9,29 @@
 
 #include <vulkan/vulkan.h>
 #include <vector>
+#include "engine/core.hpp" // For Logging::Logger
 
 namespace VulkanInitializer {
 
-VkSurfaceFormatKHR selectSurfaceFormat(VkPhysicalDevice physicalDevice, VkSurfaceKHR surface);
+VkSurfaceFormatKHR selectSurfaceFormat(VkPhysicalDevice physicalDevice, VkSurfaceKHR surface, const Logging::Logger& logger);
 
 void createSwapchain(VkPhysicalDevice physicalDevice, VkDevice device, VkSurfaceKHR surface, VkSwapchainKHR& swapchain,
                      std::vector<VkImage>& swapchainImages, std::vector<VkImageView>& swapchainImageViews,
-                     VkFormat& swapchainFormat, uint32_t graphicsFamily, uint32_t presentFamily, int width, int height);
+                     VkFormat& swapchainFormat, uint32_t graphicsFamily, uint32_t presentFamily, int width, int height,
+                     const Logging::Logger& logger);
 
 void createFramebuffers(VkDevice device, VkRenderPass renderPass, std::vector<VkImageView>& swapchainImageViews,
-                        std::vector<VkFramebuffer>& swapchainFramebuffers, int width, int height);
+                        std::vector<VkFramebuffer>& swapchainFramebuffers, int width, int height,
+                        const Logging::Logger& logger);
 
 class SwapchainManager {
 public:
     SwapchainManager(VkPhysicalDevice physicalDevice, VkDevice device, VkSurfaceKHR surface,
-                     uint32_t graphicsFamily, uint32_t presentFamily, int width, int height)
+                     uint32_t graphicsFamily, uint32_t presentFamily, int width, int height,
+                     const Logging::Logger& logger)
         : physicalDevice_(physicalDevice), device_(device), surface_(surface),
-          graphicsFamily_(graphicsFamily), presentFamily_(presentFamily), width_(width), height_(height) {}
+          graphicsFamily_(graphicsFamily), presentFamily_(presentFamily), width_(width), height_(height),
+          logger_(logger) {}
 
     void setSwapchain(VkSwapchainKHR swapchain) { swapchain_ = swapchain; }
     VkSwapchainKHR getSwapchain() const { return swapchain_; }
@@ -44,17 +49,20 @@ public:
     const std::vector<VkFramebuffer>& getFramebuffers() const { return swapchainFramebuffers_; }
 
     void initializeSwapchain() {
-        VkSurfaceFormatKHR format = selectSurfaceFormat(physicalDevice_, surface_);
+        logger_.log(Logging::LogLevel::Info, "Initializing swapchain");
+        VkSurfaceFormatKHR format = selectSurfaceFormat(physicalDevice_, surface_, logger_);
         swapchainFormat_ = format.format;
         createSwapchain(physicalDevice_, device_, surface_, swapchain_, swapchainImages_, swapchainImageViews_,
-                        swapchainFormat_, graphicsFamily_, presentFamily_, width_, height_);
+                        swapchainFormat_, graphicsFamily_, presentFamily_, width_, height_, logger_);
     }
 
     void initializeFramebuffers(VkRenderPass renderPass) {
-        createFramebuffers(device_, renderPass, swapchainImageViews_, swapchainFramebuffers_, width_, height_);
+        logger_.log(Logging::LogLevel::Info, "Initializing framebuffers");
+        createFramebuffers(device_, renderPass, swapchainImageViews_, swapchainFramebuffers_, width_, height_, logger_);
     }
 
     void cleanup() {
+        logger_.log(Logging::LogLevel::Info, "Cleaning up swapchain resources");
         for (auto& framebuffer : swapchainFramebuffers_) {
             if (framebuffer != VK_NULL_HANDLE) {
                 vkDestroyFramebuffer(device_, framebuffer, nullptr);
@@ -73,6 +81,7 @@ public:
             vkDestroySwapchainKHR(device_, swapchain_, nullptr);
             swapchain_ = VK_NULL_HANDLE;
         }
+        logger_.log(Logging::LogLevel::Debug, "Swapchain cleanup completed");
     }
 
 private:
@@ -88,6 +97,7 @@ private:
     std::vector<VkImageView> swapchainImageViews_;
     VkFormat swapchainFormat_ = VK_FORMAT_UNDEFINED;
     std::vector<VkFramebuffer> swapchainFramebuffers_;
+    const Logging::Logger& logger_;
 };
 
 } // namespace VulkanInitializer

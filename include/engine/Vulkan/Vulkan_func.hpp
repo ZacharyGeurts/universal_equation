@@ -1,52 +1,20 @@
-// AMOURANTH RTX Engine, October 2025 - Vulkan utility functions for device setup, buffer management, and cleanup.
-// Supports Windows/Linux (X11/Wayland); no mutexes; voxel geometry support.
-// Dependencies: Vulkan 1.3+, GLM, C++20 standard library.
-// Usage: Used by VulkanRenderer for initialization and cleanup; supports vertex, index, quad, and voxel buffers.
-// Zachary Geurts 2025
-
 #ifndef VULKAN_FUNC_HPP
 #define VULKAN_FUNC_HPP
+// AMOURANTH RTX Engine, October 2025 - Vulkan core utilities for initialization and buffer management.
+// Supports Windows/Linux (X11/Wayland); no mutexes; compatible with voxel geometry rendering.
+// Dependencies: Vulkan 1.3+, GLM, C++20 standard library.
+// Usage: Core Vulkan initialization for VulkanRenderer; integrates with Vulkan_func_pipe.hpp and Vulkan_func_swapchain.hpp.
+// Zachary Geurts 2025
 
 #include <vulkan/vulkan.h>
 #include <vector>
-#include <string_view>
 #include <span>
+#include <string_view>
 #include <optional>
-#include <format>
-#include <syncstream>
-#include <source_location>
-#include <array> // Added for std::array
-#include "engine/core.hpp"
-
-// ANSI color codes for consistent logging
-#define RESET "\033[0m"
-#define MAGENTA "\033[1;35m" // Bold magenta for errors
-#define CYAN "\033[1;36m"    // Bold cyan for debug
-#define YELLOW "\033[1;33m"  // Bold yellow for warnings
-#define GREEN "\033[1;32m"   // Bold green for info
-
-namespace Logging {
-// Log levels for different types of messages
-enum class LogLevel { Info, Warning, Error, Debug };
-
-class Logger {
-public:
-    void log(LogLevel level, std::string_view message, 
-             std::source_location loc = std::source_location::current()) const {
-        std::string_view color;
-        std::string_view levelStr;
-        switch (level) {
-            case LogLevel::Info:   color = GREEN;   levelStr = "[INFO]";   break;
-            case LogLevel::Warning: color = YELLOW;  levelStr = "[WARNING]"; break;
-            case LogLevel::Error:   color = MAGENTA; levelStr = "[ERROR]";  break;
-            case LogLevel::Debug:   color = CYAN;    levelStr = "[DEBUG]";  break;
-        }
-        std::osyncstream(std::cout) << color << levelStr << " [" << loc.file_name() << ":" << loc.line() << "] " 
-                                    << message << RESET << std::endl;
-    }
-};
-
-} // namespace Logging
+#include <array>
+#include <glm/glm.hpp>
+#include "engine/Vulkan/logging.hpp" // For Logging::Logger
+#include "engine/core.hpp"   // For PushConstants
 
 namespace VulkanInitializer {
 
@@ -54,13 +22,13 @@ struct QueueFamilyIndices {
     std::optional<uint32_t> graphicsFamily;
     std::optional<uint32_t> presentFamily;
     
-    [[nodiscard]] constexpr bool isComplete() const noexcept { // Changed consteval to constexpr
+    [[nodiscard]] constexpr bool isComplete() const noexcept {
         return graphicsFamily.has_value() && presentFamily.has_value();
     }
 };
 
 struct DeviceRequirements {
-    static constexpr std::array<const char*, 6> extensions = { // Changed to std::array
+    static constexpr std::array<const char*, 6> extensions = {
         VK_KHR_SWAPCHAIN_EXTENSION_NAME,
         VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME,
         VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,
@@ -69,7 +37,7 @@ struct DeviceRequirements {
         VK_KHR_MAINTENANCE_4_EXTENSION_NAME
     };
 
-    VkPhysicalDeviceRayTracingPipelineFeaturesKHR rayTracingFeatures {
+    VkPhysicalDeviceRayTracingPipelineFeaturesKHR rayTracingFeatures{
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_FEATURES_KHR,
         .pNext = nullptr,
         .rayTracingPipeline = VK_TRUE,
@@ -79,7 +47,7 @@ struct DeviceRequirements {
         .rayTraversalPrimitiveCulling = VK_FALSE
     };
 
-    VkPhysicalDeviceAccelerationStructureFeaturesKHR accelerationStructureFeatures {
+    VkPhysicalDeviceAccelerationStructureFeaturesKHR accelerationStructureFeatures{
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR,
         .pNext = nullptr,
         .accelerationStructure = VK_TRUE,
@@ -89,7 +57,7 @@ struct DeviceRequirements {
         .descriptorBindingAccelerationStructureUpdateAfterBind = VK_FALSE
     };
 
-    VkPhysicalDeviceBufferDeviceAddressFeatures bufferDeviceAddressFeatures {
+    VkPhysicalDeviceBufferDeviceAddressFeatures bufferDeviceAddressFeatures{
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_BUFFER_DEVICE_ADDRESS_FEATURES,
         .pNext = nullptr,
         .bufferDeviceAddress = VK_TRUE,
@@ -97,7 +65,7 @@ struct DeviceRequirements {
         .bufferDeviceAddressMultiDevice = VK_FALSE
     };
 
-    VkPhysicalDeviceMaintenance4Features maintenance4Features {
+    VkPhysicalDeviceMaintenance4Features maintenance4Features{
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAINTENANCE_4_FEATURES,
         .pNext = nullptr,
         .maintenance4 = VK_TRUE
