@@ -3,7 +3,7 @@ AMOURANTH RTX Engine
 
 Version: September 2025
 Author: Zachary Geurts
-License: Commercial use requires license.
+License: CC BY-NC 4.0 Commercial use requires license.
 
 Overview
 --------
