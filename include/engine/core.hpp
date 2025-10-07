@@ -1,14 +1,14 @@
 // AMOURANTH RTX Engine, October 2025 - Core simulation logic.
 // Manages the simulation state, rendering modes, and DimensionalNavigator.
-// Dependencies: Vulkan 1.3+, GLM, C++20 standard library.
+// Dependencies: Vulkan 1.3+, GLM, SDL3, C++20 standard library.
+// Uses Nurb matter and energy for simulation parameters.
 // Zachary Geurts 2025
 
 #ifndef CORE_HPP
 #define CORE_HPP
 
-#include "universal_equation.hpp"
+#include "ue_init.hpp"
 #include "engine/logging.hpp"
-#include "engine/Vulkan_init.hpp"
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <SDL3/SDL.h>
@@ -23,37 +23,6 @@
 #include <latch>
 
 static constexpr int kMaxRenderedDimensions = 9;
-
-class Xorshift {
-public:
-    Xorshift(uint32_t seed) : state_(seed) {}
-    float nextFloat(float min, float max) {
-        state_ ^= state_ << 13;
-        state_ ^= state_ >> 17;
-        state_ ^= state_ << 5;
-        return min + (max - min) * (state_ & 0x7FFFFFFF) / static_cast<float>(0x7FFFFFFF);
-    }
-private:
-    uint32_t state_;
-};
-
-struct Ball {
-    glm::vec3 position;
-    glm::vec3 velocity;
-    glm::vec3 acceleration;
-    float mass;
-    float radius;
-    float startTime;
-    Ball(const glm::vec3& pos, const glm::vec3& vel, float m, float r, float start)
-        : position(pos), velocity(vel), acceleration(0.0f), mass(m), radius(r), startTime(start) {}
-};
-
-struct PushConstants {
-    alignas(16) glm::mat4 model;       // 64 bytes
-    alignas(16) glm::mat4 view_proj;   // 64 bytes
-    alignas(16) glm::vec4 extra[8];    // 128 bytes
-};
-static_assert(sizeof(PushConstants) == 256, "PushConstants must be 256 bytes");
 
 class VulkanRenderer; // Forward declaration
 
@@ -76,7 +45,7 @@ public:
     int getMode() const { return mode_; }
     float getZoomLevel() const { return zoomLevel_; }
     float getWavePhase() const { return wavePhase_; }
-    std::span<const UniversalEquation::DimensionData> getCache() const { return cache_; }
+    std::span<const DimensionData> getCache() const { return cache_; }
     int getWidth() const { return width_; }
     int getHeight() const { return height_; }
     void setMode(int mode) {
@@ -110,10 +79,6 @@ private:
             cache_[i].potential = 0.0;
             cache_[i].nurbMatter = 0.0;
             cache_[i].nurbEnergy = 0.0;
-            cache_[i].spinEnergy = 0.0;
-            cache_[i].momentumEnergy = 0.0;
-            cache_[i].fieldEnergy = 0.0;
-            cache_[i].GodWaveEnergy = 0.0;
         }
         logger_.log(Logging::LogLevel::Debug, "DimensionalNavigator cache initialized with {} entries",
                     std::source_location::current(), cache_.size());
@@ -124,7 +89,7 @@ private:
     int mode_;
     float zoomLevel_;
     float wavePhase_;
-    std::vector<UniversalEquation::DimensionData> cache_;
+    std::vector<DimensionData> cache_;
     VulkanRenderer& renderer_;
     const Logging::Logger& logger_;
 };
@@ -132,7 +97,7 @@ private:
 class AMOURANTH {
 public:
     AMOURANTH(DimensionalNavigator* navigator, const Logging::Logger& logger, VkDevice device, VkDeviceMemory vertexBufferMemory, VkPipeline pipeline)
-        : ue_(logger, 8, 8, 2.5, 0.1, 5.0, 1.5, 5.0, 1.0, 0.5, 1.0, 0.0072973525693, 0.5, 0.1, 0.5, 0.5, 2.0, 4.0, 1.0, 1.0e6, 1.0, 0.5, 2.0, true, 256),
+        : ue_(8, 8, 2.5, 0.0072973525693, true),
           simulator_(navigator),
           mode_(1),
           wavePhase_(0.0f),
@@ -231,15 +196,15 @@ public:
     double computeInteraction(int vertexIndex, double distance) const {
         logger_.log(Logging::LogLevel::Debug, "Computing interaction: vertexIndex={}, distance={}",
                     std::source_location::current(), vertexIndex, distance);
-        return static_cast<double>(ue_.computeInteraction(vertexIndex, static_cast<long double>(distance)));
+        return ue_.computeInteraction(vertexIndex, distance);
     }
     double computeNurbEnergy(double distance) const {
-        logger_.log(Logging::LogLevel::Debug, "Computing NURB energy: distance={}",
+        logger_.log(Logging::LogLevel::Debug, "Computing nurbEnergy: distance={}",
                     std::source_location::current(), distance);
-        return static_cast<double>(ue_.computeNurbEnergy(static_cast<long double>(distance)));
+        return ue_.computenurbEnergy(distance);
     }
     double getAlpha() const {
-        return static_cast<double>(ue_.getAlpha());
+        return ue_.getAlpha();
     }
     std::span<const glm::vec3> getSphereVertices() const {
         if (!sphereVertices_.empty() && reinterpret_cast<std::uintptr_t>(sphereVertices_.data()) % alignof(glm::vec3) != 0) {
@@ -277,18 +242,18 @@ public:
         return voxelVertices_;
     }
     std::span<const uint32_t> getVoxelIndices() const { return voxelIndices_; }
-    std::span<const UniversalEquation::DimensionData> getCache() const { return cache_; }
+    std::span<const DimensionData> getCache() const { return cache_; }
     std::span<const Ball> getBalls() const { return balls_; }
     int getMode() const { return mode_; }
     float getWavePhase() const { return wavePhase_; }
     float getZoomLevel() const { return zoomLevel_; }
     glm::vec3 getUserCamPos() const { return userCamPos_; }
     bool isUserCamActive() const { return isUserCamActive_; }
-    UniversalEquation::EnergyResult getEnergyResult() const {
+    EnergyResult getEnergyResult() const {
         logger_.log(Logging::LogLevel::Debug, "Getting energy result", std::source_location::current());
         return ue_.compute();
     }
-    std::span<const UniversalEquation::DimensionInteraction> getInteractions() const { return ue_.getInteractions(); }
+    std::span<const DimensionInteraction> getInteractions() const { return ue_.getInteractions(); }
     VkDevice getDevice() const { return device_; }
     VkDeviceMemory getVertexBufferMemory() const { return vertexBufferMemory_; }
     VkPipeline getGraphicsPipeline() const { return pipeline_; }
@@ -303,8 +268,8 @@ private:
     void initializeBalls(float baseMass = 1.2f, float baseRadius = 0.12f, size_t numBalls = 30000);
     void updateBalls(float deltaTime);
 
-    mutable UniversalEquation ue_; // Mutable to allow compute() in const methods
-    std::vector<UniversalEquation::DimensionData> cache_;
+    mutable UniversalEquation ue_;
+    std::vector<DimensionData> cache_;
     std::vector<Ball> balls_;
     std::vector<glm::vec3> sphereVertices_;
     std::vector<uint32_t> sphereIndices_;
@@ -330,43 +295,43 @@ private:
     VkPipeline pipeline_;
 };
 
-// Forward declarations for mode-specific rendering
-void renderMode1(AMOURANTH* amouranth, uint32_t imageIndex, VkBuffer vertexBuffer, VkCommandBuffer commandBuffer,
-                 VkBuffer indexBuffer, float zoomLevel, int width, int height, float wavePhase,
-                 std::span<const UniversalEquation::DimensionData> cache, VkPipelineLayout pipelineLayout, VkDescriptorSet descriptorSet,
-                 VkDevice device, VkDeviceMemory vertexBufferMemory, VkPipeline pipeline);
-void renderMode2(AMOURANTH* amouranth, uint32_t imageIndex, VkBuffer vertexBuffer, VkCommandBuffer commandBuffer,
-                 VkBuffer indexBuffer, float zoomLevel, int width, int height, float wavePhase,
-                 std::span<const UniversalEquation::DimensionData> cache, VkPipelineLayout pipelineLayout, VkDescriptorSet descriptorSet,
-                 VkDevice device, VkDeviceMemory vertexBufferMemory, VkPipeline pipeline);
-void renderMode3(AMOURANTH* amouranth, uint32_t imageIndex, VkBuffer vertexBuffer, VkCommandBuffer commandBuffer,
-                 VkBuffer indexBuffer, float zoomLevel, int width, int height, float wavePhase,
-                 std::span<const UniversalEquation::DimensionData> cache, VkPipelineLayout pipelineLayout, VkDescriptorSet descriptorSet,
-                 VkDevice device, VkDeviceMemory vertexBufferMemory, VkPipeline pipeline);
-void renderMode4(AMOURANTH* amouranth, uint32_t imageIndex, VkBuffer vertexBuffer, VkCommandBuffer commandBuffer,
-                 VkBuffer indexBuffer, float zoomLevel, int width, int height, float wavePhase,
-                 std::span<const UniversalEquation::DimensionData> cache, VkPipelineLayout pipelineLayout, VkDescriptorSet descriptorSet,
-                 VkDevice device, VkDeviceMemory vertexBufferMemory, VkPipeline pipeline);
-void renderMode5(AMOURANTH* amouranth, uint32_t imageIndex, VkBuffer vertexBuffer, VkCommandBuffer commandBuffer,
-                 VkBuffer indexBuffer, float zoomLevel, int width, int height, float wavePhase,
-                 std::span<const UniversalEquation::DimensionData> cache, VkPipelineLayout pipelineLayout, VkDescriptorSet descriptorSet,
-                 VkDevice device, VkDeviceMemory vertexBufferMemory, VkPipeline pipeline);
-void renderMode6(AMOURANTH* amouranth, uint32_t imageIndex, VkBuffer vertexBuffer, VkCommandBuffer commandBuffer,
-                 VkBuffer indexBuffer, float zoomLevel, int width, int height, float wavePhase,
-                 std::span<const UniversalEquation::DimensionData> cache, VkPipelineLayout pipelineLayout, VkDescriptorSet descriptorSet,
-                 VkDevice device, VkDeviceMemory vertexBufferMemory, VkPipeline pipeline);
-void renderMode7(AMOURANTH* amouranth, uint32_t imageIndex, VkBuffer vertexBuffer, VkCommandBuffer commandBuffer,
-                 VkBuffer indexBuffer, float zoomLevel, int width, int height, float wavePhase,
-                 std::span<const UniversalEquation::DimensionData> cache, VkPipelineLayout pipelineLayout, VkDescriptorSet descriptorSet,
-                 VkDevice device, VkDeviceMemory vertexBufferMemory, VkPipeline pipeline);
-void renderMode8(AMOURANTH* amouranth, uint32_t imageIndex, VkBuffer vertexBuffer, VkCommandBuffer commandBuffer,
-                 VkBuffer indexBuffer, float zoomLevel, int width, int height, float wavePhase,
-                 std::span<const UniversalEquation::DimensionData> cache, VkPipelineLayout pipelineLayout, VkDescriptorSet descriptorSet,
-                 VkDevice device, VkDeviceMemory vertexBufferMemory, VkPipeline pipeline);
-void renderMode9(AMOURANTH* amouranth, uint32_t imageIndex, VkBuffer vertexBuffer, VkCommandBuffer commandBuffer,
-                 VkBuffer indexBuffer, float zoomLevel, int width, int height, float wavePhase,
-                 std::span<const UniversalEquation::DimensionData> cache, VkPipelineLayout pipelineLayout, VkDescriptorSet descriptorSet,
-                 VkDevice device, VkDeviceMemory vertexBufferMemory, VkPipeline pipeline);
+// Forward declarations for mode-specific rendering with [[maybe_unused]] for unused parameters
+void renderMode1([[maybe_unused]] AMOURANTH* amouranth, [[maybe_unused]] uint32_t imageIndex, [[maybe_unused]] VkBuffer vertexBuffer, [[maybe_unused]] VkCommandBuffer commandBuffer,
+                 [[maybe_unused]] VkBuffer indexBuffer, [[maybe_unused]] float zoomLevel, [[maybe_unused]] int width, [[maybe_unused]] int height, [[maybe_unused]] float wavePhase,
+                 [[maybe_unused]] std::span<const DimensionData> cache, [[maybe_unused]] VkPipelineLayout pipelineLayout, [[maybe_unused]] VkDescriptorSet descriptorSet,
+                 [[maybe_unused]] VkDevice device, [[maybe_unused]] VkDeviceMemory vertexBufferMemory, [[maybe_unused]] VkPipeline pipeline);
+void renderMode2([[maybe_unused]] AMOURANTH* amouranth, [[maybe_unused]] uint32_t imageIndex, [[maybe_unused]] VkBuffer vertexBuffer, [[maybe_unused]] VkCommandBuffer commandBuffer,
+                 [[maybe_unused]] VkBuffer indexBuffer, [[maybe_unused]] float zoomLevel, [[maybe_unused]] int width, [[maybe_unused]] int height, [[maybe_unused]] float wavePhase,
+                 [[maybe_unused]] std::span<const DimensionData> cache, [[maybe_unused]] VkPipelineLayout pipelineLayout, [[maybe_unused]] VkDescriptorSet descriptorSet,
+                 [[maybe_unused]] VkDevice device, [[maybe_unused]] VkDeviceMemory vertexBufferMemory, [[maybe_unused]] VkPipeline pipeline);
+void renderMode3([[maybe_unused]] AMOURANTH* amouranth, [[maybe_unused]] uint32_t imageIndex, [[maybe_unused]] VkBuffer vertexBuffer, [[maybe_unused]] VkCommandBuffer commandBuffer,
+                 [[maybe_unused]] VkBuffer indexBuffer, [[maybe_unused]] float zoomLevel, [[maybe_unused]] int width, [[maybe_unused]] int height, [[maybe_unused]] float wavePhase,
+                 [[maybe_unused]] std::span<const DimensionData> cache, [[maybe_unused]] VkPipelineLayout pipelineLayout, [[maybe_unused]] VkDescriptorSet descriptorSet,
+                 [[maybe_unused]] VkDevice device, [[maybe_unused]] VkDeviceMemory vertexBufferMemory, [[maybe_unused]] VkPipeline pipeline);
+void renderMode4([[maybe_unused]] AMOURANTH* amouranth, [[maybe_unused]] uint32_t imageIndex, [[maybe_unused]] VkBuffer vertexBuffer, [[maybe_unused]] VkCommandBuffer commandBuffer,
+                 [[maybe_unused]] VkBuffer indexBuffer, [[maybe_unused]] float zoomLevel, [[maybe_unused]] int width, [[maybe_unused]] int height, [[maybe_unused]] float wavePhase,
+                 [[maybe_unused]] std::span<const DimensionData> cache, [[maybe_unused]] VkPipelineLayout pipelineLayout, [[maybe_unused]] VkDescriptorSet descriptorSet,
+                 [[maybe_unused]] VkDevice device, [[maybe_unused]] VkDeviceMemory vertexBufferMemory, [[maybe_unused]] VkPipeline pipeline);
+void renderMode5([[maybe_unused]] AMOURANTH* amouranth, [[maybe_unused]] uint32_t imageIndex, [[maybe_unused]] VkBuffer vertexBuffer, [[maybe_unused]] VkCommandBuffer commandBuffer,
+                 [[maybe_unused]] VkBuffer indexBuffer, [[maybe_unused]] float zoomLevel, [[maybe_unused]] int width, [[maybe_unused]] int height, [[maybe_unused]] float wavePhase,
+                 [[maybe_unused]] std::span<const DimensionData> cache, [[maybe_unused]] VkPipelineLayout pipelineLayout, [[maybe_unused]] VkDescriptorSet descriptorSet,
+                 [[maybe_unused]] VkDevice device, [[maybe_unused]] VkDeviceMemory vertexBufferMemory, [[maybe_unused]] VkPipeline pipeline);
+void renderMode6([[maybe_unused]] AMOURANTH* amouranth, [[maybe_unused]] uint32_t imageIndex, [[maybe_unused]] VkBuffer vertexBuffer, [[maybe_unused]] VkCommandBuffer commandBuffer,
+                 [[maybe_unused]] VkBuffer indexBuffer, [[maybe_unused]] float zoomLevel, [[maybe_unused]] int width, [[maybe_unused]] int height, [[maybe_unused]] float wavePhase,
+                 [[maybe_unused]] std::span<const DimensionData> cache, [[maybe_unused]] VkPipelineLayout pipelineLayout, [[maybe_unused]] VkDescriptorSet descriptorSet,
+                 [[maybe_unused]] VkDevice device, [[maybe_unused]] VkDeviceMemory vertexBufferMemory, [[maybe_unused]] VkPipeline pipeline);
+void renderMode7([[maybe_unused]] AMOURANTH* amouranth, [[maybe_unused]] uint32_t imageIndex, [[maybe_unused]] VkBuffer vertexBuffer, [[maybe_unused]] VkCommandBuffer commandBuffer,
+                 [[maybe_unused]] VkBuffer indexBuffer, [[maybe_unused]] float zoomLevel, [[maybe_unused]] int width, [[maybe_unused]] int height, [[maybe_unused]] float wavePhase,
+                 [[maybe_unused]] std::span<const DimensionData> cache, [[maybe_unused]] VkPipelineLayout pipelineLayout, [[maybe_unused]] VkDescriptorSet descriptorSet,
+                 [[maybe_unused]] VkDevice device, [[maybe_unused]] VkDeviceMemory vertexBufferMemory, [[maybe_unused]] VkPipeline pipeline);
+void renderMode8([[maybe_unused]] AMOURANTH* amouranth, [[maybe_unused]] uint32_t imageIndex, [[maybe_unused]] VkBuffer vertexBuffer, [[maybe_unused]] VkCommandBuffer commandBuffer,
+                 [[maybe_unused]] VkBuffer indexBuffer, [[maybe_unused]] float zoomLevel, [[maybe_unused]] int width, [[maybe_unused]] int height, [[maybe_unused]] float wavePhase,
+                 [[maybe_unused]] std::span<const DimensionData> cache, [[maybe_unused]] VkPipelineLayout pipelineLayout, [[maybe_unused]] VkDescriptorSet descriptorSet,
+                 [[maybe_unused]] VkDevice device, [[maybe_unused]] VkDeviceMemory vertexBufferMemory, [[maybe_unused]] VkPipeline pipeline);
+void renderMode9([[maybe_unused]] AMOURANTH* amouranth, [[maybe_unused]] uint32_t imageIndex, [[maybe_unused]] VkBuffer vertexBuffer, [[maybe_unused]] VkCommandBuffer commandBuffer,
+                 [[maybe_unused]] VkBuffer indexBuffer, [[maybe_unused]] float zoomLevel, [[maybe_unused]] int width, [[maybe_unused]] int height, [[maybe_unused]] float wavePhase,
+                 [[maybe_unused]] std::span<const DimensionData> cache, [[maybe_unused]] VkPipelineLayout pipelineLayout, [[maybe_unused]] VkDescriptorSet descriptorSet,
+                 [[maybe_unused]] VkDevice device, [[maybe_unused]] VkDeviceMemory vertexBufferMemory, [[maybe_unused]] VkPipeline pipeline);
 
 // Inline implementations
 inline void AMOURANTH::render(uint32_t imageIndex, VkBuffer vertexBuffer, VkCommandBuffer commandBuffer,
@@ -418,8 +383,7 @@ inline void AMOURANTH::update(float deltaTime) {
         std::latch latch(1);
         wavePhase_ += waveSpeed_ * deltaTime;
         simulator_->setWavePhase(wavePhase_);
-        ue_.evolveTimeStep(deltaTime);
-        updateBalls(deltaTime);
+        ue_.updateBalls(deltaTime);
         updateCache();
         logger_.log(Logging::LogLevel::Debug, "Updated simulation with deltaTime={:.3f}, wavePhase={:.3f}",
                     std::source_location::current(), deltaTime, wavePhase_);
@@ -436,10 +400,6 @@ inline void AMOURANTH::updateCache() {
         cache_[i].potential = result.potential;
         cache_[i].nurbMatter = result.nurbMatter;
         cache_[i].nurbEnergy = result.nurbEnergy;
-        cache_[i].spinEnergy = result.spinEnergy;
-        cache_[i].momentumEnergy = result.momentumEnergy;
-        cache_[i].fieldEnergy = result.fieldEnergy;
-        cache_[i].GodWaveEnergy = result.GodWaveEnergy;
     }
     logger_.log(Logging::LogLevel::Debug, "Updated cache with {} entries", std::source_location::current(), cache_.size());
     latch.count_down();
@@ -460,15 +420,15 @@ inline void AMOURANTH::setMode(int mode) {
     std::latch latch(1);
     mode_ = glm::clamp(mode, 1, 9);
     simulator_->setMode(mode_);
-    ue_.setCurrentDimension(mode_);
+    ue_.setMode(mode_);
     logger_.log(Logging::LogLevel::Info, "Set rendering mode to {}", std::source_location::current(), mode_);
     latch.count_down();
     latch.wait();
 }
 
 inline void AMOURANTH::initializeSphereGeometry() {
-    float radius = 0.1f; // Smaller radius for balls
-    uint32_t sectors = 16, rings = 16; // Reduced for performance
+    float radius = 0.1f;
+    uint32_t sectors = 16, rings = 16;
     sphereVertices_.clear();
     sphereIndices_.clear();
     for (uint32_t i = 0; i <= rings; ++i) {
@@ -549,7 +509,7 @@ inline void AMOURANTH::initializeCalculator() {
             logger_.log(Logging::LogLevel::Debug, "Initializing calculator for UniversalEquation",
                         std::source_location::current());
         }
-        ue_.initializeCalculator();
+        ue_.initializeCalculator(this);
         updateCache();
         logger_.log(Logging::LogLevel::Info, "Calculator initialized successfully",
                     std::source_location::current());
@@ -565,130 +525,21 @@ inline void AMOURANTH::initializeCalculator() {
 inline void AMOURANTH::initializeBalls(float baseMass, float baseRadius, size_t numBalls) {
     std::latch latch(1);
     balls_.clear();
-    balls_.reserve(numBalls);
-    auto result = ue_.compute();
-    float massScale = static_cast<float>(result.nurbMatter);
-    Xorshift rng(12345);
-    for (size_t i = 0; i < numBalls; ++i) {
-        glm::vec3 pos(rng.nextFloat(-5.0f, 5.0f), rng.nextFloat(-5.0f, 5.0f), rng.nextFloat(-2.0f, 2.0f));
-        glm::vec3 vel(rng.nextFloat(-1.0f, 1.0f), rng.nextFloat(-1.0f, 1.0f), rng.nextFloat(-1.0f, 1.0f));
-        float startTime = i * 0.1f;
-        balls_.emplace_back(pos, vel, baseMass * massScale, baseRadius, startTime);
-    }
+    ue_.initializeBalls(baseMass, baseRadius, numBalls);
+    balls_ = ue_.getBalls();
     logger_.log(Logging::LogLevel::Info, "Initialized {} balls with mass scale={:.3f}",
-                std::source_location::current(), balls_.size(), massScale);
+                std::source_location::current(), balls_.size(), static_cast<float>(ue_.compute().nurbMatter));
     latch.count_down();
     latch.wait();
 }
 
 inline void AMOURANTH::updateBalls(float deltaTime) {
     std::latch latch(1);
-    auto interactions = ue_.getInteractions();
-    auto result = ue_.compute();
-    float simulationTime = wavePhase_;
-
-    std::vector<glm::vec3> forces(balls_.size(), glm::vec3(0.0f));
-#pragma omp parallel for
-    for (size_t i = 0; i < balls_.size(); ++i) {
-        if (simulationTime < balls_[i].startTime) continue;
-        double interactionStrength = (i < interactions.size()) ? interactions[i].strength : 0.0;
-        forces[i] = glm::vec3(
-            static_cast<float>(result.observable),
-            static_cast<float>(result.potential),
-            static_cast<float>(result.nurbEnergy)
-        ) * static_cast<float>(interactionStrength);
-        balls_[i].acceleration = forces[i] / balls_[i].mass;
-    }
-
-    const glm::vec3 boundsMin(-5.0f, -5.0f, -2.0f);
-    const glm::vec3 boundsMax(5.0f, 5.0f, 2.0f);
-#pragma omp parallel for
-    for (size_t i = 0; i < balls_.size(); ++i) {
-        if (simulationTime < balls_[i].startTime) continue;
-        auto& pos = balls_[i].position;
-        auto& vel = balls_[i].velocity;
-        if (pos.x < boundsMin.x) { pos.x = boundsMin.x; vel.x = -vel.x; }
-        if (pos.x > boundsMax.x) { pos.x = boundsMax.x; vel.x = -vel.x; }
-        if (pos.y < boundsMin.y) { pos.y = boundsMin.y; vel.y = -vel.y; }
-        if (pos.y > boundsMax.y) { pos.y = boundsMax.y; vel.y = -vel.y; }
-        if (pos.z < boundsMin.z) { pos.z = boundsMin.z; vel.z = -vel.z; }
-        if (pos.z > boundsMax.z) { pos.z = boundsMax.z; vel.z = -vel.z; }
-    }
-
-    const int gridSize = 10;
-    const float cellSize = 10.0f / gridSize;
-    std::vector<std::vector<size_t>> grid(gridSize * gridSize * gridSize);
-    for (size_t i = 0; i < balls_.size(); ++i) {
-        if (simulationTime < balls_[i].startTime) continue;
-        glm::vec3 pos = balls_[i].position;
-        int x = static_cast<int>((pos.x + 5.0f) / cellSize);
-        int y = static_cast<int>((pos.y + 5.0f) / cellSize);
-        int z = static_cast<int>((pos.z + 2.0f) / (cellSize * 0.5f));
-        x = std::clamp(x, 0, gridSize - 1);
-        y = std::clamp(y, 0, gridSize - 1);
-        z = std::clamp(z, 0, gridSize - 1);
-        int cellIdx = z * gridSize * gridSize + y * gridSize + x;
-        grid[cellIdx].push_back(i);
-    }
-
-    std::vector<std::vector<std::pair<size_t, size_t>>> threadCollisions(omp_get_max_threads());
-#pragma omp parallel for
-    for (size_t i = 0; i < balls_.size(); ++i) {
-        if (simulationTime < balls_[i].startTime) continue;
-        glm::vec3 pos = balls_[i].position;
-        int x = static_cast<int>((pos.x + 5.0f) / cellSize);
-        int y = static_cast<int>((pos.y + 5.0f) / cellSize);
-        int z = static_cast<int>((pos.z + 2.0f) / (cellSize * 0.5f));
-        x = std::clamp(x, 0, gridSize - 1);
-        y = std::clamp(y, 0, gridSize - 1);
-        z = std::clamp(z, 0, gridSize - 1);
-
-        int threadId = omp_get_thread_num();
-        for (int dz = -1; dz <= 1; ++dz) {
-            for (int dy = -1; dy <= 1; ++dy) {
-                for (int dx = -1; dx <= 1; ++dx) {
-                    int nx = x + dx, ny = y + dy, nz = z + dz;
-                    if (nx < 0 || nx >= gridSize || ny < 0 || ny >= gridSize || nz < 0 || nz >= gridSize) continue;
-                    int cellIdx = nz * gridSize * gridSize + ny * gridSize + nx;
-                    for (size_t j : grid[cellIdx]) {
-                        if (j <= i || simulationTime < balls_[j].startTime) continue;
-                        glm::vec3 delta = balls_[j].position - balls_[i].position;
-                        float distance = glm::length(delta);
-                        float minDistance = balls_[i].radius + balls_[j].radius;
-                        if (distance < minDistance && distance > 0.0f) {
-                            threadCollisions[threadId].emplace_back(i, j);
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    for (const auto& collisions : threadCollisions) {
-        for (const auto& [i, j] : collisions) {
-            glm::vec3 delta = balls_[j].position - balls_[i].position;
-            float distance = glm::length(delta);
-            float minDistance = balls_[i].radius + balls_[j].radius;
-            if (distance < minDistance && distance > 0.0f) {
-                glm::vec3 normal = delta / distance;
-                glm::vec3 relVelocity = balls_[j].velocity - balls_[i].velocity;
-                float impulse = -2.0f * glm::dot(relVelocity, normal) / (1.0f / balls_[i].mass + 1.0f / balls_[j].mass);
-                balls_[i].velocity += (impulse / balls_[i].mass) * normal;
-                balls_[j].velocity -= (impulse / balls_[j].mass) * normal;
-                float overlap = minDistance - distance;
-                balls_[i].position -= normal * (overlap * 0.5f);
-                balls_[j].position += normal * (overlap * 0.5f);
-            }
-        }
-    }
-
-#pragma omp parallel for
-    for (size_t i = 0; i < balls_.size(); ++i) {
-        if (simulationTime < balls_[i].startTime) continue;
-        balls_[i].velocity += balls_[i].acceleration * deltaTime;
-        balls_[i].position += balls_[i].velocity * deltaTime;
-    }
+    ue_.updateBalls(deltaTime);
+    balls_ = ue_.getBalls();
     logger_.log(Logging::LogLevel::Debug, "Updated {} balls", std::source_location::current(), balls_.size());
+    latch.count_down();
+    latch.wait();
 }
 
 #endif // CORE_HPP

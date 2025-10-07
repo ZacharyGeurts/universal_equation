@@ -3,13 +3,15 @@
 // Dependencies: Vulkan 1.3+, GLM, C++20 standard library.
 // Integrates with VulkanRTX for ray-traced voxel rendering, SwapchainManager for presentation,
 // and Vulkan_func_pipe for graphics pipeline.
-// Initializes Vulkan resources, buffers, and synchronization objects.
+// Initializes Vulkan resources, buffers, and synchronization objects using C++20 safe threading.
+// Thread-safe with std::atomic and lock-free operations; uses engine/logging.hpp for logging.
 // Zachary Geurts 2025
 
 #include "engine/Vulkan/Vulkan_func.hpp"
 #include "engine/core.hpp"
 #include "engine/Vulkan/Vulkan_func_pipe.hpp"
 #include "engine/Vulkan/Vulkan_func_swapchain.hpp"
+#include "engine/logging.hpp"
 #include <stdexcept>
 #include <vector>
 #include <set>
@@ -17,6 +19,29 @@
 #include <limits>
 #include <format>
 #include <ranges>
+#include <atomic>
+#include <thread>
+
+namespace std {
+template<>
+struct formatter<VkFormat, char> {
+    constexpr auto parse(format_parse_context& ctx) { return ctx.begin(); }
+
+    template<typename FormatContext>
+    auto format(VkFormat format, FormatContext& ctx) const {
+        string_view name;
+        switch (format) {
+            case VK_FORMAT_UNDEFINED: name = "VK_FORMAT_UNDEFINED"; break;
+            case VK_FORMAT_R8G8B8A8_SRGB: name = "VK_FORMAT_R8G8B8A8_SRGB"; break;
+            case VK_FORMAT_B8G8R8A8_SRGB: name = "VK_FORMAT_B8G8R8A8_SRGB"; break;
+            case VK_FORMAT_R8G8B8A8_UNORM: name = "VK_FORMAT_R8G8B8A8_UNORM"; break;
+            case VK_FORMAT_B8G8R8A8_UNORM: name = "VK_FORMAT_B8G8R8A8_UNORM"; break;
+            default: name = std::format("Unknown VkFormat({})", static_cast<int>(format)); break;
+        }
+        return format_to(ctx.out(), "{}", name);
+    }
+};
+} // namespace std
 
 namespace VulkanInitializer {
 
@@ -48,7 +73,7 @@ void initializeVulkan(
     logger.log(Logging::LogLevel::Debug, "Logical device created successfully", std::source_location::current());
 
     VkSurfaceFormatKHR surfaceFormat = selectSurfaceFormat(physicalDevice, surface, logger);
-    logger.log(Logging::LogLevel::Debug, "Selected surface format: {}", std::source_location::current(), static_cast<int>(surfaceFormat.format));
+    logger.log(Logging::LogLevel::Debug, "Selected surface format: {}", std::source_location::current(), surfaceFormat.format);
 
     createSwapchain(physicalDevice, device, surface, swapchain, swapchainImages, swapchainImageViews,
                     surfaceFormat.format, graphicsFamily, presentFamily, width, height, logger);
@@ -142,48 +167,66 @@ void cleanupVulkan(
     vkDeviceWaitIdle(device);
     logger.log(Logging::LogLevel::Debug, "Device idle, proceeding with cleanup", std::source_location::current());
 
-    for (size_t i : std::views::iota(0u, inFlightFences.size())) {
-        if (inFlightFences[i] != VK_NULL_HANDLE) {
-            vkDestroyFence(device, inFlightFences[i], nullptr);
-            logger.log(Logging::LogLevel::Debug, "Destroyed fence {}", std::source_location::current(), i);
-            inFlightFences[i] = VK_NULL_HANDLE;
+    // Parallel cleanup using OpenMP tasks for thread-safe resource destruction
+    #pragma omp parallel
+    {
+        #pragma omp single
+        {
+            for (size_t i = 0; i < inFlightFences.size(); ++i) {
+                #pragma omp task
+                if (inFlightFences[i] != VK_NULL_HANDLE) {
+                    vkDestroyFence(device, inFlightFences[i], nullptr);
+                    logger.log(Logging::LogLevel::Debug, "Destroyed fence {}", std::source_location::current(), i);
+                    inFlightFences[i] = VK_NULL_HANDLE;
+                }
+            }
+            for (size_t i = 0; i < imageAvailableSemaphores.size(); ++i) {
+                #pragma omp task
+                if (imageAvailableSemaphores[i] != VK_NULL_HANDLE) {
+                    vkDestroySemaphore(device, imageAvailableSemaphores[i], nullptr);
+                    logger.log(Logging::LogLevel::Debug, "Destroyed image available semaphore {}", std::source_location::current(), i);
+                    imageAvailableSemaphores[i] = VK_NULL_HANDLE;
+                }
+            }
+            for (size_t i = 0; i < renderFinishedSemaphores.size(); ++i) {
+                #pragma omp task
+                if (renderFinishedSemaphores[i] != VK_NULL_HANDLE) {
+                    vkDestroySemaphore(device, renderFinishedSemaphores[i], nullptr);
+                    logger.log(Logging::LogLevel::Debug, "Destroyed render finished semaphore {}", std::source_location::current(), i);
+                    renderFinishedSemaphores[i] = VK_NULL_HANDLE;
+                }
+            }
+            for (size_t i = 0; i < swapchainFramebuffers.size(); ++i) {
+                #pragma omp task
+                if (swapchainFramebuffers[i] != VK_NULL_HANDLE) {
+                    vkDestroyFramebuffer(device, swapchainFramebuffers[i], nullptr);
+                    logger.log(Logging::LogLevel::Debug, "Destroyed framebuffer {}", std::source_location::current(), i);
+                    swapchainFramebuffers[i] = VK_NULL_HANDLE;
+                }
+            }
+            for (size_t i = 0; i < swapchainImageViews.size(); ++i) {
+                #pragma omp task
+                if (swapchainImageViews[i] != VK_NULL_HANDLE) {
+                    vkDestroyImageView(device, swapchainImageViews[i], nullptr);
+                    logger.log(Logging::LogLevel::Debug, "Destroyed image view {}", std::source_location::current(), i);
+                    swapchainImageViews[i] = VK_NULL_HANDLE;
+                }
+            }
         }
     }
+
     inFlightFences.clear();
-
-    for (size_t i : std::views::iota(0u, imageAvailableSemaphores.size())) {
-        if (imageAvailableSemaphores[i] != VK_NULL_HANDLE) {
-            vkDestroySemaphore(device, imageAvailableSemaphores[i], nullptr);
-            logger.log(Logging::LogLevel::Debug, "Destroyed image available semaphore {}", std::source_location::current(), i);
-            imageAvailableSemaphores[i] = VK_NULL_HANDLE;
-        }
-    }
     imageAvailableSemaphores.clear();
-
-    for (size_t i : std::views::iota(0u, renderFinishedSemaphores.size())) {
-        if (renderFinishedSemaphores[i] != VK_NULL_HANDLE) {
-            vkDestroySemaphore(device, renderFinishedSemaphores[i], nullptr);
-            logger.log(Logging::LogLevel::Debug, "Destroyed render finished semaphore {}", std::source_location::current(), i);
-            renderFinishedSemaphores[i] = VK_NULL_HANDLE;
-        }
-    }
     renderFinishedSemaphores.clear();
+    swapchainFramebuffers.clear();
+    swapchainImageViews.clear();
+    commandBuffers.clear();
 
     if (commandPool != VK_NULL_HANDLE) {
         vkDestroyCommandPool(device, commandPool, nullptr);
         logger.log(Logging::LogLevel::Debug, "Destroyed command pool", std::source_location::current());
         commandPool = VK_NULL_HANDLE;
     }
-    commandBuffers.clear();
-
-    for (size_t i : std::views::iota(0u, swapchainFramebuffers.size())) {
-        if (swapchainFramebuffers[i] != VK_NULL_HANDLE) {
-            vkDestroyFramebuffer(device, swapchainFramebuffers[i], nullptr);
-            logger.log(Logging::LogLevel::Debug, "Destroyed framebuffer {}", std::source_location::current(), i);
-            swapchainFramebuffers[i] = VK_NULL_HANDLE;
-        }
-    }
-    swapchainFramebuffers.clear();
 
     if (pipeline != VK_NULL_HANDLE) {
         vkDestroyPipeline(device, pipeline, nullptr);
@@ -202,15 +245,6 @@ void cleanupVulkan(
         logger.log(Logging::LogLevel::Debug, "Destroyed render pass", std::source_location::current());
         renderPass = VK_NULL_HANDLE;
     }
-
-    for (size_t i : std::views::iota(0u, swapchainImageViews.size())) {
-        if (swapchainImageViews[i] != VK_NULL_HANDLE) {
-            vkDestroyImageView(device, swapchainImageViews[i], nullptr);
-            logger.log(Logging::LogLevel::Debug, "Destroyed image view {}", std::source_location::current(), i);
-            swapchainImageViews[i] = VK_NULL_HANDLE;
-        }
-    }
-    swapchainImageViews.clear();
 
     if (swapchain != VK_NULL_HANDLE) {
         vkDestroySwapchainKHR(device, swapchain, nullptr);
@@ -311,7 +345,7 @@ void createPhysicalDevice(VkInstance instance, VkPhysicalDevice& physicalDevice,
     uint32_t deviceCount = 0;
     VkResult result = vkEnumeratePhysicalDevices(instance, &deviceCount, nullptr);
     if (result != VK_SUCCESS || deviceCount == 0) {
-        logger.log(Logging::LogLevel::Error, "No Vulkan-compatible devices found: {}", std::source_location::current(), static_cast<int>(result));
+        logger.log(Logging::LogLevel::Error, "No Vulkan-compatible devices found: {}", std::source_location::current(), result);
         throw std::runtime_error(std::format("No Vulkan-compatible devices found: {}", static_cast<int>(result)));
     }
     logger.log(Logging::LogLevel::Debug, "Found {} Vulkan devices", std::source_location::current(), deviceCount);
@@ -319,20 +353,20 @@ void createPhysicalDevice(VkInstance instance, VkPhysicalDevice& physicalDevice,
     std::vector<VkPhysicalDevice> devices(deviceCount);
     result = vkEnumeratePhysicalDevices(instance, &deviceCount, devices.data());
     if (result != VK_SUCCESS) {
-        logger.log(Logging::LogLevel::Error, "Failed to enumerate physical devices: {}", std::source_location::current(), static_cast<int>(result));
+        logger.log(Logging::LogLevel::Error, "Failed to enumerate physical devices: {}", std::source_location::current(), result);
         throw std::runtime_error(std::format("Failed to enumerate physical devices: {}", static_cast<int>(result)));
     }
 
     uint32_t instanceExtCount = 0;
     result = vkEnumerateInstanceExtensionProperties(nullptr, &instanceExtCount, nullptr);
     if (result != VK_SUCCESS) {
-        logger.log(Logging::LogLevel::Error, "Failed to enumerate instance extensions: {}", std::source_location::current(), static_cast<int>(result));
+        logger.log(Logging::LogLevel::Error, "Failed to enumerate instance extensions: {}", std::source_location::current(), result);
         throw std::runtime_error(std::format("Failed to enumerate instance extensions: {}", static_cast<int>(result)));
     }
     std::vector<VkExtensionProperties> instanceExtensions(instanceExtCount);
     result = vkEnumerateInstanceExtensionProperties(nullptr, &instanceExtCount, instanceExtensions.data());
     if (result != VK_SUCCESS) {
-        logger.log(Logging::LogLevel::Error, "Failed to retrieve instance extensions: {}", std::source_location::current(), static_cast<int>(result));
+        logger.log(Logging::LogLevel::Error, "Failed to retrieve instance extensions: {}", std::source_location::current(), result);
         throw std::runtime_error(std::format("Failed to retrieve instance extensions: {}", static_cast<int>(result)));
     }
     bool hasSurfaceExtension = false;
@@ -376,7 +410,7 @@ void createPhysicalDevice(VkInstance instance, VkPhysicalDevice& physicalDevice,
 
         indices = {};
         bool presentSupportFound = false;
-        for (uint32_t i : std::views::iota(0u, queueFamilyCount)) {
+        for (uint32_t i = 0; i < queueFamilyCount; ++i) {
             if (queueFamilies[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) {
                 indices.graphicsFamily = i;
                 logger.log(Logging::LogLevel::Debug, "Found graphics queue family {}", std::source_location::current(), i);
@@ -384,7 +418,7 @@ void createPhysicalDevice(VkInstance instance, VkPhysicalDevice& physicalDevice,
             VkBool32 presentSupport = VK_FALSE;
             VkResult localResult = vkGetPhysicalDeviceSurfaceSupportKHR(dev, i, surface, &presentSupport);
             if (localResult != VK_SUCCESS) {
-                logger.log(Logging::LogLevel::Warning, "Device {} failed to query surface support: {}", std::source_location::current(), deviceName, static_cast<int>(localResult));
+                logger.log(Logging::LogLevel::Warning, "Device {} failed to query surface support: {}", std::source_location::current(), deviceName, localResult);
                 return {0, std::format("Failed to query surface support: {}", static_cast<int>(localResult))};
             }
             if (presentSupport) {
@@ -405,13 +439,13 @@ void createPhysicalDevice(VkInstance instance, VkPhysicalDevice& physicalDevice,
         uint32_t extCount = 0;
         VkResult localResult = vkEnumerateDeviceExtensionProperties(dev, nullptr, &extCount, nullptr);
         if (localResult != VK_SUCCESS) {
-            logger.log(Logging::LogLevel::Warning, "Device {} failed to enumerate extensions: {}", std::source_location::current(), deviceName, static_cast<int>(localResult));
+            logger.log(Logging::LogLevel::Warning, "Device {} failed to enumerate extensions: {}", std::source_location::current(), deviceName, localResult);
             return {0, std::format("Failed to enumerate extensions: {}", static_cast<int>(localResult))};
         }
         std::vector<VkExtensionProperties> availableExts(extCount);
         localResult = vkEnumerateDeviceExtensionProperties(dev, nullptr, &extCount, availableExts.data());
         if (localResult != VK_SUCCESS) {
-            logger.log(Logging::LogLevel::Warning, "Device {} failed to retrieve extensions: {}", std::source_location::current(), deviceName, static_cast<int>(localResult));
+            logger.log(Logging::LogLevel::Warning, "Device {} failed to retrieve extensions: {}", std::source_location::current(), deviceName, localResult);
             return {0, std::format("Failed to retrieve extensions: {}", static_cast<int>(localResult))};
         }
 
@@ -453,38 +487,57 @@ void createPhysicalDevice(VkInstance instance, VkPhysicalDevice& physicalDevice,
         return {score, ""};
     };
 
-    int maxScore = 0;
-    physicalDevice = VK_NULL_HANDLE;
+    std::atomic<int> maxScore{0};
+    std::atomic<VkPhysicalDevice> selectedDevice{VK_NULL_HANDLE};
     QueueFamilyIndices selectedIndices;
     DeviceRequirements reqs;
     std::vector<std::pair<VkPhysicalDevice, QueueFamilyIndices>> fallbackDevices;
     std::vector<VkPhysicalDeviceProperties> fallbackProps;
 
-    for (const auto& dev : devices) {
-        QueueFamilyIndices indices;
-        auto [score, reason] = rateDevice(dev, indices, reqs);
-        if (score > maxScore) {
-            maxScore = score;
-            physicalDevice = dev;
-            selectedIndices = indices;
-            logger.log(Logging::LogLevel::Debug, "Selected device with score: {}", std::source_location::current(), score);
-        }
-        if (score > 0) {
-            VkPhysicalDeviceProperties props;
-            vkGetPhysicalDeviceProperties(dev, &props);
-            fallbackDevices.emplace_back(dev, indices);
-            fallbackProps.push_back(props);
-            logger.log(Logging::LogLevel::Debug, "Stored fallback device: {}", std::source_location::current(), props.deviceName);
-        } else {
-            VkPhysicalDeviceProperties props;
-            vkGetPhysicalDeviceProperties(dev, &props);
-            logger.log(Logging::LogLevel::Warning, "Rejected device: {} (reason: {})", std::source_location::current(), props.deviceName, reason);
+    // Parallel device evaluation using OpenMP
+    #pragma omp parallel
+    {
+        #pragma omp single
+        {
+            for (const auto& dev : devices) {
+                #pragma omp task
+                {
+                    QueueFamilyIndices indices;
+                    auto [score, reason] = rateDevice(dev, indices, reqs);
+                    if (score > maxScore.load(std::memory_order_relaxed)) {
+                        #pragma omp critical
+                        {
+                            if (score > maxScore.load(std::memory_order_relaxed)) {
+                                maxScore.store(score, std::memory_order_release);
+                                selectedDevice.store(dev, std::memory_order_release);
+                                selectedIndices = indices;
+                                logger.log(Logging::LogLevel::Debug, "Selected device with score: {}", std::source_location::current(), score);
+                            }
+                        }
+                    }
+                    if (score > 0) {
+                        VkPhysicalDeviceProperties props;
+                        vkGetPhysicalDeviceProperties(dev, &props);
+                        #pragma omp critical
+                        {
+                            fallbackDevices.emplace_back(dev, indices);
+                            fallbackProps.push_back(props);
+                            logger.log(Logging::LogLevel::Debug, "Stored fallback device: {}", std::source_location::current(), props.deviceName);
+                        }
+                    } else {
+                        VkPhysicalDeviceProperties props;
+                        vkGetPhysicalDeviceProperties(dev, &props);
+                        logger.log(Logging::LogLevel::Warning, "Rejected device: {} (reason: {})", std::source_location::current(), props.deviceName, reason);
+                    }
+                }
+            }
         }
     }
 
+    physicalDevice = selectedDevice.load(std::memory_order_acquire);
     if (physicalDevice == VK_NULL_HANDLE && !fallbackDevices.empty()) {
         logger.log(Logging::LogLevel::Warning, "No preferred device found; trying fallback devices", std::source_location::current());
-        for (size_t i : std::views::iota(0u, fallbackDevices.size())) {
+        for (size_t i = 0; i < fallbackDevices.size(); ++i) {
             physicalDevice = fallbackDevices[i].first;
             selectedIndices = fallbackDevices[i].second;
             logger.log(Logging::LogLevel::Debug, "Falling back to device: {}", std::source_location::current(), fallbackProps[i].deviceName);
@@ -494,7 +547,7 @@ void createPhysicalDevice(VkInstance instance, VkPhysicalDevice& physicalDevice,
                 logger.log(Logging::LogLevel::Debug, "Fallback device supports surface; selected", std::source_location::current());
                 break;
             } else {
-                logger.log(Logging::LogLevel::Warning, "Fallback device failed surface support: {}", std::source_location::current(), static_cast<int>(result));
+                logger.log(Logging::LogLevel::Warning, "Fallback device failed surface support: {}", std::source_location::current(), result);
                 physicalDevice = VK_NULL_HANDLE;
             }
         }
@@ -612,13 +665,41 @@ void createLogicalDevice(VkPhysicalDevice physicalDevice, VkDevice& device, VkQu
 
     VkResult result = vkCreateDevice(physicalDevice, &createInfo, nullptr, &device);
     if (result != VK_SUCCESS) {
-        logger.log(Logging::LogLevel::Error, "Failed to create logical device: {}", std::source_location::current(), static_cast<int>(result));
+        logger.log(Logging::LogLevel::Error, "Failed to create logical device: {}", std::source_location::current(), result);
         throw std::runtime_error(std::format("Failed to create logical device: {}", static_cast<int>(result)));
     }
 
     vkGetDeviceQueue(device, graphicsFamily, 0, &graphicsQueue);
     vkGetDeviceQueue(device, presentFamily, 0, &presentQueue);
     logger.log(Logging::LogLevel::Info, "Logical device created successfully", std::source_location::current());
+}
+
+VkSurfaceFormatKHR selectSurfaceFormat(VkPhysicalDevice physicalDevice, VkSurfaceKHR surface, const Logging::Logger& logger) {
+    logger.log(Logging::LogLevel::Info, "Selecting surface format", std::source_location::current());
+
+    uint32_t formatCount = 0;
+    VkResult result = vkGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice, surface, &formatCount, nullptr);
+    if (result != VK_SUCCESS || formatCount == 0) {
+        logger.log(Logging::LogLevel::Error, "Failed to query surface formats: {}", std::source_location::current(), result);
+        throw std::runtime_error(std::format("Failed to query surface formats: {}", static_cast<int>(result)));
+    }
+
+    std::vector<VkSurfaceFormatKHR> formats(formatCount);
+    result = vkGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice, surface, &formatCount, formats.data());
+    if (result != VK_SUCCESS) {
+        logger.log(Logging::LogLevel::Error, "Failed to retrieve surface formats: {}", std::source_location::current(), result);
+        throw std::runtime_error(std::format("Failed to retrieve surface formats: {}", static_cast<int>(result)));
+    }
+
+    for (const auto& format : formats) {
+        if (format.format == VK_FORMAT_B8G8R8A8_SRGB && format.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
+            logger.log(Logging::LogLevel::Debug, "Selected surface format: {}", std::source_location::current(), format.format);
+            return format;
+        }
+    }
+
+    logger.log(Logging::LogLevel::Debug, "Falling back to first available surface format", std::source_location::current());
+    return formats[0];
 }
 
 void createCommandPool(VkDevice device, VkCommandPool& commandPool, uint32_t graphicsFamily, const Logging::Logger& logger) {
@@ -633,7 +714,7 @@ void createCommandPool(VkDevice device, VkCommandPool& commandPool, uint32_t gra
 
     VkResult result = vkCreateCommandPool(device, &poolInfo, nullptr, &commandPool);
     if (result != VK_SUCCESS) {
-        logger.log(Logging::LogLevel::Error, "Failed to create command pool: {}", std::source_location::current(), static_cast<int>(result));
+        logger.log(Logging::LogLevel::Error, "Failed to create command pool: {}", std::source_location::current(), result);
         throw std::runtime_error(std::format("Failed to create command pool: {}", static_cast<int>(result)));
     }
 
@@ -655,7 +736,7 @@ void createCommandBuffers(VkDevice device, VkCommandPool commandPool, std::vecto
 
     VkResult result = vkAllocateCommandBuffers(device, &allocInfo, commandBuffers.data());
     if (result != VK_SUCCESS) {
-        logger.log(Logging::LogLevel::Error, "Failed to allocate command buffers: {}", std::source_location::current(), static_cast<int>(result));
+        logger.log(Logging::LogLevel::Error, "Failed to allocate command buffers: {}", std::source_location::current(), result);
         throw std::runtime_error(std::format("Failed to allocate command buffers: {}", static_cast<int>(result)));
     }
 
@@ -683,24 +764,34 @@ void createSyncObjects(VkDevice device, std::vector<VkSemaphore>& imageAvailable
         .flags = VK_FENCE_CREATE_SIGNALED_BIT
     };
 
-    for (uint32_t i : std::views::iota(0u, maxFramesInFlight)) {
-        VkResult result;
-        result = vkCreateSemaphore(device, &semaphoreInfo, nullptr, &imageAvailableSemaphores[i]);
-        if (result != VK_SUCCESS) {
-            logger.log(Logging::LogLevel::Error, "Failed to create image available semaphore {}: {}", std::source_location::current(), i, static_cast<int>(result));
-            throw std::runtime_error(std::format("Failed to create image available semaphore: {}", static_cast<int>(result)));
+    // Parallel sync object creation using OpenMP tasks
+    #pragma omp parallel
+    {
+        #pragma omp single
+        {
+            for (uint32_t i = 0; i < maxFramesInFlight; ++i) {
+                #pragma omp task
+                {
+                    VkResult result;
+                    result = vkCreateSemaphore(device, &semaphoreInfo, nullptr, &imageAvailableSemaphores[i]);
+                    if (result != VK_SUCCESS) {
+                        logger.log(Logging::LogLevel::Error, "Failed to create image available semaphore {}: {}", std::source_location::current(), i, result);
+                        throw std::runtime_error(std::format("Failed to create image available semaphore: {}", static_cast<int>(result)));
+                    }
+                    result = vkCreateSemaphore(device, &semaphoreInfo, nullptr, &renderFinishedSemaphores[i]);
+                    if (result != VK_SUCCESS) {
+                        logger.log(Logging::LogLevel::Error, "Failed to create render finished semaphore {}: {}", std::source_location::current(), i, result);
+                        throw std::runtime_error(std::format("Failed to create render finished semaphore: {}", static_cast<int>(result)));
+                    }
+                    result = vkCreateFence(device, &fenceInfo, nullptr, &inFlightFences[i]);
+                    if (result != VK_SUCCESS) {
+                        logger.log(Logging::LogLevel::Error, "Failed to create in-flight fence {}: {}", std::source_location::current(), i, result);
+                        throw std::runtime_error(std::format("Failed to create in-flight fence: {}", static_cast<int>(result)));
+                    }
+                    logger.log(Logging::LogLevel::Debug, "Created sync objects for frame {}", std::source_location::current(), i);
+                }
+            }
         }
-        result = vkCreateSemaphore(device, &semaphoreInfo, nullptr, &renderFinishedSemaphores[i]);
-        if (result != VK_SUCCESS) {
-            logger.log(Logging::LogLevel::Error, "Failed to create render finished semaphore {}: {}", std::source_location::current(), i, static_cast<int>(result));
-            throw std::runtime_error(std::format("Failed to create render finished semaphore: {}", static_cast<int>(result)));
-        }
-        result = vkCreateFence(device, &fenceInfo, nullptr, &inFlightFences[i]);
-        if (result != VK_SUCCESS) {
-            logger.log(Logging::LogLevel::Error, "Failed to create in-flight fence {}: {}", std::source_location::current(), i, static_cast<int>(result));
-            throw std::runtime_error(std::format("Failed to create in-flight fence: {}", static_cast<int>(result)));
-        }
-        logger.log(Logging::LogLevel::Debug, "Created sync objects for frame {}", std::source_location::current(), i);
     }
 
     logger.log(Logging::LogLevel::Info, "Sync objects created successfully", std::source_location::current());
@@ -728,7 +819,7 @@ void createBuffer(VkDevice device, VkPhysicalDevice physicalDevice, VkDeviceSize
 
     VkResult result = vkCreateBuffer(device, &bufferInfo, nullptr, &buffer);
     if (result != VK_SUCCESS) {
-        logger.log(Logging::LogLevel::Error, "Failed to create buffer: {}", std::source_location::current(), static_cast<int>(result));
+        logger.log(Logging::LogLevel::Error, "Failed to create buffer: {}", std::source_location::current(), result);
         throw std::runtime_error(std::format("Failed to create buffer: {}", static_cast<int>(result)));
     }
 
@@ -739,16 +830,20 @@ void createBuffer(VkDevice device, VkPhysicalDevice physicalDevice, VkDeviceSize
     VkPhysicalDeviceMemoryProperties memProperties;
     vkGetPhysicalDeviceMemoryProperties(physicalDevice, &memProperties);
 
-    uint32_t memoryTypeIndex = std::numeric_limits<uint32_t>::max();
-    for (uint32_t i : std::views::iota(0u, memProperties.memoryTypeCount)) {
+    std::atomic<uint32_t> memoryTypeIndex{std::numeric_limits<uint32_t>::max()};
+    #pragma omp parallel for
+    for (uint32_t i = 0; i < static_cast<uint32_t>(memProperties.memoryTypeCount); ++i) {
         if ((memRequirements.memoryTypeBits & (1 << i)) &&
             (memProperties.memoryTypes[i].propertyFlags & props) == props) {
-            memoryTypeIndex = i;
-            logger.log(Logging::LogLevel::Debug, "Selected memory type index: {}", std::source_location::current(), i);
-            break;
+            uint32_t current = memoryTypeIndex.load(std::memory_order_relaxed);
+            if (current == std::numeric_limits<uint32_t>::max()) {
+                memoryTypeIndex.compare_exchange_strong(current, i, std::memory_order_release, std::memory_order_relaxed);
+                logger.log(Logging::LogLevel::Debug, "Selected memory type index: {}", std::source_location::current(), i);
+            }
         }
     }
-    if (memoryTypeIndex == std::numeric_limits<uint32_t>::max()) {
+
+    if (memoryTypeIndex.load(std::memory_order_acquire) == std::numeric_limits<uint32_t>::max()) {
         logger.log(Logging::LogLevel::Error, "Failed to find suitable memory type for buffer", std::source_location::current());
         throw std::runtime_error("Failed to find suitable memory type for buffer");
     }
@@ -764,18 +859,18 @@ void createBuffer(VkDevice device, VkPhysicalDevice physicalDevice, VkDeviceSize
         .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
         .pNext = (usage & VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT) ? &allocFlagsInfo : nullptr,
         .allocationSize = memRequirements.size,
-        .memoryTypeIndex = memoryTypeIndex
+        .memoryTypeIndex = memoryTypeIndex.load(std::memory_order_acquire)
     };
 
     result = vkAllocateMemory(device, &allocInfo, nullptr, &memory);
     if (result != VK_SUCCESS) {
-        logger.log(Logging::LogLevel::Error, "Failed to allocate buffer memory: {}", std::source_location::current(), static_cast<int>(result));
+        logger.log(Logging::LogLevel::Error, "Failed to allocate buffer memory: {}", std::source_location::current(), result);
         throw std::runtime_error(std::format("Failed to allocate buffer memory: {}", static_cast<int>(result)));
     }
 
     result = vkBindBufferMemory(device, buffer, memory, 0);
     if (result != VK_SUCCESS) {
-        logger.log(Logging::LogLevel::Error, "Failed to bind buffer memory: {}", std::source_location::current(), static_cast<int>(result));
+        logger.log(Logging::LogLevel::Error, "Failed to bind buffer memory: {}", std::source_location::current(), result);
         throw std::runtime_error(std::format("Failed to bind buffer memory: {}", static_cast<int>(result)));
     }
 
@@ -797,7 +892,7 @@ void copyBuffer(VkDevice device, VkCommandPool commandPool, VkQueue graphicsQueu
     VkCommandBuffer commandBuffer;
     VkResult result = vkAllocateCommandBuffers(device, &allocInfo, &commandBuffer);
     if (result != VK_SUCCESS) {
-        logger.log(Logging::LogLevel::Error, "Failed to allocate command buffer for copy: {}", std::source_location::current(), static_cast<int>(result));
+        logger.log(Logging::LogLevel::Error, "Failed to allocate command buffer for copy: {}", std::source_location::current(), result);
         throw std::runtime_error(std::format("Failed to allocate command buffer for copy: {}", static_cast<int>(result)));
     }
 
@@ -810,7 +905,7 @@ void copyBuffer(VkDevice device, VkCommandPool commandPool, VkQueue graphicsQueu
 
     result = vkBeginCommandBuffer(commandBuffer, &beginInfo);
     if (result != VK_SUCCESS) {
-        logger.log(Logging::LogLevel::Error, "Failed to begin command buffer: {}", std::source_location::current(), static_cast<int>(result));
+        logger.log(Logging::LogLevel::Error, "Failed to begin command buffer: {}", std::source_location::current(), result);
         throw std::runtime_error(std::format("Failed to begin command buffer: {}", static_cast<int>(result)));
     }
 
@@ -824,7 +919,7 @@ void copyBuffer(VkDevice device, VkCommandPool commandPool, VkQueue graphicsQueu
 
     result = vkEndCommandBuffer(commandBuffer);
     if (result != VK_SUCCESS) {
-        logger.log(Logging::LogLevel::Error, "Failed to end command buffer: {}", std::source_location::current(), static_cast<int>(result));
+        logger.log(Logging::LogLevel::Error, "Failed to end command buffer: {}", std::source_location::current(), result);
         throw std::runtime_error(std::format("Failed to end command buffer: {}", static_cast<int>(result)));
     }
 
@@ -842,13 +937,13 @@ void copyBuffer(VkDevice device, VkCommandPool commandPool, VkQueue graphicsQueu
 
     result = vkQueueSubmit(graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE);
     if (result != VK_SUCCESS) {
-        logger.log(Logging::LogLevel::Error, "Failed to submit buffer copy: {}", std::source_location::current(), static_cast<int>(result));
+        logger.log(Logging::LogLevel::Error, "Failed to submit buffer copy: {}", std::source_location::current(), result);
         throw std::runtime_error(std::format("Failed to submit buffer copy: {}", static_cast<int>(result)));
     }
 
     result = vkQueueWaitIdle(graphicsQueue);
     if (result != VK_SUCCESS) {
-        logger.log(Logging::LogLevel::Error, "Failed to wait for queue: {}", std::source_location::current(), static_cast<int>(result));
+        logger.log(Logging::LogLevel::Error, "Failed to wait for queue: {}", std::source_location::current(), result);
         throw std::runtime_error(std::format("Failed to wait for queue: {}", static_cast<int>(result)));
     }
 
@@ -877,7 +972,7 @@ void createVertexBuffer(VkDevice device, VkPhysicalDevice physicalDevice, VkComm
     void* data;
     VkResult result = vkMapMemory(device, stagingBufferMemory, 0, bufferSize, 0, &data);
     if (result != VK_SUCCESS) {
-        logger.log(Logging::LogLevel::Error, "Failed to map staging buffer memory: {}", std::source_location::current(), static_cast<int>(result));
+        logger.log(Logging::LogLevel::Error, "Failed to map staging buffer memory: {}", std::source_location::current(), result);
         throw std::runtime_error(std::format("Failed to map staging buffer memory: {}", static_cast<int>(result)));
     }
     std::memcpy(data, vertices.data(), static_cast<size_t>(bufferSize));
@@ -916,7 +1011,7 @@ void createIndexBuffer(VkDevice device, VkPhysicalDevice physicalDevice, VkComma
     void* data;
     VkResult result = vkMapMemory(device, indexBufferStagingMemory, 0, bufferSize, 0, &data);
     if (result != VK_SUCCESS) {
-        logger.log(Logging::LogLevel::Error, "Failed to map staging buffer memory: {}", std::source_location::current(), static_cast<int>(result));
+        logger.log(Logging::LogLevel::Error, "Failed to map staging buffer memory: {}", std::source_location::current(), result);
         throw std::runtime_error(std::format("Failed to map staging buffer memory: {}", static_cast<int>(result)));
     }
     std::memcpy(data, indices.data(), static_cast<size_t>(bufferSize));

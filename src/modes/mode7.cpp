@@ -1,149 +1,101 @@
-// mode7.cpp: Implementation of mode 7 rendering for AMOURANTH RTX Engine.
-// Visualizes 30,000 balls in 7-dimensional space, with dynamics driven by UniversalEquation.
-// Each ball is rendered as a small sphere, with scale and color modulated by nurbMatter, nurbEnergy, and waveAmplitude.
-// Uses Vulkan for instanced rendering and integrates with DimensionalNavigator for view control.
-// Dependencies: engine/core.hpp, universal_equation.hpp, Vulkan 1.3+, GLM.
-// Zachary Geurts 2025
-
-#include "engine/core.hpp"
-#include "engine/logging.hpp"
-#include <glm/glm.hpp>
+#include "render_modes.hpp"
+#include "universal_equation.hpp"
+#include "dimensional_navigator.hpp"
 #include <glm/gtc/matrix_transform.hpp>
-#include <vulkan/vulkan.h>
-#include <vector>
-#include <cmath>
-#include <algorithm>
+#include <glm/gtx/rotate_vector.hpp>
+#include <stdexcept>
+#include <cstring>
 
-void renderMode7(AMOURANTH* amouranth, uint32_t imageIndex, VkBuffer vertexBuffer, VkCommandBuffer commandBuffer,
+namespace AMOURANTH {
+
+void renderMode8(AMOURANTH* amouranth, uint32_t imageIndex, VkBuffer vertexBuffer, VkCommandBuffer commandBuffer,
                  VkBuffer indexBuffer, float zoomLevel, int width, int height, float wavePhase,
                  std::span<const UniversalEquation::DimensionData> cache, VkPipelineLayout pipelineLayout,
                  VkDescriptorSet descriptorSet, VkDevice device, VkDeviceMemory vertexBufferMemory, VkPipeline pipeline) {
-    // Log rendering start
-    const Logging::Logger& logger = amouranth->getLogger();
-    logger.log(Logging::LogLevel::Info, "Starting renderMode7 (7D) for image index {}", std::source_location::current(), imageIndex);
+    // Setup camera for 8D-inspired hypercube (tesseract) projection
+    float aspectRatio = static_cast<float>(width) / static_cast<float>(height);
+    glm::mat4 proj = glm::perspective(glm::radians(55.0f * zoomLevel), aspectRatio, 0.1f, 1000.0f);
+    glm::vec3 cameraPos = glm::vec3(cos(wavePhase * 0.8f) * 7.0f, sin(wavePhase * 0.8f) * 7.0f, -12.0f); // Wide orbit
+    glm::mat4 view = glm::lookAt(cameraPos, glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+    glm::mat4 model = glm::rotate(glm::mat4(1.0f), wavePhase * 0.5f, glm::vec3(1.0f, 1.0f, 1.0f)); // Tesseract rotation
 
-    // Check for valid pipeline and vertex buffer memory
-    if (!pipeline || !vertexBufferMemory) {
-        logger.log(Logging::LogLevel::Error, "Invalid pipeline or vertex buffer memory in renderMode7: pipeline={}, vertexBufferMemory={}",
-                   std::source_location::current(), pipeline != VK_NULL_HANDLE, vertexBufferMemory != VK_NULL_HANDLE);
-        return;
+    // Get data from UniversalEquation cache for 8D visualization
+    if (cache.empty()) {
+        throw std::runtime_error("No data in UniversalEquation cache for renderMode8");
     }
 
-    // Get energy results and interactions from UniversalEquation
-    UniversalEquation::EnergyResult energy = amouranth->getEnergyResult();
-    const auto& balls = amouranth->getBalls();
-    const auto& interactions = amouranth->getInteractions();
-    logger.log(Logging::LogLevel::Debug, "EnergyResult: observable={:.3f}, potential={:.3f}, nurbMatter={:.3f}, nurbEnergy={:.3f}, GodWaveEnergy={:.3f}, balls size={}, interactions size={}",
-               std::source_location::current(), energy.observable, energy.potential, energy.nurbMatter, energy.nurbEnergy, energy.GodWaveEnergy, balls.size(), interactions.size());
+    // Use DimensionalNavigator for 8D navigation
+    DimensionalNavigator navigator(amouranth->getUniversalEquation());
+    navigator.setDimension(8); // Focus on 8D
 
-    // Get sphere geometry for instanced rendering
-    auto vertices = amouranth->getSphereVertices();
-    auto indices = amouranth->getSphereIndices();
-    if (vertices.empty() || indices.empty()) {
-        logger.log(Logging::LogLevel::Error, "Sphere geometry is empty: vertices size={}, indices size={}",
-                   std::source_location::current(), vertices.size(), indices.size());
-        return;
-    }
-    logger.log(Logging::LogLevel::Debug, "Using sphere geometry: {} vertices, {} indices",
-               std::source_location::current(), vertices.size(), indices.size());
-
-    // Prepare instanced vertex data
-    struct InstanceData {
-        glm::vec3 position;
-        float scale;
-        glm::vec4 color;
-    };
-    std::vector<InstanceData> instanceData;
-    instanceData.reserve(balls.size());
-    float avgObservable = 0.0f;
-    for (const auto& data : cache) {
-        if (data.dimension == 7) { // Emphasize 7th dimension
-            avgObservable += static_cast<float>(data.observable) * 1.5f;
-        } else {
-            avgObservable += static_cast<float>(data.observable);
-        }
-    }
-    avgObservable /= std::max(1.0f, static_cast<float>(cache.size()));
-    for (size_t i = 0; i < balls.size(); ++i) {
-        const auto& ball = balls[i];
-        float scale = ball.radius * (1.0f + static_cast<float>(energy.nurbEnergy) * 0.4f); // Strong nurbEnergy influence for 7D
-        float interactionScale = 1.0f;
-        float waveAmp = 0.0f;
-        if (i < interactions.size()) {
-            interactionScale = static_cast<float>(interactions[i].strength) * 0.11f;
-            waveAmp = static_cast<float>(interactions[i].waveAmplitude);
-        }
-        scale *= (1.0f + interactionScale);
-        glm::vec4 color(
-            0.4f + 0.4f * std::cos(waveAmp + wavePhase),
-            0.7f + 0.3f * std::sin(waveAmp + wavePhase), // Cyan tint for 7D
-            0.6f + 0.4f * static_cast<float>(energy.observable) / 10.0f,
-            1.0f
-        );
-        instanceData.push_back({ball.position, scale, color});
-        if (amouranth->getDebug() && i < 10) {
-            logger.log(Logging::LogLevel::Debug, "Ball {}: position=({:.3f}, {:.3f}, {:.3f}), scale={:.3f}, color=({:.3f}, {:.3f}, {:.3f}, {:.3f})",
-                       std::source_location::current(), i, ball.position.x, ball.position.y, ball.position.z, scale,
-                       color.r, color.g, color.b, color.a);
-        }
-    }
-
-    // Update instance buffer
-    VkDeviceSize instanceBufferSize = instanceData.size() * sizeof(InstanceData);
-    void* instanceDataPtr;
-    VkResult result = vkMapMemory(device, vertexBufferMemory, 0, instanceBufferSize, 0, &instanceDataPtr);
-    if (result != VK_SUCCESS) {
-        logger.log(Logging::LogLevel::Error, "Failed to map instance buffer memory: {}", std::source_location::current(), result);
-        return;
-    }
-    memcpy(instanceDataPtr, instanceData.data(), instanceBufferSize);
-    vkUnmapMemory(device, vertexBufferMemory);
-    logger.log(Logging::LogLevel::Debug, "Updated instance buffer with {} instances", std::source_location::current(), instanceData.size());
-
-    // Prepare push constants
-    PushConstants pushConstants{};
-    pushConstants.model = glm::mat4(1.0f);
-    glm::vec3 cameraPos = amouranth->isUserCamActive() ? amouranth->getUserCamPos() : glm::vec3(0.0f, 0.0f, 35.0f / zoomLevel); // Farther camera for 7D
-    glm::mat4 view = glm::lookAt(cameraPos, glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
-    float aspect = static_cast<float>(width) / height;
-    glm::mat4 proj = glm::perspective(glm::radians(60.0f / zoomLevel), aspect, 0.1f, 100.0f);
-    pushConstants.view_proj = proj * view;
-    pushConstants.extra[0].x = static_cast<float>(energy.observable);
-    pushConstants.extra[0].y = static_cast<float>(energy.potential);
-    pushConstants.extra[0].z = static_cast<float>(energy.nurbEnergy) * 1.6f; // Strong nurbEnergy emphasis
-    pushConstants.extra[0].w = wavePhase;
-    pushConstants.extra[1].x = static_cast<float>(energy.nurbMatter);
-    pushConstants.extra[1].y = avgObservable;
-    pushConstants.extra[1].z = static_cast<float>(amouranth->getAlpha());
-    pushConstants.extra[1].w = zoomLevel;
-    pushConstants.extra[2].x = static_cast<float>(energy.GodWaveEnergy);
-    logger.log(Logging::LogLevel::Debug, "PushConstants: observable={:.3f}, potential={:.3f}, nurbEnergy={:.3f}, wavePhase={:.3f}, nurbMatter={:.3f}, avgObservable={:.3f}, GodWaveEnergy={:.3f}",
-               std::source_location::current(), pushConstants.extra[0].x, pushConstants.extra[0].y, pushConstants.extra[0].z, pushConstants.extra[0].w,
-               pushConstants.extra[1].x, pushConstants.extra[1].y, pushConstants.extra[2].x);
-
-    // Bind pipeline and descriptor sets
+    // Bind pipeline (ray-traced for RTX support)
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &descriptorSet, 0, nullptr);
-    logger.log(Logging::LogLevel::Debug, "Bound pipeline and descriptor set for rendering", std::source_location::current());
 
-    // Bind vertex and index buffers
-    VkDeviceSize offsets[] = {0};
-    vkCmdBindVertexBuffers(commandBuffer, 0, 1, &vertexBuffer, offsets);
+    // Bind vertex and index buffers (for hypercube geometry)
+    VkBuffer vertexBuffers[] = { vertexBuffer };
+    VkDeviceSize offsets[] = { 0 };
+    vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
     vkCmdBindIndexBuffer(commandBuffer, indexBuffer, 0, VK_INDEX_TYPE_UINT32);
-    logger.log(Logging::LogLevel::Debug, "Bound vertex and index buffers", std::source_location::current());
 
-    // Bind instance buffer (assume same buffer for simplicity)
-    vkCmdBindVertexBuffers(commandBuffer, 1, 1, &vertexBuffer, offsets);
-    logger.log(Logging::LogLevel::Debug, "Bound instance buffer", std::source_location::current());
+    // Bind descriptor set for shaders
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &descriptorSet, 0, nullptr);
 
-    // Push constants
+    // Begin render pass
+    VkRenderPassBeginInfo renderPassInfo{};
+    renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+    renderPassInfo.renderPass = amouranth->getRenderPass();
+    renderPassInfo.framebuffer = amouranth->getSwapChainFramebuffers()[imageIndex];
+    renderPassInfo.renderArea.offset = {0, 0};
+    renderPassInfo.renderArea.extent = {static_cast<uint32_t>(width), static_cast<uint32_t>(height)};
+    VkClearValue clearColor = {{{0.0f, 0.0f, 0.0f, 1.0f}}};
+    renderPassInfo.clearValueCount = 1;
+    renderPassInfo.pClearValues = &clearColor;
+    vkCmdBeginRenderPass(commandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+
+    // Push constants for shaders (dynamic scaling, vibrant hypercube)
+    struct PushConstants {
+        glm::mat4 mvp;
+        float beatIntensity;
+        float amplitude;
+        float time;
+        glm::vec3 baseColor;
+    } pushConstants;
+
+    // Set values: 8D-inspired tesseract, dynamic scaling, vibrant visuals
+    pushConstants.mvp = proj * view * model;
+    pushConstants.beatIntensity = navigator.getInteractionStrength(8);
+    pushConstants.amplitude = 1.0f + sin(wavePhase * 2.5f) * 0.5f; // Dynamic scaling
+    pushConstants.time = wavePhase;
+    pushConstants.baseColor = glm::vec3(0.5f, sin(wavePhase * 0.8f), cos(wavePhase * 0.8f)); // Hypercube color shift
+
     vkCmdPushConstants(commandBuffer, pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(PushConstants), &pushConstants);
-    logger.log(Logging::LogLevel::Debug, "Pushed constants for rendering", std::source_location::current());
 
-    // Draw instanced geometry
-    vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(indices.size()), static_cast<uint32_t>(instanceData.size()), 0, 0, 0);
-    logger.log(Logging::LogLevel::Debug, "Issued instanced draw command with {} indices, {} instances",
-               std::source_location::current(), indices.size(), instanceData.size());
+    // Draw indexed (for hypercube geometry)
+    uint32_t indexCount = static_cast<uint32_t>(cache.size() * 36); // Indices for tesseract
+    vkCmdDrawIndexed(commandBuffer, indexCount, 1, 0, 0, 0);
 
-    logger.log(Logging::LogLevel::Info, "Completed renderMode7 (7D) for image index {}", std::source_location::current(), imageIndex);
+    // Additional elements (scaled tesseract projection)
+    model = glm::scale(model, glm::vec3(0.7f + sin(wavePhase) * 0.3f)); // Dynamic scaling
+    pushConstants.mvp = proj * view * model;
+    pushConstants.baseColor = glm::vec3(0.5f, cos(wavePhase * 0.8f), sin(wavePhase * 0.8f));
+    vkCmdPushConstants(commandBuffer, pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(PushConstants), &pushConstants);
+    vkCmdDrawIndexed(commandBuffer, indexCount, 1, 0, 0, 0);
+
+    // End render pass
+    vkCmdEndRenderPass(commandBuffer);
+
+    // Error checking
+    if (VkResult result = vkEndCommandBuffer(commandBuffer); result != VK_SUCCESS) {
+        throw std::runtime_error("Failed to record command buffer for renderMode8");
+    }
+
+    // Update vertex buffer if dynamic
+    if (!cache.empty()) {
+        void* data;
+        vkMapMemory(device, vertexBufferMemory, 0, cache.size() * sizeof(UniversalEquation::DimensionData), 0, &data);
+        memcpy(data, cache.data(), cache.size() * sizeof(UniversalEquation::DimensionData));
+        vkUnmapMemory(device, vertexBufferMemory);
+    }
 }
+
+} // namespace AMOURANTH

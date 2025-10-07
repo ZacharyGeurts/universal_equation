@@ -1,12 +1,3 @@
-// universal_equation.hpp: Defines the UniversalEquation class for quantum simulation on n-dimensional hypercube lattices.
-// Integrates classical and quantum physics with thread-safe, high-precision calculations using OpenMP and GLM.
-// Supports NURBS-based matter/energy fields and a deterministic "God wave" for quantum coherence.
-// Models multiple vertices representing particles in a 1-inch cube of water, with properties influenced by 2D and 4D projections.
-// Uses Logging::Logger for consistent, thread-safe logging across the AMOURANTH RTX Engine.
-// Thread-safety note: Mutable vectors (e.g., nCubeVertices_, interactions_) are modified in const methods like updateInteractions,
-// using std::atomic and std::latch for synchronization in parallel execution to avoid mutexes.
-// Copyright Zachary Geurts 2025 (powered by Grok with Heisenberg swagger)
-
 #ifndef UNIVERSAL_EQUATION_HPP
 #define UNIVERSAL_EQUATION_HPP
 
@@ -22,13 +13,11 @@
 #include <omp.h>
 #include <sstream>
 #include <iomanip>
-#include <random>
 #include <numbers>
 #include <glm/glm.hpp>
 #include <span>
 #include "engine/logging.hpp"
-
-class DimensionalNavigator;
+#include "engine/core.hpp" // Include core.hpp for DimensionalNavigator
 
 class UniversalEquation {
 public:
@@ -62,6 +51,7 @@ public:
         long double strength;
         std::vector<long double> vectorPotential;
         long double waveAmplitude;
+        DimensionInteraction() : vertexIndex(0), distance(0.0L), strength(0.0L), vectorPotential(), waveAmplitude(0.0L) {}
         DimensionInteraction(int idx, long double dist, long double str, const std::vector<long double>& vecPot, long double amp)
             : vertexIndex(idx), distance(dist), strength(str), vectorPotential(vecPot), waveAmplitude(amp) {}
     };
@@ -349,7 +339,6 @@ public:
                 logger_.log(Logging::LogLevel::Error, "Invalid dimension for vertex {}: size={}, expected={}", 
                             std::source_location::current(), i, vertices[i].size(), currentDimension_.load());
                 throw std::invalid_argument("Invalid vertex dimension");
-            }
         }
         nCubeVertices_ = vertices;
         currentVertices_.store(std::min(vertices.size(), static_cast<size_t>(maxVertices_)));
@@ -549,37 +538,139 @@ public:
     EnergyResult compute();
     void initializeNCube();
     void initializeCalculator();
-    void evolveTimeStep(long double dt);
     void updateInteractions() const;
-    void updateMomentum();
-    void advanceCycle();
-    std::vector<DimensionData> computeBatch(int startDim, int endDim);
-    void exportToCSV(const std::string& filename, const std::vector<DimensionData>& data) const;
-    DimensionData updateCache();
+    void initializeWithRetry();
+    long double safeExp(long double x) const {
+        if (std::isnan(x) || std::isinf(x)) {
+            logger_.log(Logging::LogLevel::Warning, "Invalid input to safeExp: x={}", std::source_location::current(), x);
+            return 0.0L;
+        }
+        if (x > 100.0L) {
+            logger_.log(Logging::LogLevel::Warning, "Clamping large exponent in safeExp: x={}", std::source_location::current(), x);
+            x = 100.0L;
+        }
+        return std::exp(x);
+    }
+    inline long double safe_div(long double a, long double b) const {
+        if (b == 0.0L || std::isnan(b) || std::isinf(b)) {
+            logger_.log(Logging::LogLevel::Warning, "Invalid divisor in safe_div: a={}, b={}", 
+                        std::source_location::current(), a, b);
+            return 0.0L;
+        }
+        long double result = a / b;
+        if (std::isnan(result) || std::isinf(result)) {
+            logger_.log(Logging::LogLevel::Warning, "Invalid result in safe_div: a={}, b={}, result={}", 
+                        std::source_location::current(), a, b, result);
+            return 0.0L;
+        }
+        return result;
+    }
+    inline void validateVertexIndex(int vertexIndex, const std::source_location& loc = std::source_location::current()) const {
+        if (vertexIndex < 0 || static_cast<size_t>(vertexIndex) >= nCubeVertices_.size()) {
+            logger_.log(Logging::LogLevel::Error, "Invalid vertexIndex: vertexIndex={}, size={}", 
+                        loc, vertexIndex, nCubeVertices_.size());
+            throw std::out_of_range("Invalid vertex index");
+        }
+    }
 
-    // Physical methods
-    long double computeVertexVolume(int vertexIndex) const;
-    long double computeVertexMass(int vertexIndex) const;
-    long double computeVertexDensity(int vertexIndex) const;
-    std::vector<long double> computeCenterOfMass() const;
-    long double computeTotalSystemVolume() const;
-    long double computeGravitationalPotential(int vertexIndex1, int vertexIndex2 = -1) const;
-    std::vector<long double> computeGravitationalAcceleration(int vertexIndex) const;
-    std::vector<long double> computeClassicalEMField(int vertexIndex) const;
-    void updateOrbitalVelocity(long double dt);
-    void updateOrbitalPositions(long double dt);
-    long double computeSystemEnergy() const;
-    long double computePythagoreanScaling(int vertexIndex) const;
-
-    // Quantum methods
-    long double computeNurbMatter(int vertexIndex) const;
-    long double computeNurbEnergy(int vertexIndex) const;
-    std::vector<long double> computeVectorPotential(int vertexIndex) const;
-    long double computeInteraction(int vertexIndex, long double distance) const;
-    long double computeSpinEnergy(int vertexIndex) const;
-    long double computeEMField(int vertexIndex) const;
-    long double computeGodWave(int vertexIndex) const;
-    long double computeGodWaveAmplitude(int vertexIndex, long double time) const;
+    // Stubs for unimplemented methods
+    void evolveTimeStep(long double dt) {
+        logger_.log(Logging::LogLevel::Info, "evolveTimeStep called: dt={}", std::source_location::current(), dt);
+    }
+    void updateMomentum() {
+        logger_.log(Logging::LogLevel::Info, "updateMomentum called", std::source_location::current());
+    }
+    void advanceCycle() {
+        logger_.log(Logging::LogLevel::Info, "advanceCycle called", std::source_location::current());
+    }
+    std::vector<DimensionData> computeBatch(int startDim, int endDim) {
+        logger_.log(Logging::LogLevel::Info, "computeBatch called: startDim={}, endDim={}", 
+                    std::source_location::current(), startDim, endDim);
+        return {};
+    }
+    void exportToCSV(const std::string& filename, [[maybe_unused]] const std::vector<DimensionData>& data) const {
+        logger_.log(Logging::LogLevel::Info, "exportToCSV called: filename={}", std::source_location::current(), filename);
+    }
+    DimensionData updateCache() {
+        logger_.log(Logging::LogLevel::Info, "updateCache called", std::source_location::current());
+        return {};
+    }
+    long double computeVertexVolume(int vertexIndex) const {
+        validateVertexIndex(vertexIndex);
+        return 1.0L; // Stub
+    }
+    long double computeVertexMass(int vertexIndex) const {
+        validateVertexIndex(vertexIndex);
+        return 1.0L; // Stub
+    }
+    long double computeVertexDensity(int vertexIndex) const {
+        validateVertexIndex(vertexIndex);
+        return 1.0L; // Stub
+    }
+    std::vector<long double> computeCenterOfMass() const {
+        return std::vector<long double>(getCurrentDimension(), 0.0L); // Stub
+    }
+    long double computeTotalSystemVolume() const {
+        return 1.0L; // Stub
+    }
+    long double computeGravitationalPotential(int vertexIndex1, int vertexIndex2 = -1) const {
+        validateVertexIndex(vertexIndex1);
+        if (vertexIndex2 != -1) validateVertexIndex(vertexIndex2);
+        return 0.0L; // Stub
+    }
+    std::vector<long double> computeGravitationalAcceleration(int vertexIndex) const {
+        validateVertexIndex(vertexIndex);
+        return std::vector<long double>(getCurrentDimension(), 0.0L); // Stub
+    }
+    std::vector<long double> computeClassicalEMField(int vertexIndex) const {
+        validateVertexIndex(vertexIndex);
+        return std::vector<long double>(std::min(3, getCurrentDimension()), 0.0L); // Stub
+    }
+    void updateOrbitalVelocity(long double dt) {
+        logger_.log(Logging::LogLevel::Info, "updateOrbitalVelocity called: dt={}", std::source_location::current(), dt);
+    }
+    void updateOrbitalPositions(long double dt) {
+        logger_.log(Logging::LogLevel::Info, "updateOrbitalPositions called: dt={}", std::source_location::current(), dt);
+    }
+    long double computeSystemEnergy() const {
+        return 0.0L; // Stub
+    }
+    long double computePythagoreanScaling(int vertexIndex) const {
+        validateVertexIndex(vertexIndex);
+        return 1.0L; // Stub
+    }
+    long double computeNurbMatter(int vertexIndex) const {
+        validateVertexIndex(vertexIndex);
+        return 0.0L; // Stub
+    }
+    long double computeNurbEnergy(int vertexIndex) const {
+        validateVertexIndex(vertexIndex);
+        return 0.0L; // Stub
+    }
+    std::vector<long double> computeVectorPotential(int vertexIndex) const {
+        validateVertexIndex(vertexIndex);
+        return std::vector<long double>(std::min(3, getCurrentDimension()), 0.0L); // Stub
+    }
+    long double computeInteraction(int vertexIndex, [[maybe_unused]] long double distance) const {
+        validateVertexIndex(vertexIndex);
+        return 0.0L; // Stub
+    }
+    long double computeSpinEnergy(int vertexIndex) const {
+        validateVertexIndex(vertexIndex);
+        return 0.0L; // Stub
+    }
+    long double computeEMField(int vertexIndex) const {
+        validateVertexIndex(vertexIndex);
+        return 0.0L; // Stub
+    }
+    long double computeGodWave(int vertexIndex) const {
+        validateVertexIndex(vertexIndex);
+        return 0.0L; // Stub
+    }
+    long double computeGodWaveAmplitude(int vertexIndex, [[maybe_unused]] long double time) const {
+        validateVertexIndex(vertexIndex);
+        return 0.0L; // Stub
+    }
 
 private:
     // Thread-safe configuration parameters
@@ -615,7 +706,7 @@ private:
     const long double omega_;
     const long double invMaxDim_;
 
-    // Simulation state (mutable for const methods like updateInteractions)
+    // Simulation state
     mutable std::vector<std::vector<long double>> nCubeVertices_;
     mutable std::vector<std::vector<long double>> vertexMomenta_;
     mutable std::vector<long double> vertexSpins_;
@@ -630,31 +721,6 @@ private:
     DimensionData dimensionData_;
     DimensionalNavigator* navigator_;
     const Logging::Logger& logger_;
-
-    // Utility methods
-    void initializeWithRetry();
-    long double safeExp(long double x) const;
-    inline long double safe_div(long double a, long double b) const {
-        if (b == 0.0L || std::isnan(b) || std::isinf(b)) {
-            logger_.log(Logging::LogLevel::Warning, "Invalid divisor in safe_div: a={}, b={}", 
-                        std::source_location::current(), a, b);
-            return 0.0L;
-        }
-        long double result = a / b;
-        if (std::isnan(result) || std::isinf(result)) {
-            logger_.log(Logging::LogLevel::Warning, "Invalid result in safe_div: a={}, b={}, result={}", 
-                        std::source_location::current(), a, b, result);
-            return 0.0L;
-        }
-        return result;
-    }
-    inline void validateVertexIndex(int vertexIndex, const std::source_location& loc = std::source_location::current()) const {
-        if (vertexIndex < 0 || static_cast<size_t>(vertexIndex) >= nCubeVertices_.size()) {
-            logger_.log(Logging::LogLevel::Error, "Invalid vertexIndex: vertexIndex={}, size={}", 
-                        loc, vertexIndex, nCubeVertices_.size());
-            throw std::out_of_range("Invalid vertex index");
-        }
-    }
 };
 
 #endif // UNIVERSAL_EQUATION_HPP

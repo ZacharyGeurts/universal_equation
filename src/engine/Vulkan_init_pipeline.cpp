@@ -5,6 +5,7 @@
 
 #include "engine/Vulkan_init_pipeline.hpp"
 #include "engine/Vulkan_init.hpp"
+#include "engine/Vulkan/Vulkan_func.hpp" // for PushConstants
 #include "engine/logging.hpp"
 #include "engine/core.hpp"
 #include <stdexcept>

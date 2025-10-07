@@ -25,15 +25,15 @@ struct DimensionData {
     int dimension;
     double observable;
     double potential;
-    double darkMatter;
-    double darkEnergy;
+    double nurbMatter;
+    double nurbEnergy;
 };
 
 struct EnergyResult {
     double observable = 0.0;
     double potential = 0.0;
-    double darkMatter = 0.0;
-    double darkEnergy = 0.0;
+    double nurbMatter = 0.0;
+    double nurbEnergy = 0.0;
 };
 
 struct DimensionInteraction {
@@ -178,8 +178,8 @@ public:
         EnergyResult result;
         result.observable = influence_.load() * std::cos(wavePhase_.load());
         result.potential = influence_.load() * std::sin(wavePhase_.load());
-        result.darkMatter = influence_.load() * 0.27;
-        result.darkEnergy = influence_.load() * 0.68;
+        result.nurbMatter = influence_.load() * 0.27;
+        result.nurbEnergy = influence_.load() * 0.68;
         return result;
     }
 
@@ -195,8 +195,8 @@ public:
         auto result = compute();
         data.observable = result.observable;
         data.potential = result.potential;
-        data.darkMatter = result.darkMatter;
-        data.darkEnergy = result.darkEnergy;
+        data.nurbMatter = result.nurbMatter;
+        data.nurbEnergy = result.nurbEnergy;
         return data;
     }
 
@@ -219,7 +219,7 @@ public:
     double computePermeation(int vertexIndex) const {
         return influence_.load() * std::sin(wavePhase_.load() + vertexIndex * 0.1);
     }
-    double computeDarkEnergy(double distance) const {
+    double computenurbEnergy(double distance) const {
         return influence_.load() * 0.68 / (distance + 1e-6);
     }
 
@@ -228,7 +228,7 @@ public:
         simulationTime_.store(0.0f);
         balls_.reserve(numBalls);
         auto result = compute();
-        float massScale = static_cast<float>(result.darkMatter);
+        float massScale = static_cast<float>(result.nurbMatter);
         Xorshift rng(12345);
         for (size_t i = 0; i < numBalls; ++i) {
             glm::vec3 pos(rng.nextFloat(-5.0f, 5.0f), rng.nextFloat(-5.0f, 5.0f), rng.nextFloat(-2.0f, 2.0f));
@@ -252,7 +252,7 @@ public:
             forces[i] = glm::vec3(
                 static_cast<float>(result.observable),
                 static_cast<float>(result.potential),
-                static_cast<float>(result.darkEnergy)
+                static_cast<float>(result.nurbEnergy)
             ) * static_cast<float>(interactionStrength);
             balls_[i].acceleration = forces[i] / balls_[i].mass;
         }

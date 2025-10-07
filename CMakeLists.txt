@@ -95,22 +95,6 @@ endif()
 message(STATUS "Freetype include dirs: ${FREETYPE_INCLUDE_DIRS}")
 message(STATUS "Freetype libraries: ${FREETYPE_LIBRARIES}")
 
-# fmt
-find_package(fmt REQUIRED)
-if(NOT fmt_FOUND)
-    message(FATAL_ERROR "fmt not found. Install libfmt-dev.")
-endif()
-message(STATUS "fmt include dirs: ${fmt_INCLUDE_DIRS}")
-message(STATUS "fmt libraries: ${fmt_LIBRARIES}")
-
-# spdlog
-find_package(spdlog REQUIRED)
-if(NOT spdlog_FOUND)
-    message(FATAL_ERROR "spdlog not found. Install libspdlog-dev.")
-endif()
-message(STATUS "spdlog include dirs: ${spdlog_INCLUDE_DIRS}")
-message(STATUS "spdlog libraries: ${spdlog_LIBRARIES}")
-
 # glm
 find_package(glm REQUIRED)
 if(NOT glm_FOUND)
@@ -238,8 +222,6 @@ target_include_directories(amouranth_engine PRIVATE
     ${Vulkan_INCLUDE_DIRS}
     ${FREETYPE_INCLUDE_DIRS}
     ${HarfBuzz_INCLUDE_DIRS}
-    ${fmt_INCLUDE_DIRS}
-    ${spdlog_INCLUDE_DIRS}
     ${glm_INCLUDE_DIRS}
 )
 
@@ -264,9 +246,6 @@ endif()
 target_link_libraries(amouranth_engine PRIVATE
     Vulkan::Vulkan
     TBB::tbb
-    fmt::fmt
-    spdlog::spdlog
-    glm::glm
     OpenMP::OpenMP_CXX
     Freetype::Freetype
     ${HarfBuzz_LIBRARIES}
@@ -307,15 +286,40 @@ target_compile_options(amouranth_engine PRIVATE -fPIC)
 set(SHADER_EXTS "*.vert" "*.frag" "*.rahit" "*.rchit" "*.rmiss" "*.rgen" "*.rint" "*.rcall")
 set(SHADER_OUTPUTS "")
 foreach(EXT ${SHADER_EXTS})
-    file(GLOB SHADERS "${SHADER_DIR}/raytracing/${EXT}" "${SHADER_DIR}/rasterization/${EXT}")
-    foreach(SHADER ${SHADERS})
+    # Process rasterization shaders
+    file(GLOB RASTER_SHADERS "${SHADER_DIR}/rasterization/${EXT}")
+    foreach(SHADER ${RASTER_SHADERS})
         get_filename_component(SHADER_NAME ${SHADER} NAME_WE)
-        set(SHADER_OUTPUT "${SHADER_DIR}/${SHADER_NAME}.spv")
+        set(SHADER_OUTPUT "${LINUX_BIN_DIR}/assets/shaders/rasterization/${SHADER_NAME}.spv")
+        if(IS_WINDOWS)
+            set(SHADER_OUTPUT "${WINDOWS_BIN_DIR}/assets/shaders/rasterization/${SHADER_NAME}.spv")
+        endif()
         add_custom_command(
             OUTPUT ${SHADER_OUTPUT}
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${LINUX_BIN_DIR}/assets/shaders/rasterization"
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${WINDOWS_BIN_DIR}/assets/shaders/rasterization"
             COMMAND ${GLSLC} ${SHADER} -o ${SHADER_OUTPUT} --target-env=vulkan1.3
             DEPENDS ${SHADER}
-            COMMENT "Compiling shader ${SHADER_NAME}"
+            COMMENT "Compiling rasterization shader ${SHADER_NAME}"
+        )
+        list(APPEND SHADER_OUTPUTS ${SHADER_OUTPUT})
+    endforeach()
+
+    # Process raytracing shaders
+    file(GLOB RAYTRACE_SHADERS "${SHADER_DIR}/raytracing/${EXT}")
+    foreach(SHADER ${RAYTRACE_SHADERS})
+        get_filename_component(SHADER_NAME ${SHADER} NAME_WE)
+        set(SHADER_OUTPUT "${LINUX_BIN_DIR}/assets/shaders/raytracing/${SHADER_NAME}.spv")
+        if(IS_WINDOWS)
+            set(SHADER_OUTPUT "${WINDOWS_BIN_DIR}/assets/shaders/raytracing/${SHADER_NAME}.spv")
+        endif()
+        add_custom_command(
+            OUTPUT ${SHADER_OUTPUT}
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${LINUX_BIN_DIR}/assets/shaders/raytracing"
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${WINDOWS_BIN_DIR}/assets/shaders/raytracing"
+            COMMAND ${GLSLC} ${SHADER} -o ${SHADER_OUTPUT} --target-env=vulkan1.3
+            DEPENDS ${SHADER}
+            COMMENT "Compiling raytracing shader ${SHADER_NAME}"
         )
         list(APPEND SHADER_OUTPUTS ${SHADER_OUTPUT})
     endforeach()
@@ -327,34 +331,36 @@ endif()
 
 # Create output directories
 set(OUTPUT_DIRS
-    "${CMAKE_BINARY_DIR}/bin/Linux" "${CMAKE_BINARY_DIR}/bin/Linux/assets" "${CMAKE_BINARY_DIR}/bin/Linux/assets/shaders" "${CMAKE_BINARY_DIR}/bin/Linux/assets/fonts"
-    "${CMAKE_BINARY_DIR}/bin/Linux/assets/textures" "${CMAKE_BINARY_DIR}/bin/Linux/assets/objects" "${CMAKE_BINARY_DIR}/bin/Linux/assets/materials"
-    "${CMAKE_BINARY_DIR}/bin/Linux/assets/scenes" "${CMAKE_BINARY_DIR}/bin/Linux/assets/audio" "${CMAKE_BINARY_DIR}/bin/Linux/assets/scripts"
-    "${CMAKE_BINARY_DIR}/bin/Windows" "${CMAKE_BINARY_DIR}/bin/Windows/assets" "${CMAKE_BINARY_DIR}/bin/Windows/assets/shaders" "${CMAKE_BINARY_DIR}/bin/Windows/assets/fonts"
-    "${CMAKE_BINARY_DIR}/bin/Windows/assets/textures" "${CMAKE_BINARY_DIR}/bin/Windows/assets/objects" "${CMAKE_BINARY_DIR}/bin/Windows/assets/materials"
-    "${CMAKE_BINARY_DIR}/bin/Windows/assets/scenes" "${CMAKE_BINARY_DIR}/bin/Windows/assets/audio" "${CMAKE_BINARY_DIR}/bin/Windows/assets/scripts"
+    "${CMAKE_BINARY_DIR}/bin/Linux"
+    "${CMAKE_BINARY_DIR}/bin/Linux/assets"
+    "${CMAKE_BINARY_DIR}/bin/Linux/assets/shaders"
+    "${CMAKE_BINARY_DIR}/bin/Linux/assets/shaders/rasterization"
+    "${CMAKE_BINARY_DIR}/bin/Linux/assets/shaders/raytracing"
+    "${CMAKE_BINARY_DIR}/bin/Linux/assets/fonts"
+    "${CMAKE_BINARY_DIR}/bin/Linux/assets/textures"
+    "${CMAKE_BINARY_DIR}/bin/Linux/assets/objects"
+    "${CMAKE_BINARY_DIR}/bin/Linux/assets/materials"
+    "${CMAKE_BINARY_DIR}/bin/Linux/assets/scenes"
+    "${CMAKE_BINARY_DIR}/bin/Linux/assets/audio"
+    "${CMAKE_BINARY_DIR}/bin/Linux/assets/scripts"
+    "${CMAKE_BINARY_DIR}/bin/Windows"
+    "${CMAKE_BINARY_DIR}/bin/Windows/assets"
+    "${CMAKE_BINARY_DIR}/bin/Windows/assets/shaders"
+    "${CMAKE_BINARY_DIR}/bin/Windows/assets/shaders/rasterization"
+    "${CMAKE_BINARY_DIR}/bin/Windows/assets/shaders/raytracing"
+    "${CMAKE_BINARY_DIR}/bin/Windows/assets/fonts"
+    "${CMAKE_BINARY_DIR}/bin/Windows/assets/textures"
+    "${CMAKE_BINARY_DIR}/bin/Windows/assets/objects"
+    "${CMAKE_BINARY_DIR}/bin/Windows/assets/materials"
+    "${CMAKE_BINARY_DIR}/bin/Windows/assets/scenes"
+    "${CMAKE_BINARY_DIR}/bin/Windows/assets/audio"
+    "${CMAKE_BINARY_DIR}/bin/Windows/assets/scripts"
 )
 foreach(DIR ${OUTPUT_DIRS})
     file(MAKE_DIRECTORY "${DIR}")
 endforeach()
 
-# Post-build moves for shaders and assets
-foreach(SHADER_OUTPUT ${SHADER_OUTPUTS})
-    get_filename_component(SHADER_NAME ${SHADER_OUTPUT} NAME)
-    if(IS_LINUX)
-        add_custom_command(TARGET amouranth_engine POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different ${SHADER_OUTPUT} ${CMAKE_BINARY_DIR}/bin/Linux/assets/shaders/${SHADER_NAME}
-            COMMENT "Copying shader ${SHADER_NAME} to Linux"
-        )
-    endif()
-    if(IS_WINDOWS)
-        add_custom_command(TARGET amouranth_engine POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different ${SHADER_OUTPUT} ${CMAKE_BINARY_DIR}/bin/Windows/assets/shaders/${SHADER_NAME}
-            COMMENT "Copying shader ${SHADER_NAME} to Windows"
-        )
-    endif()
-endforeach()
-
+# Copy assets
 set(ASSET_TYPES
     "FONT:*.ttf,*.otf:${ASSET_DIR}/fonts:${CMAKE_BINARY_DIR}/bin/Linux/assets/fonts:${CMAKE_BINARY_DIR}/bin/Windows/assets/fonts"
     "TEXTURE:*.png,*.jpg,*.ktx,*.dds:${ASSET_DIR}/textures:${CMAKE_BINARY_DIR}/bin/Linux/assets/textures:${CMAKE_BINARY_DIR}/bin/Windows/assets/textures"

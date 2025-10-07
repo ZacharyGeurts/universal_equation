@@ -14,7 +14,13 @@
 #include <array>
 #include <glm/glm.hpp>
 #include "engine/logging.hpp" // For Logging::Logger
-#include "engine/core.hpp"   // For PushConstants
+
+struct PushConstants {
+    alignas(16) glm::mat4 model;       // 64 bytes
+    alignas(16) glm::mat4 view_proj;   // 64 bytes
+    alignas(16) glm::vec4 extra[8];    // 128 bytes
+};
+static_assert(sizeof(PushConstants) == 256, "PushConstants must be 256 bytes");
 
 namespace VulkanInitializer {
 
