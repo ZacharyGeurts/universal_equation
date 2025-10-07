@@ -32,6 +32,7 @@ public:
     using LogCallback = std::function<void(const std::string&)>;
 
     SDL3Input(const Logging::Logger& logger) : logger_(logger) {}
+    ~SDL3Input(); // Added destructor declaration
 
     void initialize(LogCallback logCallback);
     bool pollEvents(SDL_Window* window, SDL_AudioDeviceID audioDevice, bool& consoleOpen, bool exitOnClose);

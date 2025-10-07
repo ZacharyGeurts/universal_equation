@@ -1,18 +1,8 @@
 #ifndef CORE_HPP
 #define CORE_HPP
 
-// AMOURANTH RTX Engine Core, October 2025
-// Core rendering and navigation for Vulkan-based ray tracing and SDL integration.
-// Manages physics via UniversalEquation (universal_equation.hpp) and input via handleinput.hpp.
-// Uses 256-byte PushConstants for rasterization and ray tracing pipelines.
-// Supports sphere, quad, triangle, and voxel geometries for fast 3D rendering.
-// Simulates 30,000 balls with dynamics driven by UniversalEquation outputs.
-// Dependencies: Vulkan 1.3+, SDL3, GLM, universal_equation.hpp, handleinput.hpp, logging.hpp.
-// Usage: Instantiate AMOURANTH with DimensionalNavigator; call render and update for gameplay.
-// Zachary Geurts 2025
-
 #include "universal_equation.hpp"
-#include "logging.hpp"
+#include "engine/logging.hpp"
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <SDL3/SDL.h>
@@ -27,7 +17,6 @@
 
 static constexpr int kMaxRenderedDimensions = 9;
 
-// Random number generator for ball initialization
 class Xorshift {
 public:
     Xorshift(uint32_t seed) : state_(seed) {}
@@ -41,7 +30,6 @@ private:
     uint32_t state_;
 };
 
-// Define Ball struct for 30,000 balls simulation
 struct Ball {
     glm::vec3 position;
     glm::vec3 velocity;
@@ -185,10 +173,10 @@ public:
     bool isUserCamActive() const { return isUserCamActive_; }
     UniversalEquation::EnergyResult getEnergyResult() const { return ue_.compute(); }
     std::span<const UniversalEquation::DimensionInteraction> getInteractions() const { return ue_.getInteractions(); }
-
     VkDevice getDevice() const { return device_; }
     VkDeviceMemory getVertexBufferMemory() const { return vertexBufferMemory_; }
     VkPipeline getGraphicsPipeline() const { return pipeline_; }
+    const Logging::Logger& getLogger() const { return logger_; }
 
 private:
     void initializeSphereGeometry();
@@ -435,7 +423,6 @@ inline void AMOURANTH::updateBalls(float deltaTime) {
     auto result = ue_.compute();
     float simulationTime = wavePhase_;
 
-    // Compute forces
     std::vector<glm::vec3> forces(balls_.size(), glm::vec3(0.0f));
 #pragma omp parallel for
     for (size_t i = 0; i < balls_.size(); ++i) {
@@ -449,7 +436,6 @@ inline void AMOURANTH::updateBalls(float deltaTime) {
         balls_[i].acceleration = forces[i] / balls_[i].mass;
     }
 
-    // Apply boundary conditions
     const glm::vec3 boundsMin(-5.0f, -5.0f, -2.0f);
     const glm::vec3 boundsMax(5.0f, 5.0f, 2.0f);
 #pragma omp parallel for
@@ -465,7 +451,6 @@ inline void AMOURANTH::updateBalls(float deltaTime) {
         if (pos.z > boundsMax.z) { pos.z = boundsMax.z; vel.z = -vel.z; }
     }
 
-    // Spatial grid for collision detection
     const int gridSize = 10;
     const float cellSize = 10.0f / gridSize;
     std::vector<std::vector<size_t>> grid(gridSize * gridSize * gridSize);
@@ -482,7 +467,6 @@ inline void AMOURANTH::updateBalls(float deltaTime) {
         grid[cellIdx].push_back(i);
     }
 
-    // Handle collisions
     std::vector<std::vector<std::pair<size_t, size_t>>> threadCollisions(omp_get_max_threads());
 #pragma omp parallel for
     for (size_t i = 0; i < balls_.size(); ++i) {
@@ -516,7 +500,6 @@ inline void AMOURANTH::updateBalls(float deltaTime) {
         }
     }
 
-    // Process collisions
     for (const auto& collisions : threadCollisions) {
         for (const auto& [i, j] : collisions) {
             glm::vec3 delta = balls_[j].position - balls_[i].position;
@@ -535,7 +518,6 @@ inline void AMOURANTH::updateBalls(float deltaTime) {
         }
     }
 
-    // Update positions
 #pragma omp parallel for
     for (size_t i = 0; i < balls_.size(); ++i) {
         if (simulationTime < balls_[i].startTime) continue;
@@ -543,7 +525,5 @@ inline void AMOURANTH::updateBalls(float deltaTime) {
         balls_[i].position += balls_[i].velocity * deltaTime;
     }
 }
-
-#include "handleinput.hpp"
 
 #endif // CORE_HPP

@@ -6,6 +6,7 @@
 // Zachary Geurts 2025
 
 #include "engine/core.hpp"
+#include "engine/logging.hpp"
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <vulkan/vulkan.h>
@@ -15,11 +16,18 @@
 
 void renderMode1(AMOURANTH* amouranth, uint32_t imageIndex, VkBuffer vertexBuffer, VkCommandBuffer commandBuffer,
                  VkBuffer indexBuffer, float zoomLevel, int width, int height, float wavePhase,
-                 std::span<const UniversalEquation::DimensionData> cache, VkPipelineLayout pipelineLayout, VkDescriptorSet descriptorSet,
-                 VkDevice device, VkDeviceMemory vertexBufferMemory, VkPipeline pipeline) {
+                 std::span<const UniversalEquation::DimensionData> cache, VkPipelineLayout pipelineLayout,
+                 VkDescriptorSet descriptorSet, VkDevice device, VkDeviceMemory vertexBufferMemory, VkPipeline pipeline) {
     // Log rendering start
-    const Logging::Logger& logger = amouranth->logger_;
+    const Logging::Logger& logger = amouranth->getLogger(); // Fixed: Use getLogger()
     logger.log(Logging::LogLevel::Info, "Starting renderMode1 for image index {}", std::source_location::current(), imageIndex);
+
+    // Check for valid pipeline and vertex buffer memory
+    if (!pipeline || !vertexBufferMemory) {
+        logger.log(Logging::LogLevel::Error, "Invalid pipeline or vertex buffer memory in renderMode1: pipeline={}, vertexBufferMemory={}",
+                   std::source_location::current(), pipeline != VK_NULL_HANDLE, vertexBufferMemory != VK_NULL_HANDLE);
+        return;
+    }
 
     // Get energy results and interactions from UniversalEquation
     UniversalEquation::EnergyResult energy = amouranth->getEnergyResult();
@@ -79,7 +87,11 @@ void renderMode1(AMOURANTH* amouranth, uint32_t imageIndex, VkBuffer vertexBuffe
     // Update instance buffer
     VkDeviceSize instanceBufferSize = instanceData.size() * sizeof(InstanceData);
     void* instanceDataPtr;
-    vkMapMemory(device, vertexBufferMemory, 0, instanceBufferSize, 0, &instanceDataPtr);
+    VkResult result = vkMapMemory(device, vertexBufferMemory, 0, instanceBufferSize, 0, &instanceDataPtr);
+    if (result != VK_SUCCESS) {
+        logger.log(Logging::LogLevel::Error, "Failed to map instance buffer memory: {}", std::source_location::current(), result);
+        return;
+    }
     memcpy(instanceDataPtr, instanceData.data(), instanceBufferSize);
     vkUnmapMemory(device, vertexBufferMemory);
     logger.log(Logging::LogLevel::Debug, "Updated instance buffer with {} instances", std::source_location::current(), instanceData.size());

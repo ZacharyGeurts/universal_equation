@@ -1,5 +1,6 @@
-// AMOURANTH RTX Engine, September 2025 - SDL3 window creation and management.
+// AMOURANTH RTX Engine, October 2025 - SDL3 window creation and management.
 // Dependencies: SDL3, Vulkan 1.3+, C++20 standard library.
+// Supported platforms: Linux, Windows.
 // Zachary Geurts 2025
 
 #ifndef SDL3_WINDOW_HPP
@@ -9,33 +10,40 @@
 #include <vulkan/vulkan.h>
 #include <memory>
 #include <string>
-#include <iostream>
 #include <functional>
+#include "engine/logging.hpp"
 
 // Platform-specific includes for window-related Vulkan surface creation
 #ifdef _WIN32
 #include <vulkan/vulkan_win32.h>
-#elif defined(__ANDROID__)
-#include <vulkan/vulkan_android.h>
 #elif defined(__linux__)
 #include <X11/Xlib.h>
 #include <vulkan/vulkan_xlib.h>
 #include <vulkan/vulkan_wayland.h>
-#elif defined(__APPLE__)
-#include <vulkan/vulkan_macos_moltenvk.h>
 #endif
 
 namespace SDL3Initializer {
 
 struct SDLWindowDeleter {
     void operator()(SDL_Window* w) const {
-        std::cout << "Destroying SDL window\n";
-        if (w) SDL_DestroyWindow(w);
+        Logging::Logger logger;
+        if (w) {
+            logger.log(Logging::LogLevel::Info, "Destroying SDL window", std::source_location::current());
+            SDL_DestroyWindow(w);
+        }
     }
 };
 
-std::unique_ptr<SDL_Window, SDLWindowDeleter> createWindow(const char* title, int w, int h, Uint32 flags,
-                                                          std::function<void(const std::string&)> logMessage);
+std::unique_ptr<SDL_Window, SDLWindowDeleter> createWindow(
+    const char* title, 
+    int w, 
+    int h, 
+    Uint32 flags,
+    std::function<void(const std::string&)> logMessage = [](const std::string& msg) {
+        Logging::Logger logger;
+        logger.log(Logging::LogLevel::Info, "{}", std::source_location::current(), msg);
+    }
+);
 
 SDL_Window* getWindow(const std::unique_ptr<SDL_Window, SDLWindowDeleter>& window);
 

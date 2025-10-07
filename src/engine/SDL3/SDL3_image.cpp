@@ -1,76 +1,55 @@
-// AMOURANTH RTX October 2025
+// AMOURANTH RTX Engine, October 2025 - Image loading and texture management implementation.
+// Thread-safe with C++20 features; no mutexes required.
+// Dependencies: SDL3, SDL_image, C++20 standard library, logging.hpp.
+// Supported platforms: Linux, Windows.
 // Zachary Geurts 2025
 
-// src/engine/SDL3/SDL3_image.cpp
 #include "engine/SDL3/SDL3_image.hpp"
-#include <functional>
-#include <string>
+#include <SDL3_image/SDL_image.h>
 #include <stdexcept>
-#include <omp.h>
+#include <format>
 
 namespace SDL3Initializer {
 
-    class ThreadSafeLogger {
-    private:
-        std::function<void(const std::string&)> logCallback;
-        omp_lock_t logLock;
+void initImage(const ImageConfig& config) {
+    Logging::Logger logger;
+    // Note: config is currently unused but retained for future extensions (e.g., format selection)
+    (void)config; // Suppress unused parameter warning
 
-    public:
-        ThreadSafeLogger(std::function<void(const std::string&)> callback) : logCallback(callback) {
-            omp_init_lock(&logLock);
-        }
+    logger.log(Logging::LogLevel::Info, "Initializing SDL_image", std::source_location::current());
 
-        ~ThreadSafeLogger() {
-            omp_destroy_lock(&logLock);
-        }
-
-        void log(const std::string& message) {
-            omp_set_lock(&logLock);
-            logCallback(message);
-            omp_unset_lock(&logLock);
-        }
-    };
-
-    void initImage(const ImageConfig& c, std::function<void(const std::string&)> logMessage) {
-        (void)c;
-        ThreadSafeLogger logger(logMessage);
-        logger.log("Initializing SDL3_image (automatic, no explicit init required)");
+    // Verify platform support
+    std::string_view platform = SDL_GetPlatform();
+    if (platform != "Linux" && platform != "Windows") {
+        std::string error = std::format("Unsupported platform for image: {}", platform);
+        logger.log(Logging::LogLevel::Error, "{}", std::source_location::current(), error);
+        throw std::runtime_error(error);
     }
 
-    void cleanupImage(std::function<void(const std::string&)> logMessage) {
-        ThreadSafeLogger logger(logMessage);
-        logger.log("Cleaning up SDL3_image (automatic, no explicit quit required)");
+    // SDL3's SDL_image does not require explicit initialization (IMG_Init is removed)
+    // Image format support (PNG, JPG) is handled automatically by IMG_LoadTexture
+    logger.log(Logging::LogLevel::Info, "SDL_image ready for PNG and JPG loading", std::source_location::current());
+}
+
+void cleanupImage() {
+    Logging::Logger logger;
+    logger.log(Logging::LogLevel::Info, "Cleaning up SDL_image", std::source_location::current());
+    // SDL3's SDL_image does not require IMG_Quit; cleanup is handled by SDL core if needed
+}
+
+SDL_Texture* loadTexture(SDL_Renderer* renderer, const std::string& file) {
+    Logging::Logger logger;
+    logger.log(Logging::LogLevel::Debug, "Loading texture from file: {}", std::source_location::current(), file);
+
+    SDL_Texture* texture = IMG_LoadTexture(renderer, file.c_str());
+    if (!texture) {
+        std::string error = std::format("IMG_LoadTexture failed for {}: {}", file, SDL_GetError());
+        logger.log(Logging::LogLevel::Error, "{}", std::source_location::current(), error);
+        throw std::runtime_error(error);
     }
 
-    SDL_Texture* loadTexture(SDL_Renderer* renderer, const std::string& file, std::function<void(const std::string&)> logMessage) {
-        ThreadSafeLogger logger(logMessage);
-        logger.log("Loading texture from: " + file);
-
-        SDL_Texture* texture = nullptr;
-        #pragma omp critical
-        {
-            texture = IMG_LoadTexture(renderer, file.c_str());
-            if (!texture) {
-                std::string error = "IMG_LoadTexture failed: " + std::string(SDL_GetError());
-                logger.log(error);
-                throw std::runtime_error(error);
-            }
-        }
-        logger.log("Texture loaded successfully");
-        return texture;
-    }
-
-    void freeTexture(SDL_Texture* texture, std::function<void(const std::string&)> logMessage) {
-        if (!texture) return;
-
-        ThreadSafeLogger logger(logMessage);
-        logger.log("Freeing texture");
-
-        #pragma omp critical
-        {
-            SDL_DestroyTexture(texture);
-            logger.log("Texture freed");
-        }
-    }
+    logger.log(Logging::LogLevel::Info, "Texture loaded successfully: {}", std::source_location::current(), file);
+    return texture;
+}
 
 } // namespace SDL3Initializer

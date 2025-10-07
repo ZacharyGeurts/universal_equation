@@ -1,73 +1,37 @@
 // AMOURANTH RTX Engine, October 2025 - Manages Vulkan instance and surface creation with platform-specific extensions.
 // Dependencies: SDL3, Vulkan 1.3+, C++20 standard library.
+// Supported platforms: Linux, Windows.
 // Zachary Geurts 2025
 
 #include "engine/SDL3/SDL3_vulkan.hpp"
+#include "engine/logging.hpp"
+#include <SDL3/SDL_vulkan.h>
+#include <vulkan/vulkan.h>
+#ifdef _WIN32
+#include <vulkan/vulkan_win32.h> // For VK_KHR_WIN32_SURFACE_EXTENSION_NAME
+#endif
 #include <stdexcept>
 #include <algorithm>
 #include <cstring>
 #include <format>
-#include <syncstream>
-
-// ANSI color codes for consistent logging
-#define RESET "\033[0m"
-#define MAGENTA "\033[1;35m" // Bold magenta for errors
-#define CYAN "\033[1;36m"    // Bold cyan for debug
-#define YELLOW "\033[1;33m"  // Bold yellow for warnings
-#define GREEN "\033[1;32m"   // Bold green for info
-
-namespace std {
-// Custom formatter for VkResult to enable std::format support
-template <>
-struct formatter<VkResult, char> {
-    template <typename ParseContext>
-    constexpr auto parse(ParseContext& ctx) {
-        return ctx.begin();
-    }
-
-    template <typename FormatContext>
-    auto format(VkResult value, FormatContext& ctx) const {
-        std::string_view name;
-        switch (value) {
-            case VK_SUCCESS: name = "VK_SUCCESS"; break;
-            case VK_NOT_READY: name = "VK_NOT_READY"; break;
-            case VK_TIMEOUT: name = "VK_TIMEOUT"; break;
-            case VK_EVENT_SET: name = "VK_EVENT_SET"; break;
-            case VK_EVENT_RESET: name = "VK_EVENT_RESET"; break;
-            case VK_INCOMPLETE: name = "VK_INCOMPLETE"; break;
-            case VK_ERROR_OUT_OF_HOST_MEMORY: name = "VK_ERROR_OUT_OF_HOST_MEMORY"; break;
-            case VK_ERROR_OUT_OF_DEVICE_MEMORY: name = "VK_ERROR_OUT_OF_DEVICE_MEMORY"; break;
-            case VK_ERROR_INITIALIZATION_FAILED: name = "VK_ERROR_INITIALIZATION_FAILED"; break;
-            case VK_ERROR_DEVICE_LOST: name = "VK_ERROR_DEVICE_LOST"; break;
-            case VK_ERROR_MEMORY_MAP_FAILED: name = "VK_ERROR_MEMORY_MAP_FAILED"; break;
-            case VK_ERROR_LAYER_NOT_PRESENT: name = "VK_ERROR_LAYER_NOT_PRESENT"; break;
-            case VK_ERROR_EXTENSION_NOT_PRESENT: name = "VK_ERROR_EXTENSION_NOT_PRESENT"; break;
-            case VK_ERROR_FEATURE_NOT_PRESENT: name = "VK_ERROR_FEATURE_NOT_PRESENT"; break;
-            case VK_ERROR_INCOMPATIBLE_DRIVER: name = "VK_ERROR_INCOMPATIBLE_DRIVER"; break;
-            case VK_ERROR_TOO_MANY_OBJECTS: name = "VK_ERROR_TOO_MANY_OBJECTS"; break;
-            case VK_ERROR_FORMAT_NOT_SUPPORTED: name = "VK_ERROR_FORMAT_NOT_SUPPORTED"; break;
-            default: name = "UNKNOWN_VK_RESULT"; break;
-        }
-        return format_to(ctx.out(), "{}", name);
-    }
-};
-} // namespace std
 
 namespace SDL3Initializer {
 
 void VulkanInstanceDeleter::operator()(VkInstance instance) const {
+    Logging::Logger logger;
     if (instance) {
-        std::osyncstream(std::cout) << GREEN << "[INFO] Destroying Vulkan instance" << RESET << std::endl;
+        logger.log(Logging::LogLevel::Info, "Destroying Vulkan instance", std::source_location::current());
         vkDestroyInstance(instance, nullptr);
     }
 }
 
 void VulkanSurfaceDeleter::operator()(VkSurfaceKHR surface) const {
+    Logging::Logger logger;
     if (surface && m_instance) {
-        std::osyncstream(std::cout) << GREEN << "[INFO] Destroying Vulkan surface" << RESET << std::endl;
+        logger.log(Logging::LogLevel::Info, "Destroying Vulkan surface", std::source_location::current());
         vkDestroySurfaceKHR(m_instance, surface, nullptr);
     } else if (surface) {
-        std::osyncstream(std::cout) << YELLOW << "[WARNING] Cannot destroy VkSurfaceKHR because VkInstance is invalid" << RESET << std::endl;
+        logger.log(Logging::LogLevel::Warning, "Cannot destroy VkSurfaceKHR because VkInstance is invalid", std::source_location::current());
     }
 }
 
@@ -80,23 +44,26 @@ void initVulkan(
     bool rt, 
     std::string_view title) 
 {
-    std::osyncstream(std::cout) << GREEN << "[INFO] Initializing Vulkan with title: " << title << RESET << std::endl;
+    Logging::Logger logger;
+    logger.log(Logging::LogLevel::Info, "Initializing Vulkan with title: {}", std::source_location::current(), title);
 
-    std::osyncstream(std::cout) << CYAN << "[DEBUG] Getting Vulkan instance extensions from SDL" << RESET << std::endl;
+    // Get Vulkan instance extensions from SDL
+    logger.log(Logging::LogLevel::Debug, "Getting Vulkan instance extensions from SDL", std::source_location::current());
     Uint32 extCount;
     auto exts = SDL_Vulkan_GetInstanceExtensions(&extCount);
     if (!exts || !extCount) {
-        auto error = std::format("SDL_Vulkan_GetInstanceExtensions failed: {}", SDL_GetError());
-        std::osyncstream(std::cout) << MAGENTA << "[ERROR] " << error << RESET << std::endl;
+        std::string error = std::format("SDL_Vulkan_GetInstanceExtensions failed: {}", SDL_GetError());
+        logger.log(Logging::LogLevel::Error, "{}", std::source_location::current(), error);
         throw std::runtime_error(error);
     }
     std::vector<const char*> extensions(exts, exts + extCount);
-    std::osyncstream(std::cout) << GREEN << "[INFO] Required SDL Vulkan extensions: " << extCount << RESET << std::endl;
+    logger.log(Logging::LogLevel::Info, "Required SDL Vulkan extensions: {}", std::source_location::current(), extCount);
     for (uint32_t i = 0; i < extCount; ++i) {
-        std::osyncstream(std::cout) << CYAN << "[DEBUG] Extension " << i << ": " << extensions[i] << RESET << std::endl;
+        logger.log(Logging::LogLevel::Debug, "Extension {}: {}", std::source_location::current(), i, extensions[i]);
     }
 
-    std::osyncstream(std::cout) << CYAN << "[DEBUG] Checking Vulkan instance extensions" << RESET << std::endl;
+    // Check available Vulkan instance extensions
+    logger.log(Logging::LogLevel::Debug, "Checking Vulkan instance extensions", std::source_location::current());
     uint32_t instanceExtCount;
     vkEnumerateInstanceExtensionProperties(nullptr, &instanceExtCount, nullptr);
     std::vector<VkExtensionProperties> instanceExtensions(instanceExtCount);
@@ -105,35 +72,36 @@ void initVulkan(
     bool hasSurfaceExtension = false;
     std::vector<std::string> platformSurfaceExtensions;
     std::string_view platform = SDL_GetPlatform();
-    std::osyncstream(std::cout) << GREEN << "[INFO] Detected platform: " << platform << RESET << std::endl;
+    logger.log(Logging::LogLevel::Info, "Detected platform: {}", std::source_location::current(), platform);
 
     for (const auto& ext : instanceExtensions) {
-        std::osyncstream(std::cout) << CYAN << "[DEBUG] Available instance extension: " << ext.extensionName << RESET << std::endl;
+        logger.log(Logging::LogLevel::Debug, "Available instance extension: {}", std::source_location::current(), ext.extensionName);
         if (std::strcmp(ext.extensionName, VK_KHR_SURFACE_EXTENSION_NAME) == 0) {
             hasSurfaceExtension = true;
-            std::osyncstream(std::cout) << GREEN << "[INFO] VK_KHR_surface extension found" << RESET << std::endl;
+            logger.log(Logging::LogLevel::Info, "VK_KHR_surface extension found", std::source_location::current());
         }
-        if (platform == "Linux" && (std::strcmp(ext.extensionName, VK_KHR_XLIB_SURFACE_EXTENSION_NAME) == 0 ||
-                                    std::strcmp(ext.extensionName, VK_KHR_WAYLAND_SURFACE_EXTENSION_NAME) == 0)) {
-            platformSurfaceExtensions.emplace_back(ext.extensionName);
-        } else if (platform == "Windows" && std::strcmp(ext.extensionName, "VK_KHR_win32_surface") == 0) {
-            platformSurfaceExtensions.emplace_back(ext.extensionName);
-        } else if (platform == "Android" && std::strcmp(ext.extensionName, "VK_KHR_android_surface") == 0) {
-            platformSurfaceExtensions.emplace_back(ext.extensionName);
-        } else if (platform == "Mac OS X" && std::strcmp(ext.extensionName, "VK_MVK_macos_surface") == 0) {
+        if (platform == "Linux") {
+            if (std::strcmp(ext.extensionName, VK_KHR_XLIB_SURFACE_EXTENSION_NAME) == 0 ||
+                std::strcmp(ext.extensionName, VK_KHR_WAYLAND_SURFACE_EXTENSION_NAME) == 0) {
+                platformSurfaceExtensions.emplace_back(ext.extensionName);
+            }
+        }
+#ifdef _WIN32
+        else if (platform == "Windows" && std::strcmp(ext.extensionName, VK_KHR_WIN32_SURFACE_EXTENSION_NAME) == 0) {
             platformSurfaceExtensions.emplace_back(ext.extensionName);
         }
+#endif
     }
 
     for (const auto& extName : platformSurfaceExtensions) {
         if (std::find(extensions.begin(), extensions.end(), extName.c_str()) == extensions.end()) {
-            std::osyncstream(std::cout) << CYAN << "[DEBUG] Adding platform surface extension: " << extName << RESET << std::endl;
+            logger.log(Logging::LogLevel::Debug, "Adding platform surface extension: {}", std::source_location::current(), extName);
             extensions.push_back(extName.c_str());
         }
     }
 
     if (rt) {
-        std::osyncstream(std::cout) << CYAN << "[DEBUG] Enumerating Vulkan instance extension properties for ray tracing" << RESET << std::endl;
+        logger.log(Logging::LogLevel::Debug, "Enumerating Vulkan instance extension properties for ray tracing", std::source_location::current());
         const char* rtExts[] = {
             VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME,
             VK_KHR_EXTERNAL_MEMORY_CAPABILITIES_EXTENSION_NAME,
@@ -143,7 +111,7 @@ void initVulkan(
         for (auto ext : rtExts) {
             if (std::any_of(instanceExtensions.begin(), instanceExtensions.end(), 
                             [ext](const auto& p) { return std::strcmp(p.extensionName, ext) == 0; })) {
-                std::osyncstream(std::cout) << CYAN << "[DEBUG] Adding Vulkan extension: " << ext << RESET << std::endl;
+                logger.log(Logging::LogLevel::Debug, "Adding Vulkan extension: {}", std::source_location::current(), ext);
                 extensions.push_back(ext);
             }
         }
@@ -152,17 +120,18 @@ void initVulkan(
     std::vector<const char*> layers;
 #ifndef NDEBUG
     if (enableValidation) {
-        std::osyncstream(std::cout) << GREEN << "[INFO] Adding Vulkan validation layer" << RESET << std::endl;
+        logger.log(Logging::LogLevel::Info, "Adding Vulkan validation layer", std::source_location::current());
         layers.push_back("VK_LAYER_KHRONOS_validation");
     }
 #endif
 
     if (hasSurfaceExtension && std::find(extensions.begin(), extensions.end(), VK_KHR_SURFACE_EXTENSION_NAME) == extensions.end()) {
-        std::osyncstream(std::cout) << CYAN << "[DEBUG] Adding VK_KHR_SURFACE_EXTENSION_NAME to extensions" << RESET << std::endl;
+        logger.log(Logging::LogLevel::Debug, "Adding VK_KHR_SURFACE_EXTENSION_NAME to extensions", std::source_location::current());
         extensions.push_back(VK_KHR_SURFACE_EXTENSION_NAME);
     }
 
-    std::osyncstream(std::cout) << GREEN << "[INFO] Creating Vulkan instance with " << extensions.size() << " extensions and " << layers.size() << " layers" << RESET << std::endl;
+    logger.log(Logging::LogLevel::Info, "Creating Vulkan instance with {} extensions and {} layers", 
+               std::source_location::current(), extensions.size(), layers.size());
     VkApplicationInfo appInfo {
         .sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
         .pNext = nullptr,
@@ -185,24 +154,24 @@ void initVulkan(
     VkInstance vkInstance;
     VkResult result = vkCreateInstance(&ci, nullptr, &vkInstance);
     if (result != VK_SUCCESS) {
-        auto error = std::format("vkCreateInstance failed: {}", result);
-        std::osyncstream(std::cout) << MAGENTA << "[ERROR] " << error << RESET << std::endl;
+        std::string error = std::format("vkCreateInstance failed: {}", result);
+        logger.log(Logging::LogLevel::Error, "{}", std::source_location::current(), error);
         throw std::runtime_error(error);
     }
     instance = VulkanInstancePtr(vkInstance);
-    std::osyncstream(std::cout) << GREEN << "[INFO] Vulkan instance created" << RESET << std::endl;
+    logger.log(Logging::LogLevel::Info, "Vulkan instance created", std::source_location::current());
 
     VkSurfaceKHR vkSurface = VK_NULL_HANDLE;
-    std::osyncstream(std::cout) << CYAN << "[DEBUG] Creating Vulkan surface" << RESET << std::endl;
+    logger.log(Logging::LogLevel::Debug, "Creating Vulkan surface", std::source_location::current());
     if (!SDL_Vulkan_CreateSurface(window, vkInstance, nullptr, &vkSurface)) {
-        auto error = std::format("SDL_Vulkan_CreateSurface failed: {}", SDL_GetError());
-        std::osyncstream(std::cout) << MAGENTA << "[ERROR] " << error << RESET << std::endl;
+        std::string error = std::format("SDL_Vulkan_CreateSurface failed: {}", SDL_GetError());
+        logger.log(Logging::LogLevel::Error, "{}", std::source_location::current(), error);
         throw std::runtime_error(error);
     }
     surface = VulkanSurfacePtr(vkSurface, VulkanSurfaceDeleter{vkInstance});
-    std::osyncstream(std::cout) << GREEN << "[INFO] Vulkan surface created successfully" << RESET << std::endl;
+    logger.log(Logging::LogLevel::Info, "Vulkan surface created successfully", std::source_location::current());
 
-    std::osyncstream(std::cout) << CYAN << "[DEBUG] Selecting physical device" << RESET << std::endl;
+    logger.log(Logging::LogLevel::Debug, "Selecting physical device", std::source_location::current());
     // Note: createPhysicalDevice is not implemented here; assume it exists elsewhere or is a placeholder
 }
 
@@ -215,7 +184,8 @@ VkSurfaceKHR getVkSurface(const VulkanSurfacePtr& surface) {
 }
 
 std::vector<std::string> getVulkanExtensions() {
-    std::osyncstream(std::cout) << CYAN << "[DEBUG] Querying Vulkan instance extensions" << RESET << std::endl;
+    Logging::Logger logger;
+    logger.log(Logging::LogLevel::Debug, "Querying Vulkan instance extensions", std::source_location::current());
     uint32_t count;
     vkEnumerateInstanceExtensionProperties(nullptr, &count, nullptr);
     std::vector<VkExtensionProperties> props(count);
@@ -224,7 +194,7 @@ std::vector<std::string> getVulkanExtensions() {
     for (const auto& prop : props) {
         extensions.emplace_back(prop.extensionName);
     }
-    std::osyncstream(std::cout) << GREEN << "[INFO] Found " << extensions.size() << " Vulkan instance extensions" << RESET << std::endl;
+    logger.log(Logging::LogLevel::Info, "Found {} Vulkan instance extensions", std::source_location::current(), extensions.size());
     return extensions;
 }
 

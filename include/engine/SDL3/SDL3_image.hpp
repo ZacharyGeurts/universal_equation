@@ -1,11 +1,12 @@
-// AMOURANTH RTX October 2025
+// AMOURANTH RTX Engine, October 2025 - SDL3_image initialization and texture management.
+// Dependencies: SDL3, SDL3_image, Vulkan 1.3+, C++20 standard library.
+// Supported platforms: Linux, Windows.
 // Zachary Geurts 2025
 
-// src/engine/SDL3/SDL3_image.hpp
 #pragma once
 #include <SDL3/SDL.h>
-#include <functional>
 #include <string>
+#include "engine/logging.hpp"
 
 extern "C" {
 #include <SDL3_image/SDL_image.h>
@@ -13,13 +14,13 @@ extern "C" {
 
 namespace SDL3Initializer {
 
-    struct ImageConfig {
-        // No specific config needed for SDL3_image as initialization is automatic
-    };
+struct ImageConfig {
+    // No specific config needed for SDL3_image as initialization is automatic
+};
 
-    void initImage(const ImageConfig& config, std::function<void(const std::string&)> logMessage);
-    void cleanupImage(std::function<void(const std::string&)> logMessage);
-    SDL_Texture* loadTexture(SDL_Renderer* renderer, const std::string& file, std::function<void(const std::string&)> logMessage);
-    void freeTexture(SDL_Texture* texture, std::function<void(const std::string&)> logMessage);
+void initImage(const ImageConfig& config);
+void cleanupImage();
+SDL_Texture* loadTexture(SDL_Renderer* renderer, const std::string& file);
+void freeTexture(SDL_Texture* texture);
 
 } // namespace SDL3Initializer
