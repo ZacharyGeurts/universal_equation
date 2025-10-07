@@ -1,6 +1,7 @@
 // universal_equation_quantum.cpp: Quantum-specific computations for the UniversalEquation class.
 // Implements NURBS-based field calculations, spin interactions, electromagnetic fields, Lorentz factors,
 // and wave function dynamics for quantum simulation on n-dimensional hypercube lattices.
+// Uses Logging::Logger for consistent logging across the AMOURANTH RTX Engine.
 
 // How this ties into the quantum world:
 // The UniversalEquation class simulates quantum phenomena by modeling particles and fields on an n-dimensional hypercube lattice,
@@ -18,18 +19,10 @@
 #include <cmath>
 #include <algorithm>
 #include <stdexcept>
-#include <iostream>
 #include <latch>
-#include <syncstream>
 #include <omp.h>
 #include <glm/glm.hpp>
-
-// ANSI color codes
-#define RESET "\033[0m"
-#define MAGENTA "\033[1;35m" // Bold magenta for errors
-#define CYAN "\033[1;36m"    // Bold cyan for debug
-#define YELLOW "\033[1;33m"  // Bold yellow for warnings
-#define GREEN "\033[1;32m"   // Bold green for info
+#include "engine/logging.hpp"
 
 // Helper: Safe division to prevent NaN/Inf
 inline long double safe_div(long double a, long double b) {
@@ -39,10 +32,12 @@ inline long double safe_div(long double a, long double b) {
 // Computes NURBS basis function
 long double UniversalEquation::computeNURBSBasis(int i, int p, long double u, const std::vector<long double>& knots) const {
     if (debug_.load()) {
-        std::osyncstream(std::cout) << GREEN << "[INFO] Computing NURBS basis for i=" << i << ", p=" << p << ", u=" << u << RESET << std::endl;
+        logger_.log(Logging::LogLevel::Info, "Computing NURBS basis for i={}, p={}, u={}", 
+                    std::source_location::current(), i, p, u);
     }
     if (i < 0 || i + p + 1 >= static_cast<int>(knots.size())) {
-        std::osyncstream(std::cerr) << MAGENTA << "[ERROR] Invalid NURBS basis indices: i=" << i << ", p=" << p << ", knots size=" << knots.size() << RESET << std::endl;
+        logger_.log(Logging::LogLevel::Error, "Invalid NURBS basis indices: i={}, p={}, knots size={}", 
+                    std::source_location::current(), i, p, knots.size());
         return 0.0L;
     }
     if (p == 0) {
@@ -60,7 +55,8 @@ long double UniversalEquation::computeNURBSBasis(int i, int p, long double u, co
     long double result = term1 + term2;
     if (std::isnan(result) || std::isinf(result)) {
         if (debug_.load()) {
-            std::osyncstream(std::cerr) << YELLOW << "[WARNING] NURBS basis computation produced invalid result: i=" << i << ", p=" << p << ", u=" << u << RESET << std::endl;
+            logger_.log(Logging::LogLevel::Warning, "NURBS basis computation produced invalid result: i={}, p={}, u={}", 
+                        std::source_location::current(), i, p, u);
         }
         return 0.0L;
     }
@@ -72,11 +68,11 @@ long double UniversalEquation::evaluateNURBS(long double u, const std::vector<lo
                                             const std::vector<long double>& weights,
                                             const std::vector<long double>& knots, int degree) const {
     if (debug_.load()) {
-        std::osyncstream(std::cout) << GREEN << "[INFO] Evaluating NURBS curve for u=" << u << RESET << std::endl;
+        logger_.log(Logging::LogLevel::Info, "Evaluating NURBS curve for u={}", std::source_location::current(), u);
     }
     if (controlPoints.size() != weights.size() || controlPoints.empty()) {
-        std::osyncstream(std::cerr) << MAGENTA << "[ERROR] Invalid NURBS control points or weights: controlPoints size=" << controlPoints.size()
-                                    << ", weights size=" << weights.size() << RESET << std::endl;
+        logger_.log(Logging::LogLevel::Error, "Invalid NURBS control points or weights: controlPoints size={}, weights size={}",
+                    std::source_location::current(), controlPoints.size(), weights.size());
         throw std::invalid_argument("Invalid NURBS control points or weights");
     }
     long double num = 0.0L, denom = 0.0L;
@@ -88,12 +84,13 @@ long double UniversalEquation::evaluateNURBS(long double u, const std::vector<lo
     long double result = safe_div(num, denom);
     if (std::isnan(result) || std::isinf(result)) {
         if (debug_.load()) {
-            std::osyncstream(std::cerr) << YELLOW << "[WARNING] NURBS evaluation produced invalid result: u=" << u << RESET << std::endl;
+            logger_.log(Logging::LogLevel::Warning, "NURBS evaluation produced invalid result: u={}", 
+                        std::source_location::current(), u);
         }
         return 0.0L;
     }
     if (debug_.load()) {
-        std::osyncstream(std::cout) << CYAN << "[DEBUG] NURBS evaluation result: " << result << RESET << std::endl;
+        logger_.log(Logging::LogLevel::Debug, "NURBS evaluation result: {}", std::source_location::current(), result);
     }
     return result;
 }
@@ -101,12 +98,13 @@ long double UniversalEquation::evaluateNURBS(long double u, const std::vector<lo
 // Computes spin interaction
 long double UniversalEquation::computeSpinInteraction(int vertexIndex1, int vertexIndex2) const {
     if (debug_.load()) {
-        std::osyncstream(std::cout) << GREEN << "[INFO] Computing spin interaction between vertices " << vertexIndex1 << " and " << vertexIndex2 << RESET << std::endl;
+        logger_.log(Logging::LogLevel::Info, "Computing spin interaction between vertices {} and {}", 
+                    std::source_location::current(), vertexIndex1, vertexIndex2);
     }
     if (vertexIndex1 < 0 || vertexIndex2 < 0 || static_cast<size_t>(vertexIndex1) >= vertexSpins_.size() ||
         static_cast<size_t>(vertexIndex2) >= vertexSpins_.size()) {
-        std::osyncstream(std::cerr) << MAGENTA << "[ERROR] Invalid vertex index for spin: vertex1=" << vertexIndex1 << ", vertex2=" << vertexIndex2
-                                    << ", spins size=" << vertexSpins_.size() << RESET << std::endl;
+        logger_.log(Logging::LogLevel::Error, "Invalid vertex index for spin: vertex1={}, vertex2={}, spins size={}",
+                    std::source_location::current(), vertexIndex1, vertexIndex2, vertexSpins_.size());
         throw std::out_of_range("Invalid vertex index for spin");
     }
     long double spin1 = vertexSpins_[vertexIndex1];
@@ -114,12 +112,13 @@ long double UniversalEquation::computeSpinInteraction(int vertexIndex1, int vert
     long double result = spinInteraction_.load() * spin1 * spin2;
     if (std::isnan(result) || std::isinf(result)) {
         if (debug_.load()) {
-            std::osyncstream(std::cerr) << YELLOW << "[WARNING] Invalid spin interaction: spin1=" << spin1 << ", spin2=" << spin2 << RESET << std::endl;
+            logger_.log(Logging::LogLevel::Warning, "Invalid spin interaction: spin1={}, spin2={}", 
+                        std::source_location::current(), spin1, spin2);
         }
         return 0.0L;
     }
     if (debug_.load()) {
-        std::osyncstream(std::cout) << CYAN << "[DEBUG] Spin interaction result: " << result << RESET << std::endl;
+        logger_.log(Logging::LogLevel::Debug, "Spin interaction result: {}", std::source_location::current(), result);
     }
     return result;
 }
@@ -127,11 +126,12 @@ long double UniversalEquation::computeSpinInteraction(int vertexIndex1, int vert
 // Computes vector potential
 std::vector<long double> UniversalEquation::computeVectorPotential(int vertexIndex, long double distance) const {
     if (debug_.load()) {
-        std::osyncstream(std::cout) << GREEN << "[INFO] Computing vector potential for vertex " << vertexIndex << ", distance=" << distance << RESET << std::endl;
+        logger_.log(Logging::LogLevel::Info, "Computing vector potential for vertex {}, distance={}", 
+                    std::source_location::current(), vertexIndex, distance);
     }
     if (vertexIndex < 0 || static_cast<size_t>(vertexIndex) >= nCubeVertices_.size()) {
-        std::osyncstream(std::cerr) << MAGENTA << "[ERROR] Invalid vertex index for vector potential: vertex=" << vertexIndex
-                                    << ", vertices size=" << nCubeVertices_.size() << RESET << std::endl;
+        logger_.log(Logging::LogLevel::Error, "Invalid vertex index for vector potential: vertex={}, vertices size={}",
+                    std::source_location::current(), vertexIndex, nCubeVertices_.size());
         throw std::out_of_range("Invalid vertex index for vector potential");
     }
     const auto& vertex = nCubeVertices_[vertexIndex];
@@ -141,8 +141,8 @@ std::vector<long double> UniversalEquation::computeVectorPotential(int vertexInd
         vecPot[k] = safe_div(charge * vertex[k], (1.0L + std::max(distance, 1e-15L)));
         if (std::isnan(vecPot[k]) || std::isinf(vecPot[k])) {
             if (debug_.load()) {
-                std::osyncstream(std::cerr) << YELLOW << "[WARNING] Invalid vector potential component k=" << k << ": charge=" << charge
-                                            << ", vertex[k]=" << vertex[k] << ", distance=" << distance << RESET << std::endl;
+                logger_.log(Logging::LogLevel::Warning, "Invalid vector potential component k={}: charge={}, vertex[k]={}, distance={}",
+                            std::source_location::current(), k, charge, vertex[k], distance);
             }
             vecPot[k] = 0.0L;
         }
@@ -153,11 +153,11 @@ std::vector<long double> UniversalEquation::computeVectorPotential(int vertexInd
 // Computes EM field
 std::vector<long double> UniversalEquation::computeEMField(int vertexIndex) const {
     if (debug_.load()) {
-        std::osyncstream(std::cout) << GREEN << "[INFO] Computing EM field for vertex " << vertexIndex << RESET << std::endl;
+        logger_.log(Logging::LogLevel::Info, "Computing EM field for vertex {}", std::source_location::current(), vertexIndex);
     }
     if (vertexIndex < 0 || static_cast<size_t>(vertexIndex) >= nCubeVertices_.size()) {
-        std::osyncstream(std::cerr) << MAGENTA << "[ERROR] Invalid vertex index for EM field: vertex=" << vertexIndex
-                                    << ", vertices size=" << nCubeVertices_.size() << RESET << std::endl;
+        logger_.log(Logging::LogLevel::Error, "Invalid vertex index for EM field: vertex={}, vertices size={}",
+                    std::source_location::current(), vertexIndex, nCubeVertices_.size());
         throw std::out_of_range("Invalid vertex index for EM field");
     }
     std::vector<long double> field(std::min(3, currentDimension_.load()), 0.0L);
@@ -166,7 +166,8 @@ std::vector<long double> UniversalEquation::computeEMField(int vertexIndex) cons
         field[k] = emFieldStrength_.load() * std::cos(phase + k * std::numbers::pi_v<long double> / 3.0L);
         if (std::isnan(field[k]) || std::isinf(field[k])) {
             if (debug_.load()) {
-                std::osyncstream(std::cerr) << YELLOW << "[WARNING] Invalid EM field component k=" << k << ": phase=" << phase << RESET << std::endl;
+                logger_.log(Logging::LogLevel::Warning, "Invalid EM field component k={}: phase={}", 
+                            std::source_location::current(), k, phase);
             }
             field[k] = 0.0L;
         }
@@ -177,11 +178,12 @@ std::vector<long double> UniversalEquation::computeEMField(int vertexIndex) cons
 // Computes Lorentz factor
 long double UniversalEquation::computeLorentzFactor(int vertexIndex) const {
     if (debug_.load()) {
-        std::osyncstream(std::cout) << GREEN << "[INFO] Computing Lorentz factor for vertex " << vertexIndex << RESET << std::endl;
+        logger_.log(Logging::LogLevel::Info, "Computing Lorentz factor for vertex {}", 
+                    std::source_location::current(), vertexIndex);
     }
     if (vertexIndex < 0 || static_cast<size_t>(vertexIndex) >= vertexMomenta_.size()) {
-        std::osyncstream(std::cerr) << MAGENTA << "[ERROR] Invalid vertex index for Lorentz factor: vertex=" << vertexIndex
-                                    << ", momenta size=" << vertexMomenta_.size() << RESET << std::endl;
+        logger_.log(Logging::LogLevel::Error, "Invalid vertex index for Lorentz factor: vertex={}, momenta size={}",
+                    std::source_location::current(), vertexIndex, vertexMomenta_.size());
         throw std::out_of_range("Invalid vertex index for Lorentz factor");
     }
     long double momentumMag = 0.0L;
@@ -194,7 +196,8 @@ long double UniversalEquation::computeLorentzFactor(int vertexIndex) const {
     long double result = safe_div(1.0L, std::sqrt(1.0L - v * v));
     if (std::isnan(result) || std::isinf(result)) {
         if (debug_.load()) {
-            std::osyncstream(std::cerr) << YELLOW << "[WARNING] Invalid Lorentz factor: vertex=" << vertexIndex << ", momentumMag=" << momentumMag << RESET << std::endl;
+            logger_.log(Logging::LogLevel::Warning, "Invalid Lorentz factor: vertex={}, momentumMag={}", 
+                        std::source_location::current(), vertexIndex, momentumMag);
         }
         return 1.0L;
     }
@@ -204,11 +207,12 @@ long double UniversalEquation::computeLorentzFactor(int vertexIndex) const {
 // Computes God wave amplitude
 long double UniversalEquation::computeGodWaveAmplitude(int vertexIndex, long double distance) const {
     if (debug_.load()) {
-        std::osyncstream(std::cout) << GREEN << "[INFO] Computing God wave amplitude for vertex " << vertexIndex << ", distance=" << distance << RESET << std::endl;
+        logger_.log(Logging::LogLevel::Info, "Computing God wave amplitude for vertex {}, distance={}", 
+                    std::source_location::current(), vertexIndex, distance);
     }
     if (vertexIndex < 0 || static_cast<size_t>(vertexIndex) >= vertexWaveAmplitudes_.size()) {
-        std::osyncstream(std::cerr) << MAGENTA << "[ERROR] Invalid vertex index for God wave: vertex=" << vertexIndex
-                                    << ", amplitudes size=" << vertexWaveAmplitudes_.size() << RESET << std::endl;
+        logger_.log(Logging::LogLevel::Error, "Invalid vertex index for God wave: vertex={}, amplitudes size={}",
+                    std::source_location::current(), vertexIndex, vertexWaveAmplitudes_.size());
         throw std::out_of_range("Invalid vertex index for God wave");
     }
     long double phase = GodWaveFreq_.load() * distance + omega_ * vertexIndex;
@@ -218,7 +222,8 @@ long double UniversalEquation::computeGodWaveAmplitude(int vertexIndex, long dou
     }
     if (std::isnan(amplitude) || std::isinf(amplitude)) {
         if (debug_.load()) {
-            std::osyncstream(std::cerr) << YELLOW << "[WARNING] Invalid God wave amplitude: vertex=" << vertexIndex << ", distance=" << distance << RESET << std::endl;
+            logger_.log(Logging::LogLevel::Warning, "Invalid God wave amplitude: vertex={}, distance={}", 
+                        std::source_location::current(), vertexIndex, distance);
         }
         return 0.0L;
     }
@@ -228,16 +233,19 @@ long double UniversalEquation::computeGodWaveAmplitude(int vertexIndex, long dou
 // Computes NURBS matter field
 long double UniversalEquation::computeNurbMatter(long double distance) const {
     if (debug_.load()) {
-        std::osyncstream(std::cout) << GREEN << "[INFO] Computing NURBS matter field for distance=" << distance << RESET << std::endl;
+        logger_.log(Logging::LogLevel::Info, "Computing NURBS matter field for distance={}", 
+                    std::source_location::current(), distance);
     }
     long double u = std::clamp(distance / 10.0L, 0.0L, 1.0L);
     if (u != distance / 10.0L && debug_.load()) {
-        std::osyncstream(std::cout) << YELLOW << "[WARNING] Distance clamped for NURBS matter: distance=" << distance << ", u=" << u << RESET << std::endl;
+        logger_.log(Logging::LogLevel::Warning, "Distance clamped for NURBS matter: distance={}, u={}", 
+                    std::source_location::current(), distance, u);
     }
     long double result = nurbMatterStrength_.load() * evaluateNURBS(u, nurbMatterControlPoints_, nurbWeights_, nurbKnots_, 3);
     if (std::isnan(result) || std::isinf(result)) {
         if (debug_.load()) {
-            std::osyncstream(std::cerr) << YELLOW << "[WARNING] Invalid NURBS matter: distance=" << distance << ", u=" << u << RESET << std::endl;
+            logger_.log(Logging::LogLevel::Warning, "Invalid NURBS matter: distance={}, u={}", 
+                        std::source_location::current(), distance, u);
         }
         return 0.0L;
     }
@@ -247,11 +255,13 @@ long double UniversalEquation::computeNurbMatter(long double distance) const {
 // Computes NURBS energy field
 long double UniversalEquation::computeNurbEnergy(long double distance) const {
     if (debug_.load()) {
-        std::osyncstream(std::cout) << GREEN << "[INFO] Computing NURBS energy field for distance=" << distance << RESET << std::endl;
+        logger_.log(Logging::LogLevel::Info, "Computing NURBS energy field for distance={}", 
+                    std::source_location::current(), distance);
     }
     long double u = std::clamp(distance / 10.0L, 0.0L, 1.0L);
     if (u != distance / 10.0L && debug_.load()) {
-        std::osyncstream(std::cout) << YELLOW << "[WARNING] Distance clamped for NURBS energy: distance=" << distance << ", u=" << u << RESET << std::endl;
+        logger_.log(Logging::LogLevel::Warning, "Distance clamped for NURBS energy: distance={}, u={}", 
+                    std::source_location::current(), distance, u);
     }
     long double base = nurbEnergyStrength_.load() * evaluateNURBS(u, nurbEnergyControlPoints_, nurbWeights_, nurbKnots_, 3);
     long double vacuumTerm = vacuumEnergy_.load() * (1.0L + u * invMaxDim_);
@@ -259,7 +269,8 @@ long double UniversalEquation::computeNurbEnergy(long double distance) const {
     long double result = base + vacuumTerm + waveTerm;
     if (std::isnan(result) || std::isinf(result)) {
         if (debug_.load()) {
-            std::osyncstream(std::cerr) << YELLOW << "[WARNING] Invalid NURBS energy: distance=" << distance << ", u=" << u << RESET << std::endl;
+            logger_.log(Logging::LogLevel::Warning, "Invalid NURBS energy: distance={}, u={}", 
+                        std::source_location::current(), distance, u);
         }
         return 0.0L;
     }
@@ -269,11 +280,12 @@ long double UniversalEquation::computeNurbEnergy(long double distance) const {
 // Computes interaction strength
 long double UniversalEquation::computeInteraction(int vertexIndex, long double distance) const {
     if (debug_.load()) {
-        std::osyncstream(std::cout) << GREEN << "[INFO] Computing interaction for vertex " << vertexIndex << ", distance=" << distance << RESET << std::endl;
+        logger_.log(Logging::LogLevel::Info, "Computing interaction for vertex {}, distance={}", 
+                    std::source_location::current(), vertexIndex, distance);
     }
     if (vertexIndex < 0 || static_cast<size_t>(vertexIndex) >= nCubeVertices_.size()) {
-        std::osyncstream(std::cerr) << MAGENTA << "[ERROR] Invalid vertex index for interaction: vertex=" << vertexIndex
-                                    << ", vertices size=" << nCubeVertices_.size() << RESET << std::endl;
+        logger_.log(Logging::LogLevel::Error, "Invalid vertex index for interaction: vertex={}, vertices size={}",
+                    std::source_location::current(), vertexIndex, nCubeVertices_.size());
         throw std::out_of_range("Invalid vertex index for interaction");
     }
     long double denom = std::max(1e-15L, std::pow(static_cast<long double>(currentDimension_.load()), (vertexIndex % maxDimensions_ + 1)));
@@ -307,7 +319,8 @@ long double UniversalEquation::computeInteraction(int vertexIndex, long double d
                         (1.0L + spinTerm) * (1.0L + fieldMag) * vecPotMag * overlapFactor * (1.0L + recoilTerm);
     if (std::isnan(result) || std::isinf(result)) {
         if (debug_.load()) {
-            std::osyncstream(std::cerr) << YELLOW << "[WARNING] Invalid interaction: vertex=" << vertexIndex << ", distance=" << adjustedDistance << RESET << std::endl;
+            logger_.log(Logging::LogLevel::Warning, "Invalid interaction: vertex={}, distance={}", 
+                        std::source_location::current(), vertexIndex, adjustedDistance);
         }
         return 0.0L;
     }
@@ -317,10 +330,11 @@ long double UniversalEquation::computeInteraction(int vertexIndex, long double d
 // Computes energies
 UniversalEquation::EnergyResult UniversalEquation::compute() const {
     if (debug_.load()) {
-        std::osyncstream(std::cout) << GREEN << "[INFO] Starting energy computation for " << nCubeVertices_.size() << " vertices" RESET << std::endl;
+        logger_.log(Logging::LogLevel::Info, "Starting energy computation for {} vertices", 
+                    std::source_location::current(), nCubeVertices_.size());
     }
     if (nCubeVertices_.empty()) {
-        std::osyncstream(std::cerr) << MAGENTA << "[ERROR] nCubeVertices_ is empty in compute" RESET << std::endl;
+        logger_.log(Logging::LogLevel::Error, "nCubeVertices_ is empty in compute", std::source_location::current());
         throw std::runtime_error("nCubeVertices_ is empty in compute");
     }
     if (needsUpdate_.load()) {
@@ -330,7 +344,7 @@ UniversalEquation::EnergyResult UniversalEquation::compute() const {
     int currDim = currentDimension_.load();
     if (currDim >= 2) {
         if (cachedCos_.empty()) {
-            std::osyncstream(std::cerr) << MAGENTA << "[ERROR] cachedCos_ is empty" RESET << std::endl;
+            logger_.log(Logging::LogLevel::Error, "cachedCos_ is empty", std::source_location::current());
             throw std::runtime_error("cachedCos_ is empty");
         }
         observable += twoD_.load() * cachedCos_[currDim % cachedCos_.size()];
@@ -361,7 +375,8 @@ UniversalEquation::EnergyResult UniversalEquation::compute() const {
         std::vector<DimensionInteraction> localInteractions = interactions_;
         if (localInteractions.size() > 1000) {
             if (debug_.load()) {
-                std::osyncstream(std::cout) << GREEN << "[INFO] Using parallel processing for " << localInteractions.size() << " interactions" RESET << std::endl;
+                logger_.log(Logging::LogLevel::Info, "Using parallel processing for {} interactions", 
+                            std::source_location::current(), localInteractions.size());
             }
             #pragma omp parallel for schedule(dynamic) reduction(+:interactionSum,totalNurbMatter,totalNurbEnergy,totalSpinEnergy,totalMomentumEnergy,totalFieldEnergy,totalGodWaveEnergy)
             for (size_t i = 0; i < localInteractions.size(); ++i) {
@@ -447,12 +462,13 @@ UniversalEquation::EnergyResult UniversalEquation::compute() const {
         totalGodWaveEnergy
     };
     if (std::isnan(result.observable) || std::isinf(result.observable)) {
-        std::osyncstream(std::cerr) << MAGENTA << "[ERROR] Numerical instability in compute: observable=" << result.observable << RESET << std::endl;
+        logger_.log(Logging::LogLevel::Error, "Numerical instability in compute: observable={}", 
+                    std::source_location::current(), result.observable);
         throw std::runtime_error("Numerical instability in compute");
     }
     if (debug_.load()) {
-        std::osyncstream(std::cout) << CYAN << "[DEBUG] Energy computation result: observable=" << result.observable << ", potential=" << result.potential
-                                    << ", nurbMatter=" << result.nurbMatter << ", nurbEnergy=" << result.nurbEnergy << RESET << std::endl;
+        logger_.log(Logging::LogLevel::Debug, "Energy computation result: observable={}, potential={}, nurbMatter={}, nurbEnergy={}",
+                    std::source_location::current(), result.observable, result.potential, result.nurbMatter, result.nurbEnergy);
     }
     return result;
 }
@@ -460,11 +476,12 @@ UniversalEquation::EnergyResult UniversalEquation::compute() const {
 // Computes permeation factor
 long double UniversalEquation::computePermeation(int vertexIndex) const {
     if (debug_.load()) {
-        std::osyncstream(std::cout) << GREEN << "[INFO] Computing permeation factor for vertex " << vertexIndex << RESET << std::endl;
+        logger_.log(Logging::LogLevel::Info, "Computing permeation factor for vertex {}", 
+                    std::source_location::current(), vertexIndex);
     }
     if (vertexIndex < 0 || static_cast<size_t>(vertexIndex) >= nCubeVertices_.size()) {
-        std::osyncstream(std::cerr) << MAGENTA << "[ERROR] Invalid vertex index for permeation: vertex=" << vertexIndex
-                                    << ", vertices size=" << nCubeVertices_.size() << RESET << std::endl;
+        logger_.log(Logging::LogLevel::Error, "Invalid vertex index for permeation: vertex={}, vertices size={}",
+                    std::source_location::current(), vertexIndex, nCubeVertices_.size());
         throw std::out_of_range("Invalid vertex index for permeation");
     }
     if (vertexIndex == 1 || currentDimension_.load() == 1) return oneDPermeation_.load();
@@ -481,7 +498,8 @@ long double UniversalEquation::computePermeation(int vertexIndex) const {
     long double result = 1.0L + beta_.load() * safe_div(vertexMagnitude, std::max(1, currentDimension_.load()));
     if (std::isnan(result) || std::isinf(result)) {
         if (debug_.load()) {
-            std::osyncstream(std::cerr) << YELLOW << "[WARNING] Invalid permeation: vertex=" << vertexIndex << ", magnitude=" << vertexMagnitude << RESET << std::endl;
+            logger_.log(Logging::LogLevel::Warning, "Invalid permeation: vertex={}, magnitude={}", 
+                        std::source_location::current(), vertexIndex, vertexMagnitude);
         }
         return 1.0L;
     }
@@ -491,12 +509,13 @@ long double UniversalEquation::computePermeation(int vertexIndex) const {
 // Computes collapse term
 long double UniversalEquation::computeCollapse() const {
     if (debug_.load()) {
-        std::osyncstream(std::cout) << GREEN << "[INFO] Computing collapse term for dimension " << currentDimension_.load() << RESET << std::endl;
+        logger_.log(Logging::LogLevel::Info, "Computing collapse term for dimension {}", 
+                    std::source_location::current(), currentDimension_.load());
     }
     if (currentDimension_.load() == 1) return 0.0L;
     long double phase = safe_div(static_cast<long double>(currentDimension_.load()), (2 * maxDimensions_));
     if (cachedCos_.empty()) {
-        std::osyncstream(std::cerr) << MAGENTA << "[ERROR] cachedCos_ is empty" RESET << std::endl;
+        logger_.log(Logging::LogLevel::Error, "cachedCos_ is empty", std::source_location::current());
         throw std::runtime_error("cachedCos_ is empty");
     }
     long double osc = std::abs(cachedCos_[static_cast<size_t>(2.0L * std::numbers::pi_v<long double> * phase * cachedCos_.size()) % cachedCos_.size()]);
@@ -506,7 +525,8 @@ long double UniversalEquation::computeCollapse() const {
     long double result = std::max(0.0L, symCollapse + asymTerm);
     if (std::isnan(result) || std::isinf(result)) {
         if (debug_.load()) {
-            std::osyncstream(std::cerr) << YELLOW << "[WARNING] Invalid collapse term: symCollapse=" << symCollapse << ", asymTerm=" << asymTerm << RESET << std::endl;
+            logger_.log(Logging::LogLevel::Warning, "Invalid collapse term: symCollapse={}, asymTerm={}", 
+                        std::source_location::current(), symCollapse, asymTerm);
         }
         return 0.0L;
     }
@@ -516,7 +536,8 @@ long double UniversalEquation::computeCollapse() const {
 // Updates interactions
 void UniversalEquation::updateInteractions() const {
     if (debug_.load()) {
-        std::osyncstream(std::cout) << GREEN << "[INFO] Updating interactions for " << nCubeVertices_.size() << " vertices" RESET << std::endl;
+        logger_.log(Logging::LogLevel::Info, "Updating interactions for {} vertices", 
+                    std::source_location::current(), nCubeVertices_.size());
     }
     interactions_.clear();
     projectedVerts_.clear();
@@ -528,7 +549,8 @@ void UniversalEquation::updateInteractions() const {
         if (lodFactor == 0) lodFactor = 1;
         numVertices = std::min(numVertices / lodFactor, static_cast<uint64_t>(1024));
         if (debug_.load() && numVertices < nCubeVertices_.size()) {
-            std::osyncstream(std::cout) << YELLOW << "[WARNING] Reduced vertex count to " << numVertices << " due to high dimension (" << d << ")" RESET << std::endl;
+            logger_.log(Logging::LogLevel::Warning, "Reduced vertex count to {} due to high dimension ({})", 
+                        std::source_location::current(), numVertices, d);
         }
     }
 
@@ -555,13 +577,13 @@ void UniversalEquation::updateInteractions() const {
     if (std::isnan(trans) || std::isinf(trans)) {
         trans = 2.0L;
         if (debug_.load()) {
-            std::osyncstream(std::cout) << YELLOW << "[WARNING] Clamped invalid perspectiveTrans to 2.0" RESET << std::endl;
+            logger_.log(Logging::LogLevel::Warning, "Clamped invalid perspectiveTrans to 2.0", std::source_location::current());
         }
     }
     if (std::isnan(focal) || std::isinf(focal)) {
         focal = 4.0L;
         if (debug_.load()) {
-            std::osyncstream(std::cout) << YELLOW << "[WARNING] Clamped invalid perspectiveFocal to 4.0" RESET << std::endl;
+            logger_.log(Logging::LogLevel::Warning, "Clamped invalid perspectiveFocal to 4.0", std::source_location::current());
         }
     }
     size_t depthIdx = d > 0 ? d - 1 : 0;
@@ -569,7 +591,7 @@ void UniversalEquation::updateInteractions() const {
     if (depthRef <= 0.0L) {
         depthRef = 0.001L;
         if (debug_.load()) {
-            std::osyncstream(std::cout) << YELLOW << "[WARNING] Clamped depthRef to 0.001" RESET << std::endl;
+            logger_.log(Logging::LogLevel::Warning, "Clamped depthRef to 0.001", std::source_location::current());
         }
     }
     long double scaleRef = safe_div(focal, depthRef);
@@ -594,7 +616,8 @@ void UniversalEquation::updateInteractions() const {
                 depthI = 0.001L;
                 if (debug_.load()) {
                     #pragma omp critical
-                    std::osyncstream(std::cout) << YELLOW << "[WARNING] Clamped depthI to 0.001 for vertex " << i << RESET << std::endl;
+                    logger_.log(Logging::LogLevel::Warning, "Clamped depthI to 0.001 for vertex {}", 
+                                std::source_location::current(), i);
                 }
             }
             long double scaleI = safe_div(focal, depthI);
@@ -639,7 +662,8 @@ void UniversalEquation::updateInteractions() const {
                 if (depthI <= 0.0L) {
                     depthI = 0.001L;
                     if (debug_.load()) {
-                        std::osyncstream(std::cout) << YELLOW << "[WARNING] Clamped depthI to 0.001 for vertex " << vertexIndex << RESET << std::endl;
+                        logger_.log(Logging::LogLevel::Warning, "Clamped depthI to 0.001 for vertex {}", 
+                                    std::source_location::current(), vertexIndex);
                     }
                 }
                 long double scaleI = safe_div(focal, depthI);
@@ -666,8 +690,8 @@ void UniversalEquation::updateInteractions() const {
     needsUpdate_.store(false);
 
     if (debug_.load()) {
-        std::osyncstream(std::cout) << CYAN << "[DEBUG] Updated " << interactions_.size() << " interactions, projected " << projectedVerts_.size()
-                                    << " vertices, avgProjScale=" << avgProjScale_.load() << RESET << std::endl;
-        std::osyncstream(std::cout) << GREEN << "[INFO] Interaction update completed" RESET << std::endl;
+        logger_.log(Logging::LogLevel::Debug, "Updated {} interactions, projected {} vertices, avgProjScale={}",
+                    std::source_location::current(), interactions_.size(), projectedVerts_.size(), avgProjScale_.load());
+        logger_.log(Logging::LogLevel::Info, "Interaction update completed", std::source_location::current());
     }
 }

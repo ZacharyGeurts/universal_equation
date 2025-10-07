@@ -1,13 +1,12 @@
-// include/universal_equation.hpp
+#ifndef UNIVERSAL_EQUATION_HPP
+#define UNIVERSAL_EQUATION_HPP
+
 // Defines the UniversalEquation class for quantum simulation on n-dimensional hypercube lattices.
 // Integrates classical and quantum physics with thread-safe, high-precision calculations using OpenMP and GLM.
 // Supports NURBS-based matter/energy fields and a deterministic "God wave" for quantum coherence.
 // Models multiple vertices representing particles in a 1-inch cube of water, with properties influenced by 2D and 4D projections.
-
+// Uses Logging::Logger for consistent logging across the AMOURANTH RTX Engine.
 // Copyright Zachary Geurts 2025 (powered by Grok with Heisenberg swagger)
-
-#ifndef UNIVERSAL_EQUATION_HPP
-#define UNIVERSAL_EQUATION_HPP
 
 #include <vector>
 #include <string>
@@ -16,7 +15,6 @@
 #include <limits>
 #include <algorithm>
 #include <stdexcept>
-#include <iostream>
 #include <mutex>
 #include <atomic>
 #include <omp.h>
@@ -26,16 +24,8 @@
 #include <numbers>
 #include <glm/glm.hpp>
 #include <span>
+#include "engine/logging.hpp"
 
-// ANSI color codes
-#define RESET "\033[0m"
-#define MAGENTA "\033[1;35m" // Bold magenta for errors
-#define CYAN "\033[1;36m"    // Bold cyan for debug
-#define YELLOW "\033[1;33m"  // Bold yellow for warnings
-#define GREEN "\033[1;32m"   // Bold green for info
-#define BOLD "\033[1m"
-
-// Forward declaration for Vulkan rendering integration
 class DimensionalNavigator;
 
 class UniversalEquation {
@@ -93,6 +83,7 @@ public:
     };
 
     UniversalEquation(
+        const Logging::Logger& logger,
         int maxDimensions = 19,
         int mode = 3,
         long double influence = 2.0L,
@@ -275,6 +266,7 @@ protected:
     std::atomic<long double> vacuumEnergy_;
     std::atomic<long double> GodWaveFreq_;
     std::atomic<bool> debug_;
+    const Logging::Logger& logger_;
 };
 
 #endif // UNIVERSAL_EQUATION_HPP

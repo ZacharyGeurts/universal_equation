@@ -1,11 +1,12 @@
 #ifndef ENGINE_LOGGING_HPP
 #define ENGINE_LOGGING_HPP
 
-// AMOURANTH RTX Engine Logging, October 2025
-// Thread-safe, asynchronous logging with ANSI-colored output and source location.
+// https://www.twitch.tv/elliefier Logging, October 2025
+// Thread-safe, asynchronous logging with ANSI-colored output, source location, and delta time.
 // Supports C++20 std::format for flexible message formatting.
 // Uses std::jthread for async logging, OpenMP for parallel processing, and lock-free queue with std::atomic.
-// No mutexes; designed for high-performance Vulkan applications.
+// No mutexes; designed for high-performance Vulkan applications on Windows and Linux.
+// Delta time format: microseconds (<10ms), milliseconds (10ms-1s), seconds (1s-1min), minutes (1min-1hr), hours (>1hr).
 // Usage: Logger logger; logger.log(LogLevel::Info, "Message: {}", "value");
 // Zachary Geurts 2025
 
@@ -21,6 +22,7 @@
 #include <thread>
 #include <memory>
 #include <omp.h>
+#include <chrono>
 
 namespace Logging {
 
@@ -39,16 +41,17 @@ struct LogMessage {
     std::string message;
     std::source_location location;
     std::string formattedMessage;
+    std::chrono::steady_clock::time_point timestamp;
 
-    LogMessage() = default; // Default constructor
-    LogMessage(LogLevel lvl, std::string_view msg, const std::source_location& loc)
-        : level(lvl), message(msg), location(loc) {}
+    LogMessage() = default;
+    LogMessage(LogLevel lvl, std::string_view msg, const std::source_location& loc, std::chrono::steady_clock::time_point ts)
+        : level(lvl), message(msg), location(loc), timestamp(ts) {}
 };
 
 class Logger {
 public:
     // Default constructor
-    Logger() : logQueue_{}, head_(0), tail_(0), running_(true), level_(LogLevel::Info) {
+    Logger() : logQueue_{}, head_(0), tail_(0), running_(true), level_(LogLevel::Info), firstLogTime_(std::nullopt) {
         worker_ = std::make_unique<std::jthread>([this](std::stop_token stoken) {
             processLogQueue(stoken);
         });
@@ -56,7 +59,7 @@ public:
 
     // Constructor with log level and file
     Logger(LogLevel level, const std::string& filename)
-        : logQueue_{}, head_(0), tail_(0), running_(true), level_(level) {
+        : logQueue_{}, head_(0), tail_(0), running_(true), level_(level), firstLogTime_(std::nullopt) {
         if (!filename.empty()) {
             logFile_.open(filename, std::ios::out | std::ios::app);
             if (!logFile_.is_open()) {
@@ -68,7 +71,7 @@ public:
         });
     }
 
-    // Move constructor (Fix for deleted copy constructor error)
+    // Move constructor
     Logger(Logger&& other) noexcept
         : logQueue_(std::move(other.logQueue_)),
           head_(other.head_.load()),
@@ -76,7 +79,8 @@ public:
           running_(other.running_.load()),
           level_(other.level_.load()),
           logFile_(std::move(other.logFile_)),
-          worker_(std::move(other.worker_)) {
+          worker_(std::move(other.worker_)),
+          firstLogTime_(other.firstLogTime_) {
         other.head_.store(0);
         other.tail_.store(0);
         other.running_.store(false);
@@ -94,6 +98,7 @@ public:
             level_.store(other.level_.load());
             logFile_ = std::move(other.logFile_);
             worker_ = std::move(other.worker_);
+            firstLogTime_ = other.firstLogTime_;
             other.head_.store(0);
             other.tail_.store(0);
             other.running_.store(false);
@@ -134,8 +139,12 @@ public:
             std::this_thread::yield();
         }
 
-        logQueue_[currentHead] = LogMessage(level, message, location);
+        auto now = std::chrono::steady_clock::now();
+        logQueue_[currentHead] = LogMessage(level, message, location, now);
         logQueue_[currentHead].formattedMessage = std::move(formatted);
+        if (!firstLogTime_.has_value()) {
+            firstLogTime_ = now;
+        }
         head_.store(nextHead, std::memory_order_release);
     }
 
@@ -188,8 +197,25 @@ private:
                                 case LogLevel::Error:   color = MAGENTA; levelStr = "[ERROR]"; break;
                             }
 
-                            std::string output = std::format("{} {} [{}:{}] {}{}", 
-                                                             color, levelStr, msg.location.file_name(),
+                            // Calculate delta time from first log
+                            std::string timeStr = "0.000us";
+                            if (firstLogTime_.has_value()) {
+                                auto delta = std::chrono::duration_cast<std::chrono::microseconds>(msg.timestamp - *firstLogTime_).count();
+                                if (delta < 10000) {
+                                    timeStr = std::format("{}us", delta);
+                                } else if (delta < 1000000) {
+                                    timeStr = std::format("{:.3f}ms", delta / 1000.0);
+                                } else if (delta < 60000000) {
+                                    timeStr = std::format("{:.3f}s", delta / 1000000.0);
+                                } else if (delta < 3600000000) {
+                                    timeStr = std::format("{:.3f}m", delta / 60000000.0);
+                                } else {
+                                    timeStr = std::format("{:.3f}h", delta / 3600000000.0);
+                                }
+                            }
+
+                            std::string output = std::format("{} {} [{}] [{}:{}] {}{}", 
+                                                             color, levelStr, timeStr, msg.location.file_name(),
                                                              msg.location.line(), msg.formattedMessage, RESET);
                             std::osyncstream(std::cout) << output << std::endl;
                             if (logFile_.is_open()) {
@@ -209,6 +235,7 @@ private:
     std::atomic<LogLevel> level_;
     std::ofstream logFile_;
     std::unique_ptr<std::jthread> worker_;
+    mutable std::optional<std::chrono::steady_clock::time_point> firstLogTime_;
 };
 
 } // namespace Logging

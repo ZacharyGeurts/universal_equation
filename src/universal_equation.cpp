@@ -1,14 +1,7 @@
 // universal_equation.cpp: Core implementation of the UniversalEquation class for quantum simulation on n-dimensional hypercube lattices.
 // Models a 19-dimensional reality with stronger influences from 2D and 4D on 3D properties, using weighted dimensional contributions.
 // Quantum-specific computations are implemented in universal_equation_quantum.cpp.
-
-// How this ties into the quantum world:
-// The UniversalEquation class simulates quantum phenomena on an n-dimensional hypercube lattice, integrating classical and quantum physics.
-// It models a system with multiple vertices (representing particles or points in a 1-inch cube of water), with physical properties (mass, volume, density)
-// influenced by projections from other dimensions (strongest from 2D and 4D in a 19D reality). The "God wave" models quantum coherence, and NURBS fields
-// represent matter and energy distributions. Dimensional interactions are weighted using a Gaussian function centered at 3D, ensuring 2D and 4D have
-// greater impact on 3D properties than higher dimensions. Thread-safe, high-precision calculations are optimized with OpenMP.
-
+// Uses Logging::Logger for consistent logging across the AMOURANTH RTX Engine.
 // Copyright Zachary Geurts 2025 (powered by Grok with Heisenberg swagger)
 
 #include "universal_equation.hpp"
@@ -19,22 +12,8 @@
 #include <memory>
 #include <algorithm>
 #include <stdexcept>
-#include <iostream>
-#include <atomic>
 #include <latch>
-#include <syncstream>
-#include <omp.h>
-#include <sstream>
-#include <iomanip>
-#include <limits>
-
-// ANSI color codes
-#define RESET "\033[0m"
-#define MAGENTA "\033[1;35m" // Bold magenta for errors
-#define CYAN "\033[1;36m"    // Bold cyan for debug
-#define YELLOW "\033[1;33m"  // Bold yellow for warnings
-#define GREEN "\033[1;32m"   // Bold green for info
-#define BOLD "\033[1m"
+#include "engine/logging.hpp"
 
 // Helper: Safe division to prevent NaN/Inf
 inline long double safe_div(long double a, long double b) {
@@ -49,6 +28,7 @@ inline long double dimensionalWeight(int dim, int centerDim = 3, long double sig
 
 // Constructor: Initializes quantum simulation with dimensional influences and multiple vertices
 UniversalEquation::UniversalEquation(
+    const Logging::Logger& logger,
     int maxDimensions, int mode, long double influence, long double weak, long double collapse,
     long double twoD, long double threeDInfluence, long double oneDPermeation, long double nurbMatterStrength,
     long double nurbEnergyStrength, long double alpha, long double beta, long double carrollFactor,
@@ -64,12 +44,12 @@ UniversalEquation::UniversalEquation(
       invMaxDim_(maxDimensions_ > 0 ? 1.0L / maxDimensions_ : 1e-15L),
       totalCharge_(0.0L),
       needsUpdate_(true),
-      nCubeVertices_(std::vector<std::vector<long double>>()),
-      vertexMomenta_(std::vector<std::vector<long double>>()),
-      vertexSpins_(std::vector<long double>()),
-      vertexWaveAmplitudes_(std::vector<long double>()),
-      interactions_(std::vector<DimensionInteraction>()),
-      projectedVerts_(std::vector<glm::vec3>()),
+      nCubeVertices_(),
+      vertexMomenta_(),
+      vertexSpins_(),
+      vertexWaveAmplitudes_(),
+      interactions_(),
+      projectedVerts_(),
       avgProjScale_(1.0L),
       cachedCos_(maxDimensions_ + 1, 0.0L),
       navigator_(nullptr),
@@ -77,7 +57,7 @@ UniversalEquation::UniversalEquation(
       nurbEnergyControlPoints_(5, 1.0L),
       nurbKnots_(9, 0.0L),
       nurbWeights_(5, 1.0L),
-      dimensionData_(std::vector<DimensionData>()),
+      dimensionData_(),
       influence_(std::clamp(influence, 0.0L, 10.0L)),
       weak_(std::clamp(weak, 0.0L, 1.0L)),
       collapse_(std::clamp(collapse, 0.0L, 5.0L)),
@@ -98,19 +78,18 @@ UniversalEquation::UniversalEquation(
       renormFactor_(std::clamp(renormFactor, 0.1L, 10.0L)),
       vacuumEnergy_(std::clamp(vacuumEnergy, 0.0L, 1.0L)),
       GodWaveFreq_(std::clamp(GodWaveFreq, 0.1L, 10.0L)),
-      debug_(debug) {
+      debug_(debug),
+      logger_(logger) {
     // Validation to ensure currentDimension_ and mode_ are not 0
     if (mode <= 0 || maxDimensions <= 0) {
-        std::osyncstream(std::cerr) << MAGENTA << "[ERROR] maxDimensions and mode must be greater than 0" RESET << std::endl;
+        logger_.log(Logging::LogLevel::Error, "maxDimensions and mode must be greater than 0", std::source_location::current());
         throw std::invalid_argument("maxDimensions and mode must be greater than 0");
     }
 
     // Debug: Log initialization state
     if (debug_.load()) {
-        std::osyncstream(std::cout) << GREEN << "[INFO] Starting UniversalEquation initialization with maxDimensions="
-                                    << maxDimensions_ << ", mode=" << mode_.load() 
-                                    << ", vertices=" << maxVertices_ << ", debug_=" << debug_.load()
-                                    << ", nCubeVertices_.data=" << nCubeVertices_.data() << RESET << std::endl;
+        logger_.log(Logging::LogLevel::Info, "Starting UniversalEquation initialization with maxDimensions={}, mode={}, vertices={}, debug={}",
+                    std::source_location::current(), maxDimensions_, mode_.load(), maxVertices_, debug_.load());
     }
 
     // Warning: Check for clamped parameters
@@ -124,7 +103,7 @@ UniversalEquation::UniversalEquation(
                           spinInteraction != spinInteraction_.load() || emFieldStrength != emFieldStrength_.load() ||
                           renormFactor != renormFactor_.load() || vacuumEnergy != vacuumEnergy_.load() ||
                           GodWaveFreq != GodWaveFreq_.load())) {
-        std::osyncstream(std::cout) << YELLOW << "[WARNING] Some input parameters were clamped to valid ranges" RESET << std::endl;
+        logger_.log(Logging::LogLevel::Warning, "Some input parameters were clamped to valid ranges", std::source_location::current());
     }
 
     nurbMatterControlPoints_ = {1.0L, 0.8L, 0.5L, 0.3L, 0.1L};
@@ -132,22 +111,13 @@ UniversalEquation::UniversalEquation(
     nurbKnots_ = {0.0L, 0.0L, 0.0L, 0.0L, 0.5L, 1.0L, 1.0L, 1.0L, 1.0L};
     nurbWeights_ = {1.0L, 1.0L, 1.0L, 1.0L, 1.0L};
     try {
-        // Ensure all vectors are in a clean state
-        nCubeVertices_ = std::vector<std::vector<long double>>();
-        vertexMomenta_ = std::vector<std::vector<long double>>();
-        vertexSpins_ = std::vector<long double>();
-        vertexWaveAmplitudes_ = std::vector<long double>();
-        interactions_ = std::vector<DimensionInteraction>();
-        projectedVerts_ = std::vector<glm::vec3>();
-        dimensionData_ = std::vector<DimensionData>();
         initializeWithRetry();
         if (debug_.load()) {
-            std::osyncstream(std::cout) << CYAN << "[DEBUG] Initialized UniversalEquation: maxDimensions=" << maxDimensions_
-                                        << ", mode=" << mode_.load() << ", vertices=" << nCubeVertices_.size()
-                                        << ", totalCharge=" << totalCharge_.load() << ", nCubeVertices_.data=" << nCubeVertices_.data() << RESET << std::endl;
+            logger_.log(Logging::LogLevel::Debug, "Initialized UniversalEquation: maxDimensions={}, mode={}, vertices={}, totalCharge={}",
+                        std::source_location::current(), maxDimensions_, mode_.load(), nCubeVertices_.size(), totalCharge_.load());
         }
     } catch (const std::exception& e) {
-        std::osyncstream(std::cerr) << MAGENTA << "[ERROR] Constructor failed: " << e.what() << RESET << std::endl;
+        logger_.log(Logging::LogLevel::Error, "Constructor failed: {}", std::source_location::current(), e.what());
         throw;
     }
 }
@@ -162,12 +132,12 @@ UniversalEquation::UniversalEquation(const UniversalEquation& other)
       invMaxDim_(other.invMaxDim_),
       totalCharge_(other.totalCharge_.load()),
       needsUpdate_(other.needsUpdate_.load()),
-      nCubeVertices_(other.nCubeVertices_),
-      vertexMomenta_(other.vertexMomenta_),
-      vertexSpins_(other.vertexSpins_),
-      vertexWaveAmplitudes_(other.vertexWaveAmplitudes_),
-      interactions_(other.interactions_),
-      projectedVerts_(other.projectedVerts_),
+      nCubeVertices_(),
+      vertexMomenta_(),
+      vertexSpins_(),
+      vertexWaveAmplitudes_(),
+      interactions_(),
+      projectedVerts_(),
       avgProjScale_(other.avgProjScale_.load()),
       cachedCos_(other.cachedCos_),
       navigator_(nullptr),
@@ -175,7 +145,7 @@ UniversalEquation::UniversalEquation(const UniversalEquation& other)
       nurbEnergyControlPoints_(other.nurbEnergyControlPoints_),
       nurbKnots_(other.nurbKnots_),
       nurbWeights_(other.nurbWeights_),
-      dimensionData_(other.dimensionData_),
+      dimensionData_(),
       influence_(other.influence_.load()),
       weak_(other.weak_.load()),
       collapse_(other.collapse_.load()),
@@ -196,18 +166,34 @@ UniversalEquation::UniversalEquation(const UniversalEquation& other)
       renormFactor_(other.renormFactor_.load()),
       vacuumEnergy_(other.vacuumEnergy_.load()),
       GodWaveFreq_(other.GodWaveFreq_.load()),
-      debug_(other.debug_.load()) {
+      debug_(other.debug_.load()),
+      logger_(other.logger_) {
     if (debug_.load()) {
-        std::osyncstream(std::cout) << GREEN << "[INFO] Starting copy constructor for UniversalEquation, debug_=" << debug_.load() << RESET << std::endl;
+        logger_.log(Logging::LogLevel::Info, "Starting copy constructor for UniversalEquation, debug={}", 
+                    std::source_location::current(), debug_.load());
     }
     try {
+        // Deep copy vectors to avoid memory issues
+        nCubeVertices_.reserve(other.nCubeVertices_.size());
+        vertexMomenta_.reserve(other.vertexMomenta_.size());
+        vertexSpins_ = other.vertexSpins_;
+        vertexWaveAmplitudes_ = other.vertexWaveAmplitudes_;
+        interactions_ = other.interactions_;
+        projectedVerts_ = other.projectedVerts_;
+        dimensionData_ = other.dimensionData_;
+        for (const auto& vertex : other.nCubeVertices_) {
+            nCubeVertices_.emplace_back(vertex);
+        }
+        for (const auto& momentum : other.vertexMomenta_) {
+            vertexMomenta_.emplace_back(momentum);
+        }
         initializeWithRetry();
         if (debug_.load()) {
-            std::osyncstream(std::cout) << CYAN << "[DEBUG] Copy constructor initialized: maxDimensions=" << maxDimensions_
-                                        << ", vertices=" << nCubeVertices_.size() << ", debug_=" << debug_.load() << RESET << std::endl;
+            logger_.log(Logging::LogLevel::Debug, "Copy constructor initialized: maxDimensions={}, vertices={}", 
+                        std::source_location::current(), maxDimensions_, nCubeVertices_.size());
         }
     } catch (const std::exception& e) {
-        std::osyncstream(std::cerr) << MAGENTA << "[ERROR] Copy constructor failed: " << e.what() << RESET << std::endl;
+        logger_.log(Logging::LogLevel::Error, "Copy constructor failed: {}", std::source_location::current(), e.what());
         throw;
     }
 }
@@ -216,7 +202,8 @@ UniversalEquation::UniversalEquation(const UniversalEquation& other)
 UniversalEquation& UniversalEquation::operator=(const UniversalEquation& other) {
     if (this != &other) {
         if (debug_.load()) {
-            std::osyncstream(std::cout) << GREEN << "[INFO] Starting copy assignment for UniversalEquation, debug_=" << debug_.load() << RESET << std::endl;
+            logger_.log(Logging::LogLevel::Info, "Starting copy assignment for UniversalEquation, debug={}", 
+                        std::source_location::current(), debug_.load());
         }
         maxDimensions_ = other.maxDimensions_;
         mode_.store(other.mode_.load());
@@ -226,13 +213,12 @@ UniversalEquation& UniversalEquation::operator=(const UniversalEquation& other) 
         invMaxDim_ = other.invMaxDim_;
         totalCharge_.store(other.totalCharge_.load());
         needsUpdate_.store(other.needsUpdate_.load());
-        nCubeVertices_ = other.nCubeVertices_;
-        vertexMomenta_ = other.vertexMomenta_;
+        nCubeVertices_.clear();
+        vertexMomenta_.clear();
         vertexSpins_ = other.vertexSpins_;
         vertexWaveAmplitudes_ = other.vertexWaveAmplitudes_;
         interactions_ = other.interactions_;
         projectedVerts_ = other.projectedVerts_;
-        avgProjScale_.store(other.avgProjScale_.load());
         cachedCos_ = other.cachedCos_;
         navigator_ = nullptr;
         nurbMatterControlPoints_ = other.nurbMatterControlPoints_;
@@ -262,13 +248,21 @@ UniversalEquation& UniversalEquation::operator=(const UniversalEquation& other) 
         GodWaveFreq_.store(other.GodWaveFreq_.load());
         debug_.store(other.debug_.load());
         try {
+            nCubeVertices_.reserve(other.nCubeVertices_.size());
+            vertexMomenta_.reserve(other.vertexMomenta_.size());
+            for (const auto& vertex : other.nCubeVertices_) {
+                nCubeVertices_.emplace_back(vertex);
+            }
+            for (const auto& momentum : other.vertexMomenta_) {
+                vertexMomenta_.emplace_back(momentum);
+            }
             initializeWithRetry();
             if (debug_.load()) {
-                std::osyncstream(std::cout) << CYAN << "[DEBUG] Copy assignment completed: maxDimensions=" << maxDimensions_
-                                            << ", vertices=" << nCubeVertices_.size() << ", debug_=" << debug_.load() << RESET << std::endl;
+                logger_.log(Logging::LogLevel::Debug, "Copy assignment completed: maxDimensions={}, vertices={}", 
+                            std::source_location::current(), maxDimensions_, nCubeVertices_.size());
             }
         } catch (const std::exception& e) {
-            std::osyncstream(std::cerr) << MAGENTA << "[ERROR] Copy assignment failed: " << e.what() << RESET << std::endl;
+            logger_.log(Logging::LogLevel::Error, "Copy assignment failed: {}", std::source_location::current(), e.what());
             throw;
         }
     }
@@ -279,22 +273,22 @@ UniversalEquation& UniversalEquation::operator=(const UniversalEquation& other) 
 void UniversalEquation::initializeNCube() {
     std::latch init_latch(1);
     try {
-        // Safely reset vectors by assigning empty vectors
-        nCubeVertices_ = std::vector<std::vector<long double>>();
-        vertexMomenta_ = std::vector<std::vector<long double>>();
-        vertexSpins_ = std::vector<long double>();
-        vertexWaveAmplitudes_ = std::vector<long double>();
-        interactions_ = std::vector<DimensionInteraction>();
-        projectedVerts_ = std::vector<glm::vec3>();
+        // Clear vectors to ensure clean state
+        nCubeVertices_.clear();
+        vertexMomenta_.clear();
+        vertexSpins_.clear();
+        vertexWaveAmplitudes_.clear();
+        interactions_.clear();
+        projectedVerts_.clear();
 
         // Debug logging after vector initialization
         if (debug_.load()) {
-            std::osyncstream(std::cout) << GREEN << "[INFO] Initializing n-cube with " << maxVertices_ << " vertices, debug_=" << debug_.load() << RESET << std::endl;
-            std::osyncstream(std::cout) << CYAN << "[DEBUG] nCubeVertices_ state before reset: size=" << nCubeVertices_.size()
-                                        << ", capacity=" << nCubeVertices_.capacity() << ", data=" << nCubeVertices_.data() << RESET << std::endl;
+            logger_.log(Logging::LogLevel::Info, "Initializing n-cube with {} vertices, debug={}", 
+                        std::source_location::current(), maxVertices_, debug_.load());
         }
         if (debug_.load() && maxVertices_ > 1000) {
-            std::osyncstream(std::cout) << YELLOW << "[WARNING] High vertex count (" << maxVertices_ << ") may impact performance" RESET << std::endl;
+            logger_.log(Logging::LogLevel::Warning, "High vertex count ({}) may impact performance", 
+                        std::source_location::current(), maxVertices_);
         }
 
         // Reserve capacity
@@ -327,12 +321,12 @@ void UniversalEquation::initializeNCube() {
         }
 
         if (debug_.load()) {
-            std::osyncstream(std::cout) << CYAN << "[DEBUG] Initialized nCube with " << nCubeVertices_.size() << " vertices, totalCharge="
-                                        << totalCharge_.load() << ", nCubeVertices_.data=" << nCubeVertices_.data() << ", debug_=" << debug_.load() << RESET << std::endl;
+            logger_.log(Logging::LogLevel::Debug, "Initialized nCube with {} vertices, totalCharge={}",
+                        std::source_location::current(), nCubeVertices_.size(), totalCharge_.load());
         }
         init_latch.count_down();
     } catch (const std::exception& e) {
-        std::osyncstream(std::cerr) << MAGENTA << "[ERROR] initializeNCube failed: " << e.what() << RESET << std::endl;
+        logger_.log(Logging::LogLevel::Error, "initializeNCube failed: {}", std::source_location::current(), e.what());
         throw;
     }
     init_latch.wait(); // Ensure initialization completes
@@ -341,11 +335,11 @@ void UniversalEquation::initializeNCube() {
 // Evolves system over time with dimensional influences
 void UniversalEquation::evolveTimeStep(long double dt) {
     if (dt <= 0.0L || std::isnan(dt) || std::isinf(dt)) {
-        std::osyncstream(std::cerr) << MAGENTA << "[ERROR] Invalid time step" RESET << std::endl;
+        logger_.log(Logging::LogLevel::Error, "Invalid time step", std::source_location::current());
         throw std::invalid_argument("Invalid time step");
     }
     if (debug_.load()) {
-        std::osyncstream(std::cout) << GREEN << "[INFO] Starting time step evolution with dt=" << dt << RESET << std::endl;
+        logger_.log(Logging::LogLevel::Info, "Starting time step evolution with dt={}", std::source_location::current(), dt);
     }
     long double dimInfluence = 0.0L;
     for (int d = 1; d <= maxDimensions_; ++d) {
@@ -394,19 +388,21 @@ void UniversalEquation::evolveTimeStep(long double dt) {
         }
     }
     if (debug_.load() && anyClamped) {
-        std::osyncstream(std::cout) << YELLOW << "[WARNING] Some values were clamped or reset due to NaN/Inf in evolveTimeStep" RESET << std::endl;
+        logger_.log(Logging::LogLevel::Warning, "Some values were clamped or reset due to NaN/Inf in evolveTimeStep", 
+                    std::source_location::current());
     }
     needsUpdate_.store(true);
     updateInteractions();
     if (debug_.load()) {
-        std::osyncstream(std::cout) << GREEN << "[INFO] Time step evolution completed" RESET << std::endl;
+        logger_.log(Logging::LogLevel::Info, "Time step evolution completed", std::source_location::current());
     }
 }
 
 // Updates vertex momenta with dimensional influences
 void UniversalEquation::updateMomentum() {
     if (debug_.load()) {
-        std::osyncstream(std::cout) << GREEN << "[INFO] Starting momentum update for " << vertexMomenta_.size() << " vertices" RESET << std::endl;
+        logger_.log(Logging::LogLevel::Info, "Starting momentum update for {} vertices", 
+                    std::source_location::current(), vertexMomenta_.size());
     }
     long double dimInfluence = 0.0L;
     for (int d = 1; d <= maxDimensions_; ++d) {
@@ -438,10 +434,11 @@ void UniversalEquation::updateMomentum() {
         }
     }
     if (debug_.load() && anyClamped) {
-        std::osyncstream(std::cout) << YELLOW << "[WARNING] Some momenta were clamped due to NaN/Inf or bounds in updateMomentum" RESET << std::endl;
+        logger_.log(Logging::LogLevel::Warning, "Some momenta were clamped due to NaN/Inf or bounds in updateMomentum", 
+                    std::source_location::current());
     }
     if (debug_.load()) {
-        std::osyncstream(std::cout) << GREEN << "[INFO] Momentum update completed" RESET << std::endl;
+        logger_.log(Logging::LogLevel::Info, "Momentum update completed", std::source_location::current());
     }
 }
 
@@ -459,16 +456,15 @@ void UniversalEquation::initializeWithRetry() {
             }
             updateInteractions();
             if (debug_.load()) {
-                std::osyncstream(std::cout) << GREEN << "[INFO] Initialization completed successfully" RESET << std::endl;
+                logger_.log(Logging::LogLevel::Info, "Initialization completed successfully", std::source_location::current());
             }
             retry_latch.count_down();
             return;
         } catch (const std::bad_alloc& e) {
-            std::osyncstream(std::cerr) << YELLOW << "[WARNING] Memory allocation failed for dimension " << currentDimension_.load()
-                                        << ". Reducing dimension to " << (currentDimension_.load() - 1)
-                                        << ". Attempt " << (attempts + 1) << "/" << maxAttempts << RESET << std::endl;
+            logger_.log(Logging::LogLevel::Warning, "Memory allocation failed for dimension {}. Reducing dimension to {}. Attempt {}/{}", 
+                        std::source_location::current(), currentDimension_.load(), currentDimension_.load() - 1, attempts + 1, maxAttempts);
             if (currentDimension_.load() == 1) {
-                std::osyncstream(std::cerr) << MAGENTA << "[ERROR] Failed to allocate memory even at dimension 1" RESET << std::endl;
+                logger_.log(Logging::LogLevel::Error, "Failed to allocate memory even at dimension 1", std::source_location::current());
                 throw std::runtime_error("Failed to allocate memory even at dimension 1");
             }
             currentDimension_.store(currentDimension_.load() - 1);
@@ -478,7 +474,7 @@ void UniversalEquation::initializeWithRetry() {
             ++attempts;
         }
     }
-    std::osyncstream(std::cerr) << MAGENTA << "[ERROR] Max retry attempts reached for initialization" RESET << std::endl;
+    logger_.log(Logging::LogLevel::Error, "Max retry attempts reached for initialization", std::source_location::current());
     throw std::runtime_error("Max retry attempts reached for initialization");
 }
 
@@ -488,7 +484,8 @@ long double UniversalEquation::safeExp(long double x) const {
     long double result = std::exp(clamped);
     if (std::isnan(result) || std::isinf(result)) {
         if (debug_.load()) {
-            std::osyncstream(std::cerr) << YELLOW << "[WARNING] safeExp produced invalid result for x=" << x << ", returning 1.0" RESET << std::endl;
+            logger_.log(Logging::LogLevel::Warning, "safeExp produced invalid result for x={}, returning 1.0", 
+                        std::source_location::current(), x);
         }
         return 1.0L;
     }
@@ -498,10 +495,11 @@ long double UniversalEquation::safeExp(long double x) const {
 // Initializes with navigator
 void UniversalEquation::initializeCalculator(DimensionalNavigator* navigator) {
     if (debug_.load()) {
-        std::osyncstream(std::cout) << GREEN << "[INFO] Initializing calculator with navigator=" << navigator << RESET << std::endl;
+        logger_.log(Logging::LogLevel::Info, "Initializing calculator with navigator={}", 
+                    std::source_location::current(), static_cast<void*>(navigator));
     }
     if (!navigator) {
-        std::osyncstream(std::cerr) << MAGENTA << "[ERROR] Navigator pointer cannot be null" RESET << std::endl;
+        logger_.log(Logging::LogLevel::Error, "Navigator pointer cannot be null", std::source_location::current());
         throw std::invalid_argument("Navigator pointer cannot be null");
     }
     navigator_ = navigator;
@@ -512,7 +510,8 @@ void UniversalEquation::initializeCalculator(DimensionalNavigator* navigator) {
 // Updates cache with dimensional influences
 UniversalEquation::DimensionData UniversalEquation::updateCache() {
     if (debug_.load()) {
-        std::osyncstream(std::cout) << GREEN << "[INFO] Updating cache for dimension " << currentDimension_.load() << RESET << std::endl;
+        logger_.log(Logging::LogLevel::Info, "Updating cache for dimension {}", 
+                    std::source_location::current(), currentDimension_.load());
     }
     long double dimInfluence = 0.0L;
     for (int d = 1; d <= maxDimensions_; ++d) {
@@ -532,7 +531,8 @@ UniversalEquation::DimensionData UniversalEquation::updateCache() {
         result.GodWaveEnergy * dimInfluence
     };
     if (debug_.load()) {
-        std::osyncstream(std::cout) << CYAN << "[DEBUG] Cache updated: observable=" << data.observable << ", potential=" << data.potential << RESET << std::endl;
+        logger_.log(Logging::LogLevel::Debug, "Cache updated: observable={}, potential={}", 
+                    std::source_location::current(), data.observable, data.potential);
     }
     return data;
 }
@@ -540,7 +540,8 @@ UniversalEquation::DimensionData UniversalEquation::updateCache() {
 // Computes batch of dimension data with weighted contributions
 std::vector<UniversalEquation::DimensionData> UniversalEquation::computeBatch(int startDim, int endDim) {
     if (debug_.load()) {
-        std::osyncstream(std::cout) << GREEN << "[INFO] Starting batch computation for dimensions " << startDim << " to " << endDim << RESET << std::endl;
+        logger_.log(Logging::LogLevel::Info, "Starting batch computation for dimensions {} to {}", 
+                    std::source_location::current(), startDim, endDim);
     }
     startDim = std::clamp(startDim, 1, maxDimensions_);
     endDim = std::clamp(endDim == -1 ? maxDimensions_ : endDim, startDim, maxDimensions_);
@@ -558,7 +559,13 @@ std::vector<UniversalEquation::DimensionData> UniversalEquation::computeBatch(in
     }
     for (int d = startDim; d <= endDim; ++d) {
         try {
-            UniversalEquation temp(*this);
+            UniversalEquation temp(logger_, maxDimensions_, d, influence_.load(), weak_.load(), collapse_.load(),
+                                  twoD_.load(), threeDInfluence_.load(), oneDPermeation_.load(),
+                                  nurbMatterStrength_.load(), nurbEnergyStrength_.load(), alpha_.load(),
+                                  beta_.load(), carrollFactor_.load(), meanFieldApprox_.load(),
+                                  asymCollapse_.load(), perspectiveTrans_.load(), perspectiveFocal_.load(),
+                                  spinInteraction_.load(), emFieldStrength_.load(), renormFactor_.load(),
+                                  vacuumEnergy_.load(), GodWaveFreq_.load(), debug_.load(), maxVertices_);
             temp.currentDimension_.store(d);
             temp.mode_.store(d);
             temp.needsUpdate_.store(true);
@@ -576,7 +583,13 @@ std::vector<UniversalEquation::DimensionData> UniversalEquation::computeBatch(in
                 long double weightedGodWaveEnergy = 0.0L;
                 for (int k = 1; k <= maxDimensions_; ++k) {
                     try {
-                        UniversalEquation tempK(*this);
+                        UniversalEquation tempK(logger_, maxDimensions_, k, influence_.load(), weak_.load(), collapse_.load(),
+                                               twoD_.load(), threeDInfluence_.load(), oneDPermeation_.load(),
+                                               nurbMatterStrength_.load(), nurbEnergyStrength_.load(), alpha_.load(),
+                                               beta_.load(), carrollFactor_.load(), meanFieldApprox_.load(),
+                                               asymCollapse_.load(), perspectiveTrans_.load(), perspectiveFocal_.load(),
+                                               spinInteraction_.load(), emFieldStrength_.load(), renormFactor_.load(),
+                                               vacuumEnergy_.load(), GodWaveFreq_.load(), debug_.load(), maxVertices_);
                         tempK.currentDimension_.store(k);
                         tempK.mode_.store(k);
                         tempK.needsUpdate_.store(true);
@@ -594,8 +607,8 @@ std::vector<UniversalEquation::DimensionData> UniversalEquation::computeBatch(in
                         weightedGodWaveEnergy += weight * kData.GodWaveEnergy;
                     } catch (const std::exception& e) {
                         if (debug_.load()) {
-                            std::osyncstream(std::cerr) << YELLOW << "[WARNING] Inner batch computation failed for dimension " << k
-                                                        << ": " << e.what() << RESET << std::endl;
+                            logger_.log(Logging::LogLevel::Warning, "Inner batch computation failed for dimension {}: {}", 
+                                        std::source_location::current(), k, e.what());
                         }
                     }
                 }
@@ -611,7 +624,8 @@ std::vector<UniversalEquation::DimensionData> UniversalEquation::computeBatch(in
             results[d - startDim] = data;
         } catch (const std::exception& e) {
             if (debug_.load()) {
-                std::osyncstream(std::cerr) << MAGENTA << "[ERROR] Batch computation failed for dimension " << d << ": " << e.what() << RESET << std::endl;
+                logger_.log(Logging::LogLevel::Error, "Batch computation failed for dimension {}: {}", 
+                            std::source_location::current(), d, e.what());
             }
             results[d - startDim] = DimensionData{d, 0.0L, 0.0L, 0.0L, 0.0L, 0.0L, 0.0L, 0.0L, 0.0L};
         }
@@ -621,7 +635,8 @@ std::vector<UniversalEquation::DimensionData> UniversalEquation::computeBatch(in
     needsUpdate_.store(true);
     initializeWithRetry();
     if (debug_.load()) {
-        std::osyncstream(std::cout) << GREEN << "[INFO] Batch computation completed for dimensions " << startDim << " to " << endDim << RESET << std::endl;
+        logger_.log(Logging::LogLevel::Info, "Batch computation completed for dimensions {} to {}", 
+                    std::source_location::current(), startDim, endDim);
     }
     return results;
 }
@@ -629,11 +644,11 @@ std::vector<UniversalEquation::DimensionData> UniversalEquation::computeBatch(in
 // Exports to CSV
 void UniversalEquation::exportToCSV(const std::string& filename, const std::vector<DimensionData>& data) const {
     if (debug_.load()) {
-        std::osyncstream(std::cout) << GREEN << "[INFO] Exporting dimension data to CSV: " << filename << RESET << std::endl;
+        logger_.log(Logging::LogLevel::Info, "Exporting dimension data to CSV: {}", std::source_location::current(), filename);
     }
     std::ofstream ofs(filename);
     if (!ofs) {
-        std::osyncstream(std::cerr) << MAGENTA << "[ERROR] Cannot open CSV file for writing: " << filename << RESET << std::endl;
+        logger_.log(Logging::LogLevel::Error, "Cannot open CSV file for writing: {}", std::source_location::current(), filename);
         throw std::runtime_error("Cannot open CSV file for writing: " + filename);
     }
     ofs << "Dimension,Observable,Potential,NURBMatter,NURBEnergy,SpinEnergy,MomentumEnergy,FieldEnergy,GodWaveEnergy\n";
@@ -645,14 +660,15 @@ void UniversalEquation::exportToCSV(const std::string& filename, const std::vect
             << d.GodWaveEnergy << "\n";
     }
     if (debug_.load()) {
-        std::osyncstream(std::cout) << GREEN << "[INFO] CSV export completed successfully" RESET << std::endl;
+        logger_.log(Logging::LogLevel::Info, "CSV export completed successfully", std::source_location::current());
     }
 }
 
 // Advances simulation cycle
 void UniversalEquation::advanceCycle() {
     if (debug_.load()) {
-        std::osyncstream(std::cout) << GREEN << "[INFO] Advancing simulation cycle from dimension " << currentDimension_.load() << RESET << std::endl;
+        logger_.log(Logging::LogLevel::Info, "Advancing simulation cycle from dimension {}", 
+                    std::source_location::current(), currentDimension_.load());
     }
     int newDimension = (currentDimension_.load() == maxDimensions_) ? 1 : currentDimension_.load() + 1;
     currentDimension_.store(newDimension);
@@ -660,6 +676,6 @@ void UniversalEquation::advanceCycle() {
     needsUpdate_.store(true);
     initializeWithRetry();
     if (debug_.load()) {
-        std::osyncstream(std::cout) << CYAN << "[DEBUG] Advanced to dimension " << currentDimension_.load() << RESET << std::endl;
+        logger_.log(Logging::LogLevel::Debug, "Advanced to dimension {}", std::source_location::current(), currentDimension_.load());
     }
 }

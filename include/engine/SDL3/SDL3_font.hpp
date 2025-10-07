@@ -18,7 +18,7 @@ namespace SDL3Initializer {
 
 class SDL3Font {
 public:
-    explicit SDL3Font(const Logging::Logger& logger) : logger_(logger) {
+    explicit SDL3Font(const Logging::Logger& logger) : logger_(logger), m_font(nullptr) {
         logger_.log(Logging::LogLevel::Info, "Constructing SDL3Font", std::source_location::current());
     }
 
@@ -29,25 +29,26 @@ public:
 
     void initialize(const std::string& fontPath) {
         logger_.log(Logging::LogLevel::Info, "Initializing TTF", std::source_location::current());
-        if (TTF_Init() != 0) {
-            logger_.log(Logging::LogLevel::Error, "TTF_Init failed: {}", std::source_location::current(), SDL_GetError());
-            throw std::runtime_error(std::format("TTF_Init failed: {}", SDL_GetError()));
+        const char* ttfError = nullptr;
+        if (TTF_Init() == 0) {
+            ttfError = SDL_GetError();
+            logger_.log(Logging::LogLevel::Error, "TTF_Init failed: '{}'", 
+                        std::source_location::current(), ttfError ? ttfError : "No error message provided");
+            throw std::runtime_error(std::format("TTF_Init failed: {}", ttfError ? ttfError : "No error message provided"));
         }
 
-        std::string resolvedFontPath = fontPath;
-#ifdef __ANDROID__
-        if (!resolvedFontPath.empty() && resolvedFontPath[0] != '/') {
-            resolvedFontPath = "assets/" + resolvedFontPath;
-        }
-#endif
-        logger_.log(Logging::LogLevel::Info, "Loading TTF font asynchronously: {}", std::source_location::current(), resolvedFontPath);
-        m_fontFuture = std::async(std::launch::async, [this, resolvedFontPath]() -> TTF_Font* {
-            TTF_Font* font = TTF_OpenFont(resolvedFontPath.c_str(), 24);
+        logger_.log(Logging::LogLevel::Info, "Loading TTF font asynchronously: {}", 
+                    std::source_location::current(), fontPath);
+        m_fontFuture = std::async(std::launch::async, [this, fontPath]() -> TTF_Font* {
+            TTF_Font* font = TTF_OpenFont(fontPath.c_str(), 24);
             if (!font) {
-                logger_.log(Logging::LogLevel::Error, "TTF_OpenFont failed for {}: {}", std::source_location::current(), resolvedFontPath, SDL_GetError());
-                throw std::runtime_error(std::format("TTF_OpenFont failed for {}: {}", resolvedFontPath, SDL_GetError()));
+                const char* sdlError = SDL_GetError();
+                logger_.log(Logging::LogLevel::Error, "TTF_OpenFont failed for {}: '{}'", 
+                            std::source_location::current(), fontPath, sdlError ? sdlError : "No error message provided");
+                throw std::runtime_error(std::format("TTF_OpenFont failed for {}: {}", fontPath, sdlError ? sdlError : "No error message provided"));
             }
-            logger_.log(Logging::LogLevel::Info, "Font loaded successfully: {}", std::source_location::current(), resolvedFontPath);
+            logger_.log(Logging::LogLevel::Info, "Font loaded successfully: {}", 
+                        std::source_location::current(), fontPath);
             return font;
         });
     }
@@ -56,9 +57,11 @@ public:
         if (m_font == nullptr && m_fontFuture.valid()) {
             try {
                 m_font = m_fontFuture.get();
-                logger_.log(Logging::LogLevel::Info, "Font loaded successfully", std::source_location::current());
+                logger_.log(Logging::LogLevel::Info, "Font retrieved successfully", 
+                            std::source_location::current());
             } catch (const std::runtime_error& e) {
-                logger_.log(Logging::LogLevel::Error, "Font loading failed: {}", std::source_location::current(), e.what());
+                logger_.log(Logging::LogLevel::Error, "Font loading failed: {}", 
+                            std::source_location::current(), e.what());
                 m_font = nullptr;
             }
         }
@@ -67,7 +70,8 @@ public:
     }
 
     void exportLog(const std::string& filename) const {
-        logger_.log(Logging::LogLevel::Info, "Exporting font log to {}", std::source_location::current(), filename);
+        logger_.log(Logging::LogLevel::Info, "Exporting font log to {}", 
+                    std::source_location::current(), filename);
     }
 
 private:
@@ -78,10 +82,12 @@ private:
                 TTF_Font* pending = m_fontFuture.get();
                 if (pending) {
                     TTF_CloseFont(pending);
-                    logger_.log(Logging::LogLevel::Info, "Closed pending font in cleanup", std::source_location::current());
+                    logger_.log(Logging::LogLevel::Info, "Closed pending font in cleanup", 
+                                std::source_location::current());
                 }
             } catch (...) {
-                logger_.log(Logging::LogLevel::Error, "Error closing pending font", std::source_location::current());
+                logger_.log(Logging::LogLevel::Error, "Error closing pending font", 
+                            std::source_location::current());
             }
         }
         if (m_font) {
@@ -89,11 +95,13 @@ private:
             TTF_CloseFont(m_font);
             m_font = nullptr;
         }
-        logger_.log(Logging::LogLevel::Info, "Quitting TTF", std::source_location::current());
-        TTF_Quit();
+        if (TTF_WasInit()) {
+            logger_.log(Logging::LogLevel::Info, "Quitting TTF", std::source_location::current());
+            TTF_Quit();
+        }
     }
 
-    mutable TTF_Font* m_font = nullptr;
+    mutable TTF_Font* m_font;
     mutable std::future<TTF_Font*> m_fontFuture;
     const Logging::Logger& logger_;
 };
