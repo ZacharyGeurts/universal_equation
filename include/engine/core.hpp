@@ -1,8 +1,14 @@
+// AMOURANTH RTX Engine, October 2025 - Core simulation logic.
+// Manages the simulation state, rendering modes, and DimensionalNavigator.
+// Dependencies: Vulkan 1.3+, GLM, C++20 standard library.
+// Zachary Geurts 2025
+
 #ifndef CORE_HPP
 #define CORE_HPP
 
 #include "universal_equation.hpp"
 #include "engine/logging.hpp"
+#include "engine/Vulkan_init.hpp"
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <SDL3/SDL.h>
@@ -48,10 +54,12 @@ struct PushConstants {
 };
 static_assert(sizeof(PushConstants) == 256, "PushConstants must be 256 bytes");
 
+class VulkanRenderer; // Forward declaration
+
 class DimensionalNavigator {
 public:
-    DimensionalNavigator(const std::string& name, int width, int height, const Logging::Logger& logger)
-        : name_(name), width_(width), height_(height), mode_(1), zoomLevel_(1.0f), wavePhase_(0.0f), logger_(logger) {
+    DimensionalNavigator(const std::string& name, int width, int height, VulkanRenderer& renderer, const Logging::Logger& logger)
+        : name_(name), width_(width), height_(height), mode_(1), zoomLevel_(1.0f), wavePhase_(0.0f), renderer_(renderer), logger_(logger) {
         logger_.log(Logging::LogLevel::Info, "Initializing DimensionalNavigator with name={}, width={}, height={}",
                     std::source_location::current(), name, width, height);
         initializeCache();
@@ -66,6 +74,9 @@ public:
     void setMode(int mode) { mode_ = glm::clamp(mode, 1, 9); }
     void setZoomLevel(float zoom) { zoomLevel_ = std::max(0.1f, zoom); }
     void setWavePhase(float phase) { wavePhase_ = phase; }
+    void setWidth(int width) { width_ = width; logger_.log(Logging::LogLevel::Debug, "DimensionalNavigator width set to {}", std::source_location::current(), width); }
+    void setHeight(int height) { height_ = height; logger_.log(Logging::LogLevel::Debug, "DimensionalNavigator height set to {}", std::source_location::current(), height); }
+    VulkanRenderer& getRenderer() const { return renderer_; }
 
 private:
     void initializeCache() {
@@ -91,6 +102,7 @@ private:
     float zoomLevel_;
     float wavePhase_;
     std::vector<UniversalEquation::DimensionData> cache_;
+    VulkanRenderer& renderer_;
     const Logging::Logger& logger_;
 };
 
@@ -116,6 +128,11 @@ public:
             logger_.log(Logging::LogLevel::Error, "Null DimensionalNavigator provided",
                         std::source_location::current());
             throw std::runtime_error("AMOURANTH: Null DimensionalNavigator provided");
+        }
+        if (!device_ || !vertexBufferMemory_ || !pipeline_) {
+            logger_.log(Logging::LogLevel::Error, "Invalid Vulkan resources: device={:p}, vertexBufferMemory={:p}, pipeline={:p}",
+                        std::source_location::current(), static_cast<void*>(device_), static_cast<void*>(vertexBufferMemory_), static_cast<void*>(pipeline_));
+            throw std::runtime_error("AMOURANTH: Invalid Vulkan resources");
         }
         logger_.log(Logging::LogLevel::Info, "Initializing AMOURANTH with width={}, height={}",
                     std::source_location::current(), width_, height_);
@@ -150,6 +167,8 @@ public:
     void toggleUserCam() { isUserCamActive_ = !isUserCamActive_; }
     void moveUserCam(float dx, float dy, float dz) { userCamPos_ += glm::vec3(dx, dy, dz); }
     void setCurrentDimension(int dimension) { ue_.setCurrentDimension(dimension); }
+    void setWidth(int width) { width_ = width; logger_.log(Logging::LogLevel::Debug, "AMOURANTH width set to {}", std::source_location::current(), width); }
+    void setHeight(int height) { height_ = height; logger_.log(Logging::LogLevel::Debug, "AMOURANTH height set to {}", std::source_location::current(), height); }
 
     bool getDebug() const { return ue_.getDebug(); }
     double computeInteraction(int vertexIndex, double distance) const { return static_cast<double>(ue_.computeInteraction(vertexIndex, static_cast<long double>(distance))); }
@@ -214,7 +233,7 @@ private:
     VkPipeline pipeline_;
 };
 
-// Forward declarations for mode-specific rendering
+// Forward declarations for mode-specific rendering (unchanged)
 void renderMode1(AMOURANTH* amouranth, uint32_t imageIndex, VkBuffer vertexBuffer, VkCommandBuffer commandBuffer,
                  VkBuffer indexBuffer, float zoomLevel, int width, int height, float wavePhase,
                  std::span<const UniversalEquation::DimensionData> cache, VkPipelineLayout pipelineLayout, VkDescriptorSet descriptorSet,
@@ -252,10 +271,17 @@ void renderMode9(AMOURANTH* amouranth, uint32_t imageIndex, VkBuffer vertexBuffe
                  std::span<const UniversalEquation::DimensionData> cache, VkPipelineLayout pipelineLayout, VkDescriptorSet descriptorSet,
                  VkDevice device, VkDeviceMemory vertexBufferMemory, VkPipeline pipeline);
 
-// Inline implementations
+// Inline implementations (unchanged except for additional validation and logging where needed)
 inline void AMOURANTH::render(uint32_t imageIndex, VkBuffer vertexBuffer, VkCommandBuffer commandBuffer,
                               VkBuffer indexBuffer, VkPipelineLayout pipelineLayout, VkDescriptorSet descriptorSet) {
     logger_.log(Logging::LogLevel::Debug, "Rendering frame for image index {}", std::source_location::current(), imageIndex);
+    if (!device_ || !vertexBuffer || !commandBuffer || !indexBuffer || !pipelineLayout || !descriptorSet) {
+        logger_.log(Logging::LogLevel::Error, "Invalid Vulkan resources in render: device={:p}, vertexBuffer={:p}, commandBuffer={:p}, indexBuffer={:p}, pipelineLayout={:p}, descriptorSet={:p}",
+                    std::source_location::current(), static_cast<void*>(device_), static_cast<void*>(vertexBuffer),
+                    static_cast<void*>(commandBuffer), static_cast<void*>(indexBuffer), static_cast<void*>(pipelineLayout),
+                    static_cast<void*>(descriptorSet));
+        throw std::runtime_error("Invalid Vulkan resources in AMOURANTH::render");
+    }
     switch (simulator_->getMode()) {
         case 1: renderMode1(this, imageIndex, vertexBuffer, commandBuffer, indexBuffer, simulator_->getZoomLevel(),
                             width_, height_, simulator_->getWavePhase(), getCache(), pipelineLayout, descriptorSet,

@@ -7,6 +7,7 @@
 #include "engine/Vulkan_init_buffers.hpp"
 #include "engine/Vulkan_init_swapchain.hpp"
 #include "engine/Vulkan_init_pipeline.hpp"
+#include "engine/core.hpp" // For AMOURANTH definition
 #include "engine/logging.hpp"
 #include <stdexcept>
 #include <cstring>
@@ -15,20 +16,21 @@
 
 VulkanRenderer::VulkanRenderer(VkInstance instance, VkSurfaceKHR surface,
                               std::span<const glm::vec3> vertices, std::span<const uint32_t> indices,
-                              VkShaderModule vertShaderModule, VkShaderModule fragShaderModule,
                               int width, int height) 
-    : instance_(instance), surface_(surface) {
-    vertShaderModule_ = vertShaderModule;
-    fragShaderModule_ = fragShaderModule;
-    initializeVulkan(vertices, indices, vertShaderModule, fragShaderModule, width, height);
+    : instance_(instance), surface_(surface), swapchainManager_(context_, surface_), pipelineManager_(context_) {
+    Logging::Logger logger;
+    logger.log(Logging::LogLevel::Info, "Constructing VulkanRenderer with instance={:p}, surface={:p}, width={}, height={}",
+               std::source_location::current(), static_cast<void*>(instance), static_cast<void*>(surface), width, height);
+    initializeVulkan(vertices, indices, width, height);
 }
 
 VulkanRenderer::~VulkanRenderer() {
+    Logging::Logger logger;
+    logger.log(Logging::LogLevel::Info, "Destroying VulkanRenderer", std::source_location::current());
     cleanupVulkan();
 }
 
 void VulkanRenderer::initializeVulkan(std::span<const glm::vec3> vertices, std::span<const uint32_t> indices,
-                                     VkShaderModule vertShaderModule, VkShaderModule fragShaderModule,
                                      int width, int height) {
     Logging::Logger logger;
     logger.log(Logging::LogLevel::Info, "Initializing Vulkan renderer", std::source_location::current());
@@ -137,12 +139,10 @@ void VulkanRenderer::initializeVulkan(std::span<const glm::vec3> vertices, std::
     vkGetDeviceQueue(context_.device, context_.presentFamily, 0, &context_.presentQueue);
 
     // Initialize swapchain
-    VulkanSwapchainManager swapchainManager(context_, surface_);
-    swapchainManager.initializeSwapchain(width, height);
+    swapchainManager_.initializeSwapchain(width, height);
 
     // Initialize pipeline
-    VulkanPipelineManager pipelineManager(context_);
-    pipelineManager.initializePipeline(vertShaderModule, fragShaderModule, width, height);
+    pipelineManager_.initializePipeline(width, height);
 
     // Initialize buffers
     VulkanBufferManager bufferManager(context_);
@@ -152,7 +152,7 @@ void VulkanRenderer::initializeVulkan(std::span<const glm::vec3> vertices, std::
     VkCommandPoolCreateInfo commandPoolInfo = {
         .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
         .pNext = nullptr,
-        .flags = 0,
+        .flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
         .queueFamilyIndex = context_.graphicsFamily,
     };
     if (vkCreateCommandPool(context_.device, &commandPoolInfo, nullptr, &context_.commandPool) != VK_SUCCESS) {
@@ -212,13 +212,14 @@ void VulkanRenderer::beginFrame() {
     vkResetFences(context_.device, 1, &context_.inFlightFences[currentFrame_]);
 
     VkResult result = vkAcquireNextImageKHR(context_.device, context_.swapchain, UINT64_MAX,
-                                            context_.imageAvailableSemaphores[currentFrame_], VK_NULL_HANDLE, &currentFrame_);
-    if (result == VK_ERROR_OUT_OF_DATE_KHR) {
-        logger.log(Logging::LogLevel::Warning, "Swapchain out of date, needs resize", std::source_location::current());
+                                            context_.imageAvailableSemaphores[currentFrame_], VK_NULL_HANDLE, &currentImageIndex_);
+    if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
+        logger.log(Logging::LogLevel::Warning, "Swapchain out of date, resizing", std::source_location::current());
+        swapchainManager_.handleResize(context_.swapchainExtent.width, context_.swapchainExtent.height);
         return;
     }
-    if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
-        std::string error = "Failed to acquire swapchain image";
+    if (result != VK_SUCCESS) {
+        std::string error = std::format("Failed to acquire swapchain image: VkResult={}", static_cast<int>(result));
         logger.log(Logging::LogLevel::Error, "{}", std::source_location::current(), error);
         throw std::runtime_error(error);
     }
@@ -241,13 +242,13 @@ void VulkanRenderer::beginFrame() {
         .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
         .pNext = nullptr,
         .renderPass = context_.renderPass,
-        .framebuffer = context_.swapchainFramebuffers[currentFrame_],
+        .framebuffer = context_.swapchainFramebuffers[currentImageIndex_],
         .renderArea = {{0, 0}, context_.swapchainExtent},
         .clearValueCount = 1,
         .pClearValues = &clearColor,
     };
     vkCmdBeginRenderPass(context_.commandBuffers[currentFrame_], &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
-    logger.log(Logging::LogLevel::Debug, "Render pass begun for frame {}", std::source_location::current(), currentFrame_);
+    logger.log(Logging::LogLevel::Debug, "Render pass begun for frame {}, image index {}", std::source_location::current(), currentFrame_, currentImageIndex_);
 }
 
 void VulkanRenderer::endFrame() {
@@ -286,130 +287,74 @@ void VulkanRenderer::endFrame() {
         .pWaitSemaphores = &context_.renderFinishedSemaphores[currentFrame_],
         .swapchainCount = 1,
         .pSwapchains = &context_.swapchain,
-        .pImageIndices = &currentFrame_,
+        .pImageIndices = &currentImageIndex_,
         .pResults = nullptr,
     };
     VkResult result = vkQueuePresentKHR(context_.presentQueue, &presentInfo);
     if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
         logger.log(Logging::LogLevel::Warning, "Swapchain out of date or suboptimal during present", std::source_location::current());
+        swapchainManager_.handleResize(context_.swapchainExtent.width, context_.swapchainExtent.height);
     } else if (result != VK_SUCCESS) {
-        std::string error = "Failed to present queue";
+        std::string error = std::format("Failed to present queue: VkResult={}", static_cast<int>(result));
         logger.log(Logging::LogLevel::Error, "{}", std::source_location::current(), error);
         throw std::runtime_error(error);
     }
-    logger.log(Logging::LogLevel::Debug, "Frame {} presented", std::source_location::current(), currentFrame_);
+    logger.log(Logging::LogLevel::Debug, "Frame {} presented with image index {}", std::source_location::current(), currentFrame_, currentImageIndex_);
+    currentFrame_ = (currentFrame_ + 1) % context_.swapchainFramebuffers.size();
+}
+
+void VulkanRenderer::renderFrame(AMOURANTH* amouranth) {
+    Logging::Logger logger;
+    logger.log(Logging::LogLevel::Debug, "Rendering frame with AMOURANTH", std::source_location::current());
+    beginFrame();
+    amouranth->render(
+        currentImageIndex_,
+        context_.vertexBuffer,
+        context_.commandBuffers[currentFrame_],
+        context_.indexBuffer,
+        context_.pipelineLayout,
+        context_.descriptorSet
+    );
+    endFrame();
 }
 
 void VulkanRenderer::handleResize(int width, int height) {
-    VulkanSwapchainManager swapchainManager(context_, surface_);
-    swapchainManager.handleResize(width, height);
+    Logging::Logger logger;
+    logger.log(Logging::LogLevel::Info, "Handling resize to width={}, height={}", std::source_location::current(), width, height);
+    if (context_.device != VK_NULL_HANDLE) {
+        vkDeviceWaitIdle(context_.device);
+    }
+    swapchainManager_.handleResize(width, height);
 }
 
 void VulkanRenderer::cleanupVulkan() {
     Logging::Logger logger;
     logger.log(Logging::LogLevel::Info, "Cleaning up Vulkan resources", std::source_location::current());
 
-    vkDeviceWaitIdle(context_.device);
+    if (context_.device != VK_NULL_HANDLE) {
+        vkDeviceWaitIdle(context_.device);
+    }
+
     for (auto semaphore : context_.imageAvailableSemaphores) {
-        vkDestroySemaphore(context_.device, semaphore, nullptr);
+        if (semaphore != VK_NULL_HANDLE) vkDestroySemaphore(context_.device, semaphore, nullptr);
     }
     for (auto semaphore : context_.renderFinishedSemaphores) {
-        vkDestroySemaphore(context_.device, semaphore, nullptr);
+        if (semaphore != VK_NULL_HANDLE) vkDestroySemaphore(context_.device, semaphore, nullptr);
     }
     for (auto fence : context_.inFlightFences) {
-        vkDestroyFence(context_.device, fence, nullptr);
+        if (fence != VK_NULL_HANDLE) vkDestroyFence(context_.device, fence, nullptr);
     }
-    vkDestroyCommandPool(context_.device, context_.commandPool, nullptr);
-    for (auto framebuffer : context_.swapchainFramebuffers) {
-        vkDestroyFramebuffer(context_.device, framebuffer, nullptr);
+    if (context_.commandPool != VK_NULL_HANDLE) {
+        vkDestroyCommandPool(context_.device, context_.commandPool, nullptr);
+        context_.commandPool = VK_NULL_HANDLE;
     }
-    for (auto imageView : context_.swapchainImageViews) {
-        vkDestroyImageView(context_.device, imageView, nullptr);
-    }
-    vkDestroySwapchainKHR(context_.device, context_.swapchain, nullptr);
-    VulkanPipelineManager pipelineManager(context_);
-    pipelineManager.cleanupPipeline();
+    swapchainManager_.cleanupSwapchain();
+    pipelineManager_.cleanupPipeline();
     VulkanBufferManager bufferManager(context_);
     bufferManager.cleanupBuffers();
-    if (vertShaderModule_ != VK_NULL_HANDLE) {
-        vkDestroyShaderModule(context_.device, vertShaderModule_, nullptr);
+    if (context_.device != VK_NULL_HANDLE) {
+        vkDestroyDevice(context_.device, nullptr);
+        context_.device = VK_NULL_HANDLE;
     }
-    if (fragShaderModule_ != VK_NULL_HANDLE) {
-        vkDestroyShaderModule(context_.device, fragShaderModule_, nullptr);
-    }
-    vkDestroyDevice(context_.device, nullptr);
     logger.log(Logging::LogLevel::Info, "Vulkan resources cleaned up", std::source_location::current());
-}
-
-VkShaderModule VulkanRenderer::createShaderModule(const std::string& filename) const {
-    Logging::Logger logger;
-    logger.log(Logging::LogLevel::Debug, "Creating shader module from {}", std::source_location::current(), filename);
-
-    std::ifstream file(filename, std::ios::binary | std::ios::ate);
-    if (!file.is_open()) {
-        std::string error = std::format("Failed to open shader file: {}", filename);
-        logger.log(Logging::LogLevel::Error, "{}", std::source_location::current(), error);
-        throw std::runtime_error(error);
-    }
-
-    std::streamsize size = file.tellg();
-    file.seekg(0, std::ios::beg);
-    std::vector<char> buffer(size);
-    if (!file.read(buffer.data(), size)) {
-        std::string error = std::format("Failed to read shader file: {}", filename);
-        logger.log(Logging::LogLevel::Error, "{}", std::source_location::current(), error);
-        throw std::runtime_error(error);
-    }
-
-    VkShaderModuleCreateInfo createInfo = {
-        .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
-        .pNext = nullptr,
-        .flags = 0,
-        .codeSize = static_cast<size_t>(size),
-        .pCode = reinterpret_cast<const uint32_t*>(buffer.data()),
-    };
-
-    VkShaderModule shaderModule;
-    if (vkCreateShaderModule(context_.device, &createInfo, nullptr, &shaderModule) != VK_SUCCESS) {
-        std::string error = std::format("Failed to create shader module: {}", filename);
-        logger.log(Logging::LogLevel::Error, "{}", std::source_location::current(), error);
-        throw std::runtime_error(error);
-    }
-    logger.log(Logging::LogLevel::Info, "Shader module created: {}", std::source_location::current(), filename);
-    return shaderModule;
-}
-
-void VulkanRenderer::setShaderModules(VkShaderModule vertShaderModule, VkShaderModule fragShaderModule) {
-    Logging::Logger logger;
-    logger.log(Logging::LogLevel::Info, "Setting shader modules", std::source_location::current());
-    vertShaderModule_ = vertShaderModule;
-    fragShaderModule_ = fragShaderModule;
-}
-
-uint32_t VulkanRenderer::getCurrentImageIndex() const {
-    return currentFrame_;
-}
-
-VkBuffer VulkanRenderer::getVertexBuffer() const {
-    return context_.vertexBuffer;
-}
-
-VkBuffer VulkanRenderer::getIndexBuffer() const {
-    return context_.indexBuffer;
-}
-
-VkCommandBuffer VulkanRenderer::getCommandBuffer() const {
-    return context_.commandBuffers[currentFrame_];
-}
-
-VkPipelineLayout VulkanRenderer::getPipelineLayout() const {
-    return context_.pipelineLayout;
-}
-
-VkDescriptorSet VulkanRenderer::getDescriptorSet() const {
-    return context_.descriptorSet;
-}
-
-const VulkanContext& VulkanRenderer::getContext() const {
-    return context_;
 }

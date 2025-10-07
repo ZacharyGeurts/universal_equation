@@ -6,17 +6,23 @@
 #ifndef VULKAN_INIT_HPP
 #define VULKAN_INIT_HPP
 
+#include "Vulkan_init_swapchain.hpp"
+#include "Vulkan_init_pipeline.hpp"
+#include "Vulkan_init_buffers.hpp"
 #include <vulkan/vulkan.h>
 #include <glm/glm.hpp>
 #include <span>
 #include <vector>
 #include <string>
 
+// Forward declaration of AMOURANTH
+class AMOURANTH;
+
 struct VulkanContext {
     VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
     VkDevice device = VK_NULL_HANDLE;
-    uint32_t graphicsFamily = 0;
-    uint32_t presentFamily = 0;
+    uint32_t graphicsFamily = UINT32_MAX;
+    uint32_t presentFamily = UINT32_MAX;
     VkQueue graphicsQueue = VK_NULL_HANDLE;
     VkQueue presentQueue = VK_NULL_HANDLE;
     VkSwapchainKHR swapchain = VK_NULL_HANDLE;
@@ -53,35 +59,33 @@ class VulkanRenderer {
 public:
     VulkanRenderer(VkInstance instance, VkSurfaceKHR surface,
                   std::span<const glm::vec3> vertices, std::span<const uint32_t> indices,
-                  VkShaderModule vertShaderModule, VkShaderModule fragShaderModule,
                   int width, int height);
     ~VulkanRenderer();
 
     void beginFrame();
     void endFrame();
-    VkShaderModule createShaderModule(const std::string& filename) const;
-    void setShaderModules(VkShaderModule vertShaderModule, VkShaderModule fragShaderModule);
+    void renderFrame(AMOURANTH* amouranth);
     void initializeVulkan(std::span<const glm::vec3> vertices, std::span<const uint32_t> indices,
-                         VkShaderModule vertShaderModule, VkShaderModule fragShaderModule,
                          int width, int height);
     void handleResize(int width, int height);
     void cleanupVulkan();
 
-    uint32_t getCurrentImageIndex() const;
-    VkBuffer getVertexBuffer() const;
-    VkBuffer getIndexBuffer() const;
-    VkCommandBuffer getCommandBuffer() const;
-    VkPipelineLayout getPipelineLayout() const;
-    VkDescriptorSet getDescriptorSet() const;
-    const VulkanContext& getContext() const;
+    uint32_t getCurrentImageIndex() const { return currentImageIndex_; }
+    VkBuffer getVertexBuffer() const { return context_.vertexBuffer; }
+    VkBuffer getIndexBuffer() const { return context_.indexBuffer; }
+    VkCommandBuffer getCommandBuffer() const { return context_.commandBuffers[currentFrame_]; }
+    VkPipelineLayout getPipelineLayout() const { return context_.pipelineLayout; }
+    VkDescriptorSet getDescriptorSet() const { return context_.descriptorSet; }
+    const VulkanContext& getContext() const { return context_; }
 
 private:
     VulkanContext context_;
     VkInstance instance_;
     VkSurfaceKHR surface_;
+    VulkanSwapchainManager swapchainManager_;
+    VulkanPipelineManager pipelineManager_;
     uint32_t currentFrame_ = 0;
-    VkShaderModule vertShaderModule_ = VK_NULL_HANDLE;
-    VkShaderModule fragShaderModule_ = VK_NULL_HANDLE;
+    uint32_t currentImageIndex_ = 0;
 };
 
 #endif // VULKAN_INIT_HPP

@@ -1,10 +1,10 @@
-#ifndef HANDLE_APP_HPP
-#define HANDLE_APP_HPP
-
 // AMOURANTH RTX Engine, October 2025 - Application lifecycle management.
 // Manages SDL3 input events, Vulkan rendering, and core application loop.
 // Dependencies: SDL3, Vulkan, GLM, C++20 standard library.
 // Zachary Geurts 2025
+
+#ifndef HANDLE_APP_HPP
+#define HANDLE_APP_HPP
 
 #include "engine/SDL3_init.hpp"
 #include "engine/Vulkan_init.hpp"
@@ -16,7 +16,6 @@
 #include <vector>
 #include <glm/glm.hpp>
 
-// Forward declaration of HandleInput
 class HandleInput;
 
 class Application {
@@ -26,6 +25,7 @@ public:
 
     void run();
     void render();
+    void handleResize(int width, int height); // Added declaration
     void setRenderMode(int mode) { mode_ = mode; }
 
 private:
@@ -84,7 +84,7 @@ private:
 
     AMOURANTH* amouranth_;
     DimensionalNavigator* navigator_;
-    const Logging::Logger& logger_; // Changed to reference to avoid copying
+    const Logging::Logger& logger_;
     KeyboardCallback keyboardCallback_;
     MouseButtonCallback mouseButtonCallback_;
     MouseMotionCallback mouseMotionCallback_;

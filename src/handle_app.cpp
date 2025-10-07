@@ -33,6 +33,12 @@ void HandleInput::handleInput(Application& app) {
                 logger_.log(Logging::LogLevel::Info, "Quit event received", std::source_location::current());
                 app.setRenderMode(0);
                 break;
+            case SDL_EVENT_WINDOW_RESIZED:
+                int newWidth, newHeight;
+                SDL_GetWindowSize(SDL_GetWindowFromID(event.window.windowID), &newWidth, &newHeight);
+                logger_.log(Logging::LogLevel::Info, "Window resized to {}x{}", std::source_location::current(), newWidth, newHeight);
+                app.handleResize(newWidth, newHeight);
+                break;
             case SDL_EVENT_KEY_DOWN:
             case SDL_EVENT_KEY_UP:
                 if (keyboardCallback_) keyboardCallback_(event.key);
@@ -275,22 +281,30 @@ Application::Application(const char* title, int width, int height)
       indices_({0, 1, 2}),
       sdl_(std::make_unique<SDL3Initializer>(std::string(title), width, height)),
       renderer_(std::make_unique<VulkanRenderer>(
-          sdl_->getInstance(), sdl_->getSurface(),
-          vertices_, indices_, VK_NULL_HANDLE, VK_NULL_HANDLE, width, height)),
+          sdl_->getInstance(), sdl_->getSurface(), vertices_, indices_, width, height)),
       logger_(),
-      navigator_(std::make_unique<DimensionalNavigator>(title, width, height, logger_)),
+      navigator_(std::make_unique<DimensionalNavigator>(title, width, height, *renderer_, logger_)),
       amouranth_(navigator_.get(), logger_, renderer_->getContext().device,
                  renderer_->getContext().vertexBufferMemory, renderer_->getContext().pipeline),
       inputHandler_(nullptr) {
-    VkShaderModule vertShaderModule = renderer_->createShaderModule("shaders/vertex.spv");
-    VkShaderModule fragShaderModule = renderer_->createShaderModule("shaders/fragment.spv");
-    renderer_->setShaderModules(vertShaderModule, fragShaderModule);
-    renderer_->initializeVulkan(vertices_, indices_, vertShaderModule, fragShaderModule, width, height);
-    initializeInput();
+    try {
+        renderer_->initializeVulkan(vertices_, indices_, width, height);
+        initializeInput();
+        logger_.log(Logging::LogLevel::Info, "Application initialized successfully", std::source_location::current());
+    } catch (const std::exception& e) {
+        logger_.log(Logging::LogLevel::Error, "Failed to initialize Application: {}", std::source_location::current(), e.what());
+        throw;
+    }
 }
 
 Application::~Application() {
-    logger_.log(Logging::LogLevel::Info, "Cleaning up application", std::source_location::current());
+    logger_.log(Logging::LogLevel::Info, "Cleaning up Application", std::source_location::current());
+    // Explicit destruction order
+    inputHandler_.reset();
+    // amouranth_ is not a unique_ptr, so it will be destroyed automatically
+    navigator_.reset();
+    renderer_.reset();
+    sdl_.reset();
 }
 
 void Application::initializeInput() {
@@ -298,22 +312,31 @@ void Application::initializeInput() {
 }
 
 void Application::run() {
+    float deltaTime = 0.016f; // Assume 60 FPS
     while (!sdl_->shouldQuit()) {
         sdl_->pollEvents();
         inputHandler_->handleInput(*this);
+        amouranth_.update(deltaTime);
         render();
     }
 }
 
 void Application::render() {
-    renderer_->beginFrame();
-    amouranth_.render(
-        renderer_->getCurrentImageIndex(),
-        renderer_->getVertexBuffer(),
-        renderer_->getCommandBuffer(),
-        renderer_->getIndexBuffer(),
-        renderer_->getPipelineLayout(),
-        renderer_->getDescriptorSet()
-    );
-    renderer_->endFrame();
+    try {
+        renderer_->renderFrame(&amouranth_);
+    } catch (const std::exception& e) {
+        logger_.log(Logging::LogLevel::Error, "Rendering failed: {}", std::source_location::current(), e.what());
+        throw;
+    }
+}
+
+void Application::handleResize(int newWidth, int newHeight) {
+    width_ = newWidth;
+    height_ = newHeight;
+    renderer_->handleResize(newWidth, newHeight);
+    navigator_->setWidth(newWidth);
+    navigator_->setHeight(newHeight);
+    amouranth_.setWidth(newWidth);
+    amouranth_.setHeight(newHeight);
+    logger_.log(Logging::LogLevel::Info, "Application resized to {}x{}", std::source_location::current(), newWidth, newHeight);
 }

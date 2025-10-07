@@ -1,24 +1,81 @@
 // AMOURANTH RTX Engine, October 2025 - Vulkan pipeline initialization.
-// Manages render pass, descriptor sets, and graphics pipeline creation.
+// Manages render pass, descriptor sets, graphics pipeline creation, and shader modules.
 // Dependencies: Vulkan 1.3+, GLM, C++20 standard library.
 // Zachary Geurts 2025
 
 #include "engine/Vulkan_init_pipeline.hpp"
+#include "engine/Vulkan_init.hpp"
 #include "engine/logging.hpp"
-#include "engine/core.hpp"
 #include <stdexcept>
 #include <format>
+#include <fstream>
 
-VulkanPipelineManager::VulkanPipelineManager(VulkanContext& context) : context_(context) {}
+struct PushConstants {
+    glm::mat4 model;
+    glm::mat4 view;
+    glm::mat4 proj;
+};
 
-void VulkanPipelineManager::initializePipeline(VkShaderModule vertShaderModule, VkShaderModule fragShaderModule, int width, int height) {
-    Logging::Logger logger;
-    logger.log(Logging::LogLevel::Debug, "Initializing pipeline", std::source_location::current());
+VulkanPipelineManager::VulkanPipelineManager(VulkanContext& context)
+    : context_(context), vertShaderModule_(VK_NULL_HANDLE), fragShaderModule_(VK_NULL_HANDLE), logger_() {
+    logger_.log(Logging::LogLevel::Debug, "VulkanPipelineManager initialized", std::source_location::current());
+}
+
+VulkanPipelineManager::~VulkanPipelineManager() {
+    cleanupPipeline();
+    logger_.log(Logging::LogLevel::Info, "VulkanPipelineManager destroyed", std::source_location::current());
+}
+
+VkShaderModule VulkanPipelineManager::createShaderModule(const std::string& filename) {
+    std::ifstream file(filename, std::ios::ate | std::ios::binary);
+    if (!file.is_open()) {
+        std::string error = std::format("Failed to open shader file: {}", filename);
+        logger_.log(Logging::LogLevel::Error, "{}", std::source_location::current(), error);
+        throw std::runtime_error(error);
+    }
+
+    size_t fileSize = static_cast<size_t>(file.tellg());
+    std::vector<char> buffer(fileSize);
+    file.seekg(0);
+    file.read(buffer.data(), fileSize);
+    file.close();
+    logger_.log(Logging::LogLevel::Info, "Loaded shader file: {}, size: {} bytes", std::source_location::current(), filename, fileSize);
+
+    VkShaderModuleCreateInfo createInfo = {
+        .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+        .pNext = nullptr,
+        .flags = 0,
+        .codeSize = buffer.size(),
+        .pCode = reinterpret_cast<const uint32_t*>(buffer.data()),
+    };
+
+    VkShaderModule shaderModule;
+    if (vkCreateShaderModule(context_.device, &createInfo, nullptr, &shaderModule) != VK_SUCCESS) {
+        std::string error = std::format("Failed to create shader module for {}", filename);
+        logger_.log(Logging::LogLevel::Error, "{}", std::source_location::current(), error);
+        throw std::runtime_error(error);
+    }
+
+    logger_.log(Logging::LogLevel::Info, "Created shader module for {}", std::source_location::current(), filename);
+    return shaderModule;
+}
+
+void VulkanPipelineManager::initializePipeline(int width, int height) {
+    logger_.log(Logging::LogLevel::Debug, "Initializing pipeline", std::source_location::current());
+
+    // Create shader modules
+    try {
+        vertShaderModule_ = createShaderModule("assets/shaders/rasterization/vertex.spv");
+        fragShaderModule_ = createShaderModule("assets/shaders/rasterization/fragment.spv");
+    } catch (const std::exception& e) {
+        logger_.log(Logging::LogLevel::Error, "Shader module creation failed: {}", std::source_location::current(), e.what());
+        throw;
+    }
 
     // Validate shader modules
-    if (vertShaderModule == VK_NULL_HANDLE || fragShaderModule == VK_NULL_HANDLE) {
+    if (vertShaderModule_ == VK_NULL_HANDLE || fragShaderModule_ == VK_NULL_HANDLE) {
         std::string error = "Invalid shader module provided";
-        logger.log(Logging::LogLevel::Error, "{}", std::source_location::current(), error);
+        logger_.log(Logging::LogLevel::Error, "{}", std::source_location::current(), error);
         throw std::runtime_error(error);
     }
 
@@ -63,10 +120,10 @@ void VulkanPipelineManager::initializePipeline(VkShaderModule vertShaderModule, 
     };
     if (vkCreateRenderPass(context_.device, &renderPassInfo, nullptr, &context_.renderPass) != VK_SUCCESS) {
         std::string error = "Failed to create render pass";
-        logger.log(Logging::LogLevel::Error, "{}", std::source_location::current(), error);
+        logger_.log(Logging::LogLevel::Error, "{}", std::source_location::current(), error);
         throw std::runtime_error(error);
     }
-    logger.log(Logging::LogLevel::Info, "Render pass created", std::source_location::current());
+    logger_.log(Logging::LogLevel::Info, "Render pass created", std::source_location::current());
 
     // Create descriptor set layout
     VkDescriptorSetLayoutBinding layoutBinding = {
@@ -85,10 +142,10 @@ void VulkanPipelineManager::initializePipeline(VkShaderModule vertShaderModule, 
     };
     if (vkCreateDescriptorSetLayout(context_.device, &layoutInfo, nullptr, &context_.descriptorSetLayout) != VK_SUCCESS) {
         std::string error = "Failed to create descriptor set layout";
-        logger.log(Logging::LogLevel::Error, "{}", std::source_location::current(), error);
+        logger_.log(Logging::LogLevel::Error, "{}", std::source_location::current(), error);
         throw std::runtime_error(error);
     }
-    logger.log(Logging::LogLevel::Info, "Descriptor set layout created", std::source_location::current());
+    logger_.log(Logging::LogLevel::Info, "Descriptor set layout created", std::source_location::current());
 
     // Create descriptor pool
     VkDescriptorPoolSize poolSize = {
@@ -105,10 +162,10 @@ void VulkanPipelineManager::initializePipeline(VkShaderModule vertShaderModule, 
     };
     if (vkCreateDescriptorPool(context_.device, &descriptorPoolInfo, nullptr, &context_.descriptorPool) != VK_SUCCESS) {
         std::string error = "Failed to create descriptor pool";
-        logger.log(Logging::LogLevel::Error, "{}", std::source_location::current(), error);
+        logger_.log(Logging::LogLevel::Error, "{}", std::source_location::current(), error);
         throw std::runtime_error(error);
     }
-    logger.log(Logging::LogLevel::Info, "Descriptor pool created", std::source_location::current());
+    logger_.log(Logging::LogLevel::Info, "Descriptor pool created", std::source_location::current());
 
     // Allocate descriptor set
     VkDescriptorSetAllocateInfo descriptorAllocInfo = {
@@ -120,10 +177,10 @@ void VulkanPipelineManager::initializePipeline(VkShaderModule vertShaderModule, 
     };
     if (vkAllocateDescriptorSets(context_.device, &descriptorAllocInfo, &context_.descriptorSet) != VK_SUCCESS) {
         std::string error = "Failed to allocate descriptor set";
-        logger.log(Logging::LogLevel::Error, "{}", std::source_location::current(), error);
+        logger_.log(Logging::LogLevel::Error, "{}", std::source_location::current(), error);
         throw std::runtime_error(error);
     }
-    logger.log(Logging::LogLevel::Info, "Descriptor set allocated", std::source_location::current());
+    logger_.log(Logging::LogLevel::Info, "Descriptor set allocated", std::source_location::current());
 
     // Vertex input setup
     VkVertexInputBindingDescription bindingDescriptions[] = {
@@ -263,10 +320,10 @@ void VulkanPipelineManager::initializePipeline(VkShaderModule vertShaderModule, 
     };
     if (vkCreatePipelineLayout(context_.device, &pipelineLayoutInfo, nullptr, &context_.pipelineLayout) != VK_SUCCESS) {
         std::string error = "Failed to create pipeline layout";
-        logger.log(Logging::LogLevel::Error, "{}", std::source_location::current(), error);
+        logger_.log(Logging::LogLevel::Error, "{}", std::source_location::current(), error);
         throw std::runtime_error(error);
     }
-    logger.log(Logging::LogLevel::Info, "Pipeline layout created", std::source_location::current());
+    logger_.log(Logging::LogLevel::Info, "Pipeline layout created", std::source_location::current());
 
     // Create graphics pipeline
     VkPipelineShaderStageCreateInfo shaderStages[] = {
@@ -275,7 +332,7 @@ void VulkanPipelineManager::initializePipeline(VkShaderModule vertShaderModule, 
             .pNext = nullptr,
             .flags = 0,
             .stage = VK_SHADER_STAGE_VERTEX_BIT,
-            .module = vertShaderModule,
+            .module = vertShaderModule_,
             .pName = "main",
             .pSpecializationInfo = nullptr,
         },
@@ -284,7 +341,7 @@ void VulkanPipelineManager::initializePipeline(VkShaderModule vertShaderModule, 
             .pNext = nullptr,
             .flags = 0,
             .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
-            .module = fragShaderModule,
+            .module = fragShaderModule_,
             .pName = "main",
             .pSpecializationInfo = nullptr,
         }
@@ -312,10 +369,16 @@ void VulkanPipelineManager::initializePipeline(VkShaderModule vertShaderModule, 
     };
     if (vkCreateGraphicsPipelines(context_.device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &context_.pipeline) != VK_SUCCESS) {
         std::string error = "Failed to create graphics pipeline";
-        logger.log(Logging::LogLevel::Error, "{}", std::source_location::current(), error);
+        logger_.log(Logging::LogLevel::Error, "{}", std::source_location::current(), error);
         throw std::runtime_error(error);
     }
-    logger.log(Logging::LogLevel::Info, "Graphics pipeline created", std::source_location::current());
+    logger_.log(Logging::LogLevel::Info, "Graphics pipeline created", std::source_location::current());
+
+    // Clean up shader modules after pipeline creation
+    vkDestroyShaderModule(context_.device, vertShaderModule_, nullptr);
+    vkDestroyShaderModule(context_.device, fragShaderModule_, nullptr);
+    vertShaderModule_ = VK_NULL_HANDLE;
+    fragShaderModule_ = VK_NULL_HANDLE;
 
     // Create framebuffers
     context_.swapchainFramebuffers.resize(context_.swapchainImageViews.size());
@@ -334,16 +397,15 @@ void VulkanPipelineManager::initializePipeline(VkShaderModule vertShaderModule, 
         };
         if (vkCreateFramebuffer(context_.device, &framebufferInfo, nullptr, &context_.swapchainFramebuffers[i]) != VK_SUCCESS) {
             std::string error = "Failed to create framebuffer";
-            logger.log(Logging::LogLevel::Error, "{}", std::source_location::current(), error);
+            logger_.log(Logging::LogLevel::Error, "{}", std::source_location::current(), error);
             throw std::runtime_error(error);
         }
     }
-    logger.log(Logging::LogLevel::Info, "Created {} framebuffers", std::source_location::current(), context_.swapchainFramebuffers.size());
+    logger_.log(Logging::LogLevel::Info, "Created {} framebuffers", std::source_location::current(), context_.swapchainFramebuffers.size());
 }
 
 void VulkanPipelineManager::cleanupPipeline() {
-    Logging::Logger logger;
-    logger.log(Logging::LogLevel::Debug, "Cleaning up pipeline", std::source_location::current());
+    logger_.log(Logging::LogLevel::Debug, "Cleaning up pipeline", std::source_location::current());
 
     if (context_.pipeline != VK_NULL_HANDLE) {
         vkDestroyPipeline(context_.device, context_.pipeline, nullptr);
@@ -369,5 +431,5 @@ void VulkanPipelineManager::cleanupPipeline() {
         vkDestroyFramebuffer(context_.device, framebuffer, nullptr);
     }
     context_.swapchainFramebuffers.clear();
-    logger.log(Logging::LogLevel::Info, "Pipeline cleaned up", std::source_location::current());
+    logger_.log(Logging::LogLevel::Info, "Pipeline cleaned up", std::source_location::current());
 }
