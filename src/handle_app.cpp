@@ -1,10 +1,10 @@
-// Combined input handling and application implementation for AMOURANTH RTX Engine, October 2025
-// Manages SDL3 input events and application lifecycle.
-// Thread-safe with C++20 features; no mutexes required.
-// Dependencies: SDL3, Vulkan, C++20 standard library.
+// AMOURANTH RTX Engine, October 2025 - Application and input handling implementation.
+// Manages SDL3 input events, Vulkan initialization, and application lifecycle.
+// Dependencies: SDL3, Vulkan, GLM, C++20 standard library.
 // Zachary Geurts 2025
 
 #include "handle_app.hpp"
+#include <stdexcept>
 #include <format>
 
 HandleInput::HandleInput(AMOURANTH* amouranth, DimensionalNavigator* navigator, const Logging::Logger& logger)
@@ -13,7 +13,6 @@ HandleInput::HandleInput(AMOURANTH* amouranth, DimensionalNavigator* navigator, 
         logger_.log(Logging::LogLevel::Error, "HandleInput: Null AMOURANTH or DimensionalNavigator provided", std::source_location::current());
         throw std::runtime_error("HandleInput: Null AMOURANTH or DimensionalNavigator provided.");
     }
-    // Set default callbacks
     keyboardCallback_ = [this](const SDL_KeyboardEvent& key) { defaultKeyboardHandler(key); };
     mouseButtonCallback_ = [this](const SDL_MouseButtonEvent& mb) { defaultMouseButtonHandler(mb); };
     mouseMotionCallback_ = [this](const SDL_MouseMotionEvent& mm) { defaultMouseMotionHandler(mm); };
@@ -32,79 +31,41 @@ void HandleInput::handleInput(Application& app) {
         switch (event.type) {
             case SDL_EVENT_QUIT:
                 logger_.log(Logging::LogLevel::Info, "Quit event received", std::source_location::current());
-                app.setRenderMode(0); // Signal the app to stop or handle quit
+                app.setRenderMode(0);
                 break;
             case SDL_EVENT_KEY_DOWN:
             case SDL_EVENT_KEY_UP:
-                if (keyboardCallback_) {
-                    keyboardCallback_(event.key);
-                } else {
-                    defaultKeyboardHandler(event.key);
-                }
+                if (keyboardCallback_) keyboardCallback_(event.key);
                 break;
             case SDL_EVENT_MOUSE_BUTTON_DOWN:
             case SDL_EVENT_MOUSE_BUTTON_UP:
-                if (mouseButtonCallback_) {
-                    mouseButtonCallback_(event.button);
-                } else {
-                    defaultMouseButtonHandler(event.button);
-                }
+                if (mouseButtonCallback_) mouseButtonCallback_(event.button);
                 break;
             case SDL_EVENT_MOUSE_MOTION:
-                if (mouseMotionCallback_) {
-                    mouseMotionCallback_(event.motion);
-                } else {
-                    defaultMouseMotionHandler(event.motion);
-                }
+                if (mouseMotionCallback_) mouseMotionCallback_(event.motion);
                 break;
             case SDL_EVENT_MOUSE_WHEEL:
-                if (mouseWheelCallback_) {
-                    mouseWheelCallback_(event.wheel);
-                } else {
-                    defaultMouseWheelHandler(event.wheel);
-                }
+                if (mouseWheelCallback_) mouseWheelCallback_(event.wheel);
                 break;
             case SDL_EVENT_TEXT_INPUT:
-                if (textInputCallback_) {
-                    textInputCallback_(event.text);
-                } else {
-                    defaultTextInputHandler(event.text);
-                }
+                if (textInputCallback_) textInputCallback_(event.text);
                 break;
             case SDL_EVENT_FINGER_DOWN:
             case SDL_EVENT_FINGER_UP:
             case SDL_EVENT_FINGER_MOTION:
-                if (touchCallback_) {
-                    touchCallback_(event.tfinger);
-                } else {
-                    defaultTouchHandler(event.tfinger);
-                }
+                if (touchCallback_) touchCallback_(event.tfinger);
                 break;
             case SDL_EVENT_GAMEPAD_BUTTON_DOWN:
             case SDL_EVENT_GAMEPAD_BUTTON_UP:
-                if (gamepadButtonCallback_) {
-                    gamepadButtonCallback_(event.gbutton);
-                } else {
-                    defaultGamepadButtonHandler(event.gbutton);
-                }
+                if (gamepadButtonCallback_) gamepadButtonCallback_(event.gbutton);
                 break;
             case SDL_EVENT_GAMEPAD_AXIS_MOTION:
-                if (gamepadAxisCallback_) {
-                    gamepadAxisCallback_(event.gaxis);
-                } else {
-                    defaultGamepadAxisHandler(event.gaxis);
-                }
+                if (gamepadAxisCallback_) gamepadAxisCallback_(event.gaxis);
                 break;
             case SDL_EVENT_GAMEPAD_ADDED:
             case SDL_EVENT_GAMEPAD_REMOVED:
                 if (gamepadConnectCallback_) {
                     gamepadConnectCallback_(
-                        event.type == SDL_EVENT_GAMEPAD_ADDED,
-                        event.gdevice.which,
-                        event.type == SDL_EVENT_GAMEPAD_ADDED ? SDL_OpenGamepad(event.gdevice.which) : nullptr
-                    );
-                } else {
-                    defaultGamepadConnectHandler(
                         event.type == SDL_EVENT_GAMEPAD_ADDED,
                         event.gdevice.which,
                         event.type == SDL_EVENT_GAMEPAD_ADDED ? SDL_OpenGamepad(event.gdevice.which) : nullptr
@@ -302,34 +263,34 @@ void HandleInput::defaultGamepadConnectHandler(bool connected, SDL_JoystickID id
 }
 
 Application::Application(const char* title, int width, int height)
-    : title_(title), width_(width), height_(height), mode_(1),
-      sdl_(std::make_unique<SDL3Initializer>(title, width, height)),
+    : title_(title),
+      width_(width),
+      height_(height),
+      mode_(1),
+      vertices_({
+          glm::vec3(-0.5f, -0.5f, 0.0f),
+          glm::vec3(0.5f, -0.5f, 0.0f),
+          glm::vec3(0.0f, 0.5f, 0.0f)
+      }),
+      indices_({0, 1, 2}),
+      sdl_(std::make_unique<SDL3Initializer>(std::string(title), width, height)),
       renderer_(std::make_unique<VulkanRenderer>(
           sdl_->getInstance(), sdl_->getSurface(),
           vertices_, indices_, VK_NULL_HANDLE, VK_NULL_HANDLE, width, height)),
+      logger_(),
       navigator_(std::make_unique<DimensionalNavigator>(title, width, height, logger_)),
       amouranth_(navigator_.get(), logger_, renderer_->getContext().device,
-                 VK_NULL_HANDLE, VK_NULL_HANDLE)
-{
-    initialize();
+                 renderer_->getContext().vertexBufferMemory, renderer_->getContext().pipeline),
+      inputHandler_(nullptr) {
+    VkShaderModule vertShaderModule = renderer_->createShaderModule("shaders/vertex.spv");
+    VkShaderModule fragShaderModule = renderer_->createShaderModule("shaders/fragment.spv");
+    renderer_->setShaderModules(vertShaderModule, fragShaderModule);
+    renderer_->initializeVulkan(vertices_, indices_, vertShaderModule, fragShaderModule, width, height);
     initializeInput();
 }
 
-void Application::initialize() {
-    vertices_ = {
-        glm::vec3(-0.5f, -0.5f, 0.0f),
-        glm::vec3(0.5f, -0.5f, 0.0f),
-        glm::vec3(0.0f, 0.5f, 0.0f)
-    };
-    indices_ = {0, 1, 2};
-
-    VkShaderModule vertShaderModule = renderer_->createShaderModule("shaders/vertex.spv");
-    VkShaderModule fragShaderModule = renderer_->createShaderModule("shaders/fragment.spv");
-
-    renderer_->setShaderModules(vertShaderModule, fragShaderModule);
-
-    vkDestroyShaderModule(renderer_->getContext().device, vertShaderModule, nullptr);
-    vkDestroyShaderModule(renderer_->getContext().device, fragShaderModule, nullptr);
+Application::~Application() {
+    logger_.log(Logging::LogLevel::Info, "Cleaning up application", std::source_location::current());
 }
 
 void Application::initializeInput() {

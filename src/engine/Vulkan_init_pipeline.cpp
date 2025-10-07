@@ -4,8 +4,8 @@
 // Zachary Geurts 2025
 
 #include "engine/Vulkan_init_pipeline.hpp"
-#include "engine/core.hpp"
 #include "engine/logging.hpp"
+#include "engine/core.hpp"
 #include <stdexcept>
 #include <format>
 
@@ -13,7 +13,14 @@ VulkanPipelineManager::VulkanPipelineManager(VulkanContext& context) : context_(
 
 void VulkanPipelineManager::initializePipeline(VkShaderModule vertShaderModule, VkShaderModule fragShaderModule, int width, int height) {
     Logging::Logger logger;
-    logger.log(Logging::LogLevel::Debug, "Initializing graphics pipeline", std::source_location::current());
+    logger.log(Logging::LogLevel::Debug, "Initializing pipeline", std::source_location::current());
+
+    // Validate shader modules
+    if (vertShaderModule == VK_NULL_HANDLE || fragShaderModule == VK_NULL_HANDLE) {
+        std::string error = "Invalid shader module provided";
+        logger.log(Logging::LogLevel::Error, "{}", std::source_location::current(), error);
+        throw std::runtime_error(error);
+    }
 
     // Create render pass
     VkAttachmentDescription colorAttachment = {
@@ -118,16 +125,44 @@ void VulkanPipelineManager::initializePipeline(VkShaderModule vertShaderModule, 
     }
     logger.log(Logging::LogLevel::Info, "Descriptor set allocated", std::source_location::current());
 
-    // Create pipeline
+    // Vertex input setup
     VkVertexInputBindingDescription bindingDescriptions[] = {
-        { .binding = 0, .stride = sizeof(glm::vec3), .inputRate = VK_VERTEX_INPUT_RATE_VERTEX },
-        { .binding = 1, .stride = sizeof(glm::vec3) + sizeof(float) + sizeof(glm::vec4), .inputRate = VK_VERTEX_INPUT_RATE_INSTANCE },
+        {
+            .binding = 0,
+            .stride = sizeof(glm::vec3),
+            .inputRate = VK_VERTEX_INPUT_RATE_VERTEX,
+        },
+        {
+            .binding = 1,
+            .stride = sizeof(glm::mat4),
+            .inputRate = VK_VERTEX_INPUT_RATE_INSTANCE,
+        }
     };
     VkVertexInputAttributeDescription attributeDescriptions[] = {
-        { .location = 0, .binding = 0, .format = VK_FORMAT_R32G32B32_SFLOAT, .offset = 0 },
-        { .location = 1, .binding = 1, .format = VK_FORMAT_R32G32B32_SFLOAT, .offset = 0 },
-        { .location = 2, .binding = 1, .format = VK_FORMAT_R32_SFLOAT, .offset = sizeof(glm::vec3) },
-        { .location = 3, .binding = 1, .format = VK_FORMAT_R32G32B32A32_SFLOAT, .offset = sizeof(glm::vec3) + sizeof(float) },
+        {
+            .location = 0,
+            .binding = 0,
+            .format = VK_FORMAT_R32G32B32_SFLOAT,
+            .offset = 0,
+        },
+        {
+            .location = 1,
+            .binding = 1,
+            .format = VK_FORMAT_R32G32B32_SFLOAT,
+            .offset = 0,
+        },
+        {
+            .location = 2,
+            .binding = 1,
+            .format = VK_FORMAT_R32_SFLOAT,
+            .offset = sizeof(glm::vec3),
+        },
+        {
+            .location = 3,
+            .binding = 1,
+            .format = VK_FORMAT_R32G32B32A32_SFLOAT,
+            .offset = sizeof(glm::vec3) + sizeof(float),
+        }
     };
     VkPipelineVertexInputStateCreateInfo vertexInputInfo = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
@@ -233,6 +268,7 @@ void VulkanPipelineManager::initializePipeline(VkShaderModule vertShaderModule, 
     }
     logger.log(Logging::LogLevel::Info, "Pipeline layout created", std::source_location::current());
 
+    // Create graphics pipeline
     VkPipelineShaderStageCreateInfo shaderStages[] = {
         {
             .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
@@ -251,7 +287,7 @@ void VulkanPipelineManager::initializePipeline(VkShaderModule vertShaderModule, 
             .module = fragShaderModule,
             .pName = "main",
             .pSpecializationInfo = nullptr,
-        },
+        }
     };
     VkGraphicsPipelineCreateInfo pipelineInfo = {
         .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
@@ -307,12 +343,31 @@ void VulkanPipelineManager::initializePipeline(VkShaderModule vertShaderModule, 
 
 void VulkanPipelineManager::cleanupPipeline() {
     Logging::Logger logger;
-    logger.log(Logging::LogLevel::Info, "Cleaning up pipeline resources", std::source_location::current());
+    logger.log(Logging::LogLevel::Debug, "Cleaning up pipeline", std::source_location::current());
 
-    vkDestroyPipeline(context_.device, context_.pipeline, nullptr);
-    vkDestroyPipelineLayout(context_.device, context_.pipelineLayout, nullptr);
-    vkDestroyRenderPass(context_.device, context_.renderPass, nullptr);
-    vkDestroyDescriptorPool(context_.device, context_.descriptorPool, nullptr);
-    vkDestroyDescriptorSetLayout(context_.device, context_.descriptorSetLayout, nullptr);
-    logger.log(Logging::LogLevel::Info, "Pipeline resources cleaned up", std::source_location::current());
+    if (context_.pipeline != VK_NULL_HANDLE) {
+        vkDestroyPipeline(context_.device, context_.pipeline, nullptr);
+        context_.pipeline = VK_NULL_HANDLE;
+    }
+    if (context_.pipelineLayout != VK_NULL_HANDLE) {
+        vkDestroyPipelineLayout(context_.device, context_.pipelineLayout, nullptr);
+        context_.pipelineLayout = VK_NULL_HANDLE;
+    }
+    if (context_.descriptorSetLayout != VK_NULL_HANDLE) {
+        vkDestroyDescriptorSetLayout(context_.device, context_.descriptorSetLayout, nullptr);
+        context_.descriptorSetLayout = VK_NULL_HANDLE;
+    }
+    if (context_.descriptorPool != VK_NULL_HANDLE) {
+        vkDestroyDescriptorPool(context_.device, context_.descriptorPool, nullptr);
+        context_.descriptorPool = VK_NULL_HANDLE;
+    }
+    if (context_.renderPass != VK_NULL_HANDLE) {
+        vkDestroyRenderPass(context_.device, context_.renderPass, nullptr);
+        context_.renderPass = VK_NULL_HANDLE;
+    }
+    for (auto framebuffer : context_.swapchainFramebuffers) {
+        vkDestroyFramebuffer(context_.device, framebuffer, nullptr);
+    }
+    context_.swapchainFramebuffers.clear();
+    logger.log(Logging::LogLevel::Info, "Pipeline cleaned up", std::source_location::current());
 }

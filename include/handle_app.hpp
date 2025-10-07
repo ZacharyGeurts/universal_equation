@@ -1,22 +1,49 @@
 #ifndef HANDLE_APP_HPP
 #define HANDLE_APP_HPP
 
-// Combined input handling and application management for AMOURANTH RTX Engine, October 2025
-// Manages SDL3 input events and application lifecycle.
-// Thread-safe with C++20 features; no mutexes required.
-// Dependencies: SDL3, Vulkan, C++20 standard library.
+// AMOURANTH RTX Engine, October 2025 - Application lifecycle management.
+// Manages SDL3 input events, Vulkan rendering, and core application loop.
+// Dependencies: SDL3, Vulkan, GLM, C++20 standard library.
 // Zachary Geurts 2025
 
+#include "engine/SDL3_init.hpp"
+#include "engine/Vulkan_init.hpp"
+#include "engine/logging.hpp"
+#include "engine/core.hpp"
 #include <SDL3/SDL.h>
 #include <functional>
-#include <stdexcept>
-#include <vector>
 #include <memory>
-#include <string>
-#include "engine/core.hpp" // For AMOURANTH, DimensionalNavigator, glm::vec3
-#include "engine/Vulkan_init.hpp" // For VulkanRenderer
-#include "engine/SDL3_init.hpp" // For SDL3Initializer
-#include "engine/logging.hpp" // For Logging::Logger
+#include <vector>
+#include <glm/glm.hpp>
+
+// Forward declaration of HandleInput
+class HandleInput;
+
+class Application {
+public:
+    Application(const char* title, int width, int height);
+    ~Application();
+
+    void run();
+    void render();
+    void setRenderMode(int mode) { mode_ = mode; }
+
+private:
+    void initializeInput();
+
+    std::string title_;
+    int width_;
+    int height_;
+    int mode_;
+    std::vector<glm::vec3> vertices_;
+    std::vector<uint32_t> indices_;
+    std::unique_ptr<SDL3Initializer> sdl_;
+    std::unique_ptr<VulkanRenderer> renderer_;
+    Logging::Logger logger_;
+    std::unique_ptr<DimensionalNavigator> navigator_;
+    AMOURANTH amouranth_;
+    std::unique_ptr<HandleInput> inputHandler_;
+};
 
 class HandleInput {
 public:
@@ -31,9 +58,7 @@ public:
     using GamepadConnectCallback = std::function<void(bool, SDL_JoystickID, SDL_Gamepad*)>;
 
     HandleInput(AMOURANTH* amouranth, DimensionalNavigator* navigator, const Logging::Logger& logger);
-
-    void handleInput(class Application& app);
-
+    void handleInput(Application& app);
     void setCallbacks(
         KeyboardCallback kb = nullptr,
         MouseButtonCallback mb = nullptr,
@@ -45,16 +70,6 @@ public:
         GamepadAxisCallback ga = nullptr,
         GamepadConnectCallback gc = nullptr
     );
-
-    KeyboardCallback getKeyboardCallback() const { return keyboardCallback_; }
-    MouseButtonCallback getMouseButtonCallback() const { return mouseButtonCallback_; }
-    MouseMotionCallback getMouseMotionCallback() const { return mouseMotionCallback_; }
-    MouseWheelCallback getMouseWheelCallback() const { return mouseWheelCallback_; }
-    TextInputCallback getTextInputCallback() const { return textInputCallback_; }
-    TouchCallback getTouchCallback() const { return touchCallback_; }
-    GamepadButtonCallback getGamepadButtonCallback() const { return gamepadButtonCallback_; }
-    GamepadAxisCallback getGamepadAxisCallback() const { return gamepadAxisCallback_; }
-    GamepadConnectCallback getGamepadConnectCallback() const { return gamepadConnectCallback_; }
 
 private:
     void defaultKeyboardHandler(const SDL_KeyboardEvent& key);
@@ -69,7 +84,7 @@ private:
 
     AMOURANTH* amouranth_;
     DimensionalNavigator* navigator_;
-    const Logging::Logger& logger_;
+    const Logging::Logger& logger_; // Changed to reference to avoid copying
     KeyboardCallback keyboardCallback_;
     MouseButtonCallback mouseButtonCallback_;
     MouseMotionCallback mouseMotionCallback_;
@@ -79,34 +94,6 @@ private:
     GamepadButtonCallback gamepadButtonCallback_;
     GamepadAxisCallback gamepadAxisCallback_;
     GamepadConnectCallback gamepadConnectCallback_;
-};
-
-class Application {
-public:
-    Application(const char* title, int width, int height);
-    ~Application() = default;
-
-    void initialize();
-    void run();
-    void render();
-    void setRenderMode(int mode) { mode_ = mode; amouranth_.setMode(mode); }
-    int getWidth() const { return width_; }
-    int getHeight() const { return height_; }
-
-private:
-    void initializeInput();
-
-    std::string title_;
-    int width_, height_;
-    int mode_;
-    std::unique_ptr<SDL3Initializer> sdl_;
-    std::unique_ptr<VulkanRenderer> renderer_;
-    std::unique_ptr<DimensionalNavigator> navigator_;
-    AMOURANTH amouranth_;
-    Logging::Logger logger_;
-    std::unique_ptr<HandleInput> inputHandler_;
-    std::vector<glm::vec3> vertices_;
-    std::vector<uint32_t> indices_;
 };
 
 #endif // HANDLE_APP_HPP

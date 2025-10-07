@@ -1,7 +1,6 @@
 // AMOURANTH RTX Engine, October 2025 - Vulkan core initialization.
 // Initializes physical device, logical device, queues, command pool, and synchronization objects.
 // Dependencies: Vulkan 1.3+, GLM, C++20 standard library.
-// Usage: Create VulkanRenderer with instance, surface, and window dimensions; call beginFrame(), endFrame().
 // Zachary Geurts 2025
 
 #ifndef VULKAN_INIT_HPP
@@ -47,7 +46,7 @@ struct VulkanContext {
     VkDescriptorSetLayout descriptorSetLayout = VK_NULL_HANDLE;
     VkDescriptorPool descriptorPool = VK_NULL_HANDLE;
     VkDescriptorSet descriptorSet = VK_NULL_HANDLE;
-    VkExtent2D swapchainExtent = {0, 0}; // Store swapchain dimensions
+    VkExtent2D swapchainExtent = {0, 0};
 };
 
 class VulkanRenderer {
