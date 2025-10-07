@@ -6,15 +6,10 @@
 #include "engine/Vulkan_init_pipeline.hpp"
 #include "engine/Vulkan_init.hpp"
 #include "engine/logging.hpp"
+#include "engine/core.hpp"
 #include <stdexcept>
 #include <format>
 #include <fstream>
-
-struct PushConstants {
-    glm::mat4 model;
-    glm::mat4 view;
-    glm::mat4 proj;
-};
 
 VulkanPipelineManager::VulkanPipelineManager(VulkanContext& context)
     : context_(context), vertShaderModule_(VK_NULL_HANDLE), fragShaderModule_(VK_NULL_HANDLE), logger_() {

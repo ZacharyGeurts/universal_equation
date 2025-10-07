@@ -1,12 +1,14 @@
-#ifndef UNIVERSAL_EQUATION_HPP
-#define UNIVERSAL_EQUATION_HPP
-
-// Defines the UniversalEquation class for quantum simulation on n-dimensional hypercube lattices.
+// universal_equation.hpp: Defines the UniversalEquation class for quantum simulation on n-dimensional hypercube lattices.
 // Integrates classical and quantum physics with thread-safe, high-precision calculations using OpenMP and GLM.
 // Supports NURBS-based matter/energy fields and a deterministic "God wave" for quantum coherence.
 // Models multiple vertices representing particles in a 1-inch cube of water, with properties influenced by 2D and 4D projections.
-// Uses Logging::Logger for consistent logging across the AMOURANTH RTX Engine.
+// Uses Logging::Logger for consistent, thread-safe logging across the AMOURANTH RTX Engine.
+// Thread-safety note: Mutable vectors (e.g., nCubeVertices_, interactions_) are modified in const methods like updateInteractions,
+// using std::atomic and std::latch for synchronization in parallel execution to avoid mutexes.
 // Copyright Zachary Geurts 2025 (powered by Grok with Heisenberg swagger)
+
+#ifndef UNIVERSAL_EQUATION_HPP
+#define UNIVERSAL_EQUATION_HPP
 
 #include <vector>
 #include <string>
@@ -15,8 +17,8 @@
 #include <limits>
 #include <algorithm>
 #include <stdexcept>
-#include <mutex>
 #include <atomic>
+#include <latch>
 #include <omp.h>
 #include <sstream>
 #include <iomanip>
@@ -113,32 +115,353 @@ public:
     UniversalEquation& operator=(const UniversalEquation& other);
     virtual ~UniversalEquation() = default;
 
-    // Setters
-    void setInfluence(long double value) { influence_.store(std::clamp(value, 0.0L, 10.0L)); needsUpdate_.store(true); }
-    void setWeak(long double value) { weak_.store(std::clamp(value, 0.0L, 1.0L)); needsUpdate_.store(true); }
-    void setCollapse(long double value) { collapse_.store(std::clamp(value, 0.0L, 5.0L)); needsUpdate_.store(true); }
-    void setTwoD(long double value) { twoD_.store(std::clamp(value, 0.0L, 5.0L)); needsUpdate_.store(true); }
-    void setThreeDInfluence(long double value) { threeDInfluence_.store(std::clamp(value, 0.0L, 5.0L)); needsUpdate_.store(true); }
-    void setOneDPermeation(long double value) { oneDPermeation_.store(std::clamp(value, 0.0L, 5.0L)); needsUpdate_.store(true); }
-    void setNurbMatterStrength(long double value) { nurbMatterStrength_.store(std::clamp(value, 0.0L, 1.0L)); needsUpdate_.store(true); }
-    void setNurbEnergyStrength(long double value) { nurbEnergyStrength_.store(std::clamp(value, 0.0L, 2.0L)); needsUpdate_.store(true); }
-    void setAlpha(long double value) { alpha_.store(std::clamp(value, 0.01L, 10.0L)); needsUpdate_.store(true); }
-    void setBeta(long double value) { beta_.store(std::clamp(value, 0.0L, 1.0L)); needsUpdate_.store(true); }
-    void setCarrollFactor(long double value) { carrollFactor_.store(std::clamp(value, 0.0L, 1.0L)); needsUpdate_.store(true); }
-    void setMeanFieldApprox(long double value) { meanFieldApprox_.store(std::clamp(value, 0.0L, 1.0L)); needsUpdate_.store(true); }
-    void setAsymCollapse(long double value) { asymCollapse_.store(std::clamp(value, 0.0L, 1.0L)); needsUpdate_.store(true); }
-    void setPerspectiveTrans(long double value) { perspectiveTrans_.store(std::clamp(value, 0.0L, 10.0L)); needsUpdate_.store(true); }
-    void setPerspectiveFocal(long double value) { perspectiveFocal_.store(std::clamp(value, 1.0L, 20.0L)); needsUpdate_.store(true); }
-    void setSpinInteraction(long double value) { spinInteraction_.store(std::clamp(value, 0.0L, 1.0L)); needsUpdate_.store(true); }
-    void setEMFieldStrength(long double value) { emFieldStrength_.store(std::clamp(value, 0.0L, 1.0e7L)); needsUpdate_.store(true); }
-    void setRenormFactor(long double value) { renormFactor_.store(std::clamp(value, 0.1L, 10.0L)); needsUpdate_.store(true); }
-    void setVacuumEnergy(long double value) { vacuumEnergy_.store(std::clamp(value, 0.0L, 1.0L)); needsUpdate_.store(true); }
-    void setGodWaveFreq(long double value) { GodWaveFreq_.store(std::clamp(value, 0.1L, 10.0L)); needsUpdate_.store(true); }
-    void setDebug(bool value) { debug_.store(value); }
-    void setMode(int mode) { mode_.store(std::clamp(mode, 1, maxDimensions_)); needsUpdate_.store(true); }
-    void setCurrentDimension(int dimension) { currentDimension_.store(std::clamp(dimension, 1, maxDimensions_)); needsUpdate_.store(true); }
+    // Setters for configuration parameters
+    void setInfluence(long double value) {
+        long double clamped = std::clamp(value, 0.0L, 10.0L);
+        influence_.store(clamped);
+        needsUpdate_.store(true);
+        logger_.log(Logging::LogLevel::Debug, "Set influence: value={}", std::source_location::current(), clamped);
+    }
+    void setWeak(long double value) {
+        long double clamped = std::clamp(value, 0.0L, 1.0L);
+        weak_.store(clamped);
+        needsUpdate_.store(true);
+        logger_.log(Logging::LogLevel::Debug, "Set weak: value={}", std::source_location::current(), clamped);
+    }
+    void setCollapse(long double value) {
+        long double clamped = std::clamp(value, 0.0L, 5.0L);
+        collapse_.store(clamped);
+        needsUpdate_.store(true);
+        logger_.log(Logging::LogLevel::Debug, "Set collapse: value={}", std::source_location::current(), clamped);
+    }
+    void setTwoD(long double value) {
+        long double clamped = std::clamp(value, 0.0L, 5.0L);
+        twoD_.store(clamped);
+        needsUpdate_.store(true);
+        logger_.log(Logging::LogLevel::Debug, "Set twoD: value={}", std::source_location::current(), clamped);
+    }
+    void setThreeDInfluence(long double value) {
+        long double clamped = std::clamp(value, 0.0L, 5.0L);
+        threeDInfluence_.store(clamped);
+        needsUpdate_.store(true);
+        logger_.log(Logging::LogLevel::Debug, "Set threeDInfluence: value={}", std::source_location::current(), clamped);
+    }
+    void setOneDPermeation(long double value) {
+        long double clamped = std::clamp(value, 0.0L, 5.0L);
+        oneDPermeation_.store(clamped);
+        needsUpdate_.store(true);
+        logger_.log(Logging::LogLevel::Debug, "Set oneDPermeation: value={}", std::source_location::current(), clamped);
+    }
+    void setNurbMatterStrength(long double value) {
+        long double clamped = std::clamp(value, 0.0L, 1.0L);
+        nurbMatterStrength_.store(clamped);
+        needsUpdate_.store(true);
+        logger_.log(Logging::LogLevel::Debug, "Set nurbMatterStrength: value={}", std::source_location::current(), clamped);
+    }
+    void setNurbEnergyStrength(long double value) {
+        long double clamped = std::clamp(value, 0.0L, 2.0L);
+        nurbEnergyStrength_.store(clamped);
+        needsUpdate_.store(true);
+        logger_.log(Logging::LogLevel::Debug, "Set nurbEnergyStrength: value={}", std::source_location::current(), clamped);
+    }
+    void setAlpha(long double value) {
+        long double clamped = std::clamp(value, 0.01L, 10.0L);
+        alpha_.store(clamped);
+        needsUpdate_.store(true);
+        logger_.log(Logging::LogLevel::Debug, "Set alpha: value={}", std::source_location::current(), clamped);
+    }
+    void setBeta(long double value) {
+        long double clamped = std::clamp(value, 0.0L, 1.0L);
+        beta_.store(clamped);
+        needsUpdate_.store(true);
+        logger_.log(Logging::LogLevel::Debug, "Set beta: value={}", std::source_location::current(), clamped);
+    }
+    void setCarrollFactor(long double value) {
+        long double clamped = std::clamp(value, 0.0L, 1.0L);
+        carrollFactor_.store(clamped);
+        needsUpdate_.store(true);
+        logger_.log(Logging::LogLevel::Debug, "Set carrollFactor: value={}", std::source_location::current(), clamped);
+    }
+    void setMeanFieldApprox(long double value) {
+        long double clamped = std::clamp(value, 0.0L, 1.0L);
+        meanFieldApprox_.store(clamped);
+        needsUpdate_.store(true);
+        logger_.log(Logging::LogLevel::Debug, "Set meanFieldApprox: value={}", std::source_location::current(), clamped);
+    }
+    void setAsymCollapse(long double value) {
+        long double clamped = std::clamp(value, 0.0L, 1.0L);
+        asymCollapse_.store(clamped);
+        needsUpdate_.store(true);
+        logger_.log(Logging::LogLevel::Debug, "Set asymCollapse: value={}", std::source_location::current(), clamped);
+    }
+    void setPerspectiveTrans(long double value) {
+        long double clamped = std::clamp(value, 0.0L, 10.0L);
+        perspectiveTrans_.store(clamped);
+        needsUpdate_.store(true);
+        logger_.log(Logging::LogLevel::Debug, "Set perspectiveTrans: value={}", std::source_location::current(), clamped);
+    }
+    void setPerspectiveFocal(long double value) {
+        long double clamped = std::clamp(value, 1.0L, 20.0L);
+        perspectiveFocal_.store(clamped);
+        needsUpdate_.store(true);
+        logger_.log(Logging::LogLevel::Debug, "Set perspectiveFocal: value={}", std::source_location::current(), clamped);
+    }
+    void setSpinInteraction(long double value) {
+        long double clamped = std::clamp(value, 0.0L, 1.0L);
+        spinInteraction_.store(clamped);
+        needsUpdate_.store(true);
+        logger_.log(Logging::LogLevel::Debug, "Set spinInteraction: value={}", std::source_location::current(), clamped);
+    }
+    void setEMFieldStrength(long double value) {
+        long double clamped = std::clamp(value, 0.0L, 1.0e7L);
+        emFieldStrength_.store(clamped);
+        needsUpdate_.store(true);
+        logger_.log(Logging::LogLevel::Debug, "Set emFieldStrength: value={}", std::source_location::current(), clamped);
+    }
+    void setRenormFactor(long double value) {
+        long double clamped = std::clamp(value, 0.1L, 10.0L);
+        renormFactor_.store(clamped);
+        needsUpdate_.store(true);
+        logger_.log(Logging::LogLevel::Debug, "Set renormFactor: value={}", std::source_location::current(), clamped);
+    }
+    void setVacuumEnergy(long double value) {
+        long double clamped = std::clamp(value, 0.0L, 1.0L);
+        vacuumEnergy_.store(clamped);
+        needsUpdate_.store(true);
+        logger_.log(Logging::LogLevel::Debug, "Set vacuumEnergy: value={}", std::source_location::current(), clamped);
+    }
+    void setGodWaveFreq(long double value) {
+        long double clamped = std::clamp(value, 0.1L, 10.0L);
+        GodWaveFreq_.store(clamped);
+        needsUpdate_.store(true);
+        logger_.log(Logging::LogLevel::Debug, "Set GodWaveFreq: value={}", std::source_location::current(), clamped);
+    }
+    void setCurrentDimension(int value) {
+        int clamped = std::clamp(value, 1, maxDimensions_);
+        currentDimension_.store(clamped);
+        mode_.store(clamped);
+        needsUpdate_.store(true);
+        logger_.log(Logging::LogLevel::Debug, "Set currentDimension: value={}", std::source_location::current(), clamped);
+    }
+    void setDebug(bool value) {
+        debug_.store(value);
+        logger_.log(Logging::LogLevel::Debug, "Set debug: value={}", std::source_location::current(), value);
+    }
+    void setCurrentVertices(uint64_t value) {
+        uint64_t clamped = std::min(std::max(value, static_cast<uint64_t>(1)), maxVertices_);
+        currentVertices_.store(clamped);
+        needsUpdate_.store(true);
+        logger_.log(Logging::LogLevel::Debug, "Set currentVertices: value={}", std::source_location::current(), clamped);
+    }
+    void setNavigator(DimensionalNavigator* nav) {
+        navigator_ = nav;
+        needsUpdate_.store(true);
+        logger_.log(Logging::LogLevel::Debug, "Set navigator: value={}", std::source_location::current(), static_cast<void*>(nav));
+    }
 
-    // Getters (thread-safe)
+    // Setters for simulation state
+    void setNCubeVertex(int vertexIndex, const std::vector<long double>& vertex) {
+        validateVertexIndex(vertexIndex);
+        std::latch latch(1);
+        if (vertex.size() != static_cast<size_t>(currentDimension_.load())) {
+            logger_.log(Logging::LogLevel::Error, "Invalid vertex dimension: vertexIndex={}, size={}, expected={}", 
+                        std::source_location::current(), vertexIndex, vertex.size(), currentDimension_.load());
+            throw std::invalid_argument("Invalid vertex dimension");
+        }
+        nCubeVertices_[vertexIndex] = vertex;
+        needsUpdate_.store(true);
+        logger_.log(Logging::LogLevel::Debug, "Set nCubeVertex: vertexIndex={}", 
+                    std::source_location::current(), vertexIndex);
+        latch.count_down();
+        latch.wait();
+    }
+    void setVertexMomentum(int vertexIndex, const std::vector<long double>& momentum) {
+        validateVertexIndex(vertexIndex);
+        std::latch latch(1);
+        if (momentum.size() != static_cast<size_t>(currentDimension_.load())) {
+            logger_.log(Logging::LogLevel::Error, "Invalid momentum dimension: vertexIndex={}, size={}, expected={}", 
+                        std::source_location::current(), vertexIndex, momentum.size(), currentDimension_.load());
+            throw std::invalid_argument("Invalid momentum dimension");
+        }
+        vertexMomenta_[vertexIndex] = momentum;
+        needsUpdate_.store(true);
+        logger_.log(Logging::LogLevel::Debug, "Set vertexMomentum: vertexIndex={}", 
+                    std::source_location::current(), vertexIndex);
+        latch.count_down();
+        latch.wait();
+    }
+    void setVertexSpin(int vertexIndex, long double spin) {
+        validateVertexIndex(vertexIndex);
+        std::latch latch(1);
+        if (std::isnan(spin) || std::isinf(spin)) {
+            logger_.log(Logging::LogLevel::Warning, "Invalid spin value for vertexIndex={}: spin={}", 
+                        std::source_location::current(), vertexIndex, spin);
+            vertexSpins_[vertexIndex] = 0.032774L;
+        } else {
+            vertexSpins_[vertexIndex] = spin;
+        }
+        needsUpdate_.store(true);
+        logger_.log(Logging::LogLevel::Debug, "Set vertexSpin: vertexIndex={}, spin={}", 
+                    std::source_location::current(), vertexIndex, vertexSpins_[vertexIndex]);
+        latch.count_down();
+        latch.wait();
+    }
+    void setVertexWaveAmplitude(int vertexIndex, long double amplitude) {
+        validateVertexIndex(vertexIndex);
+        std::latch latch(1);
+        if (std::isnan(amplitude) || std::isinf(amplitude)) {
+            logger_.log(Logging::LogLevel::Warning, "Invalid wave amplitude for vertexIndex={}: amplitude={}", 
+                        std::source_location::current(), vertexIndex, amplitude);
+            vertexWaveAmplitudes_[vertexIndex] = 0.0L;
+        } else {
+            vertexWaveAmplitudes_[vertexIndex] = amplitude;
+        }
+        needsUpdate_.store(true);
+        logger_.log(Logging::LogLevel::Debug, "Set vertexWaveAmplitude: vertexIndex={}, amplitude={}", 
+                    std::source_location::current(), vertexIndex, vertexWaveAmplitudes_[vertexIndex]);
+        latch.count_down();
+        latch.wait();
+    }
+    void setProjectedVertex(int vertexIndex, const glm::vec3& vertex) {
+        validateVertexIndex(vertexIndex);
+        std::latch latch(1);
+        if (reinterpret_cast<std::uintptr_t>(&vertex) % alignof(glm::vec3) != 0) {
+            logger_.log(Logging::LogLevel::Error, "Misaligned projected vertex for vertexIndex={}: address={}", 
+                        std::source_location::current(), vertexIndex, reinterpret_cast<std::uintptr_t>(&vertex));
+            throw std::runtime_error("Misaligned projected vertex");
+        }
+        projectedVerts_[vertexIndex] = vertex;
+        needsUpdate_.store(true);
+        logger_.log(Logging::LogLevel::Debug, "Set projectedVertex: vertexIndex={}", 
+                    std::source_location::current(), vertexIndex);
+        latch.count_down();
+        latch.wait();
+    }
+    void setNCubeVertices(const std::vector<std::vector<long double>>& vertices) {
+        std::latch latch(1);
+        if (vertices.size() > maxVertices_) {
+            logger_.log(Logging::LogLevel::Error, "Vertex count exceeds maxVertices_: size={}, maxVertices_={}", 
+                        std::source_location::current(), vertices.size(), maxVertices_);
+            throw std::invalid_argument("Vertex count exceeds maxVertices_");
+        }
+        for (size_t i = 0; i < vertices.size(); ++i) {
+            if (vertices[i].size() != static_cast<size_t>(currentDimension_.load())) {
+                logger_.log(Logging::LogLevel::Error, "Invalid dimension for vertex {}: size={}, expected={}", 
+                            std::source_location::current(), i, vertices[i].size(), currentDimension_.load());
+                throw std::invalid_argument("Invalid vertex dimension");
+            }
+        }
+        nCubeVertices_ = vertices;
+        currentVertices_.store(std::min(vertices.size(), static_cast<size_t>(maxVertices_)));
+        needsUpdate_.store(true);
+        logger_.log(Logging::LogLevel::Debug, "Set nCubeVertices: size={}, currentVertices={}", 
+                    std::source_location::current(), nCubeVertices_.size(), currentVertices_.load());
+        latch.count_down();
+        latch.wait();
+    }
+    void setVertexMomenta(const std::vector<std::vector<long double>>& momenta) {
+        std::latch latch(1);
+        if (momenta.size() > maxVertices_) {
+            logger_.log(Logging::LogLevel::Error, "Momentum count exceeds maxVertices_: size={}, maxVertices_={}", 
+                        std::source_location::current(), momenta.size(), maxVertices_);
+            throw std::invalid_argument("Momentum count exceeds maxVertices_");
+        }
+        for (size_t i = 0; i < momenta.size(); ++i) {
+            if (momenta[i].size() != static_cast<size_t>(currentDimension_.load())) {
+                logger_.log(Logging::LogLevel::Error, "Invalid dimension for momentum {}: size={}, expected={}", 
+                            std::source_location::current(), i, momenta[i].size(), currentDimension_.load());
+                throw std::invalid_argument("Invalid momentum dimension");
+            }
+        }
+        vertexMomenta_ = momenta;
+        currentVertices_.store(std::min(momenta.size(), static_cast<size_t>(maxVertices_)));
+        needsUpdate_.store(true);
+        logger_.log(Logging::LogLevel::Debug, "Set vertexMomenta: size={}, currentVertices={}", 
+                    std::source_location::current(), vertexMomenta_.size(), currentVertices_.load());
+        latch.count_down();
+        latch.wait();
+    }
+    void setVertexSpins(const std::vector<long double>& spins) {
+        std::latch latch(1);
+        if (spins.size() > maxVertices_) {
+            logger_.log(Logging::LogLevel::Error, "Spin count exceeds maxVertices_: size={}, maxVertices_={}", 
+                        std::source_location::current(), spins.size(), maxVertices_);
+            throw std::invalid_argument("Spin count exceeds maxVertices_");
+        }
+        vertexSpins_.resize(spins.size());
+        for (size_t i = 0; i < spins.size(); ++i) {
+            if (std::isnan(spins[i]) || std::isinf(spins[i])) {
+                logger_.log(Logging::LogLevel::Warning, "Invalid spin for index {}: spin={}", 
+                            std::source_location::current(), i, spins[i]);
+                vertexSpins_[i] = 0.032774L;
+            } else {
+                vertexSpins_[i] = spins[i];
+            }
+        }
+        currentVertices_.store(std::min(spins.size(), static_cast<size_t>(maxVertices_)));
+        needsUpdate_.store(true);
+        logger_.log(Logging::LogLevel::Debug, "Set vertexSpins: size={}, currentVertices={}", 
+                    std::source_location::current(), vertexSpins_.size(), currentVertices_.load());
+        latch.count_down();
+        latch.wait();
+    }
+    void setVertexWaveAmplitudes(const std::vector<long double>& amplitudes) {
+        std::latch latch(1);
+        if (amplitudes.size() > maxVertices_) {
+            logger_.log(Logging::LogLevel::Error, "Amplitude count exceeds maxVertices_: size={}, maxVertices_={}", 
+                        std::source_location::current(), amplitudes.size(), maxVertices_);
+            throw std::invalid_argument("Amplitude count exceeds maxVertices_");
+        }
+        vertexWaveAmplitudes_.resize(amplitudes.size());
+        for (size_t i = 0; i < amplitudes.size(); ++i) {
+            if (std::isnan(amplitudes[i]) || std::isinf(amplitudes[i])) {
+                logger_.log(Logging::LogLevel::Warning, "Invalid amplitude for index {}: amplitude={}", 
+                            std::source_location::current(), i, amplitudes[i]);
+                vertexWaveAmplitudes_[i] = 0.0L;
+            } else {
+                vertexWaveAmplitudes_[i] = amplitudes[i];
+            }
+        }
+        currentVertices_.store(std::min(amplitudes.size(), static_cast<size_t>(maxVertices_)));
+        needsUpdate_.store(true);
+        logger_.log(Logging::LogLevel::Debug, "Set vertexWaveAmplitudes: size={}, currentVertices={}", 
+                    std::source_location::current(), vertexWaveAmplitudes_.size(), currentVertices_.load());
+        latch.count_down();
+        latch.wait();
+    }
+    void setProjectedVertices(const std::vector<glm::vec3>& vertices) {
+        std::latch latch(1);
+        if (vertices.size() > maxVertices_) {
+            logger_.log(Logging::LogLevel::Error, "Projected vertex count exceeds maxVertices_: size={}, maxVertices_={}", 
+                        std::source_location::current(), vertices.size(), maxVertices_);
+            throw std::invalid_argument("Projected vertex count exceeds maxVertices_");
+        }
+        if (!vertices.empty() && reinterpret_cast<std::uintptr_t>(vertices.data()) % alignof(glm::vec3) != 0) {
+            logger_.log(Logging::LogLevel::Error, "Misaligned projected vertices: address={}", 
+                        std::source_location::current(), reinterpret_cast<std::uintptr_t>(vertices.data()));
+            throw std::runtime_error("Misaligned projected vertices");
+        }
+        projectedVerts_ = vertices;
+        currentVertices_.store(std::min(vertices.size(), static_cast<size_t>(maxVertices_)));
+        needsUpdate_.store(true);
+        logger_.log(Logging::LogLevel::Debug, "Set projectedVertices: size={}, currentVertices={}", 
+                    std::source_location::current(), projectedVerts_.size(), currentVertices_.load());
+        latch.count_down();
+        latch.wait();
+    }
+    void setTotalCharge(long double value) {
+        if (std::isnan(value) || std::isinf(value)) {
+            logger_.log(Logging::LogLevel::Warning, "Invalid total charge: value={}", 
+                        std::source_location::current(), value);
+            totalCharge_.store(0.0L);
+        } else {
+            totalCharge_.store(value);
+        }
+        logger_.log(Logging::LogLevel::Debug, "Set totalCharge: value={}", 
+                    std::source_location::current(), totalCharge_.load());
+    }
+
+    // Getters for configuration parameters
     long double getInfluence() const { return influence_.load(); }
     long double getWeak() const { return weak_.load(); }
     long double getCollapse() const { return collapse_.load(); }
@@ -159,94 +482,107 @@ public:
     long double getRenormFactor() const { return renormFactor_.load(); }
     long double getVacuumEnergy() const { return vacuumEnergy_.load(); }
     long double getGodWaveFreq() const { return GodWaveFreq_.load(); }
-    bool getDebug() const { return debug_.load(); }
-    int getMode() const { return mode_.load(); }
     int getCurrentDimension() const { return currentDimension_.load(); }
     int getMaxDimensions() const { return maxDimensions_; }
+    int getMode() const { return mode_.load(); }
+    bool getDebug() const { return debug_.load(); }
+    bool getNeedsUpdate() const { return needsUpdate_.load(); }
+    long double getTotalCharge() const { return totalCharge_.load(); }
+    uint64_t getMaxVertices() const { return maxVertices_; }
+    uint64_t getCurrentVertices() const { return currentVertices_.load(); }
     long double getOmega() const { return omega_; }
     long double getInvMaxDim() const { return invMaxDim_; }
-    uint64_t getMaxVertices() const { return maxVertices_; }
-    size_t getCachedCosSize() const { return cachedCos_.size(); }
-    const std::vector<DimensionInteraction>& getInteractions() const {
-        if (needsUpdate_.load()) updateInteractions();
-        return interactions_;
+    std::span<const long double> getCachedCos() const { return cachedCos_; }
+    std::span<const long double> getNurbMatterControlPoints() const { return nurbMatterControlPoints_; }
+    std::span<const long double> getNurbEnergyControlPoints() const { return nurbEnergyControlPoints_; }
+    std::span<const long double> getNurbKnots() const { return nurbKnots_; }
+    std::span<const long double> getNurbWeights() const { return nurbWeights_; }
+    const DimensionData& getDimensionData() const { return dimensionData_; }
+    DimensionalNavigator* getNavigator() const { return navigator_; }
+
+    // Getters for simulation state
+    std::span<const std::vector<long double>> getNCubeVertices() const { return nCubeVertices_; }
+    std::span<const std::vector<long double>> getVertexMomenta() const { return vertexMomenta_; }
+    std::span<const long double> getVertexSpins() const { return vertexSpins_; }
+    std::span<const long double> getVertexWaveAmplitudes() const { return vertexWaveAmplitudes_; }
+    std::span<const DimensionInteraction> getInteractions() const { return interactions_; }
+    std::span<const glm::vec3> getProjectedVertices() const {
+        if (!projectedVerts_.empty() && reinterpret_cast<std::uintptr_t>(projectedVerts_.data()) % alignof(glm::vec3) != 0) {
+            logger_.log(Logging::LogLevel::Error, "Misaligned projectedVerts_: address={}", 
+                        std::source_location::current(), reinterpret_cast<std::uintptr_t>(projectedVerts_.data()));
+            throw std::runtime_error("Misaligned projectedVerts_");
+        }
+        return projectedVerts_;
     }
-    const std::vector<std::vector<long double>>& getNCubeVertices() const { return nCubeVertices_; }
-    const std::vector<std::vector<long double>>& getVertexMomenta() const { return vertexMomenta_; }
-    const std::vector<long double>& getVertexSpins() const { return vertexSpins_; }
-    const std::vector<long double>& getVertexWaveAmplitudes() const { return vertexWaveAmplitudes_; }
-    const std::vector<long double>& getCachedCos() const { return cachedCos_; }
-    std::vector<glm::vec3> getProjectedVertices() const { return projectedVerts_; }
-    long double getAvgProjScale() const { return avgProjScale_.load(); }
-    std::span<const DimensionData> getDimensionData() const { return dimensionData_; }
+    const std::vector<long double>& getNCubeVertex(int vertexIndex) const {
+        validateVertexIndex(vertexIndex);
+        logger_.log(Logging::LogLevel::Debug, "Get nCubeVertex: vertexIndex={}", 
+                    std::source_location::current(), vertexIndex);
+        return nCubeVertices_[vertexIndex];
+    }
+    const std::vector<long double>& getVertexMomentum(int vertexIndex) const {
+        validateVertexIndex(vertexIndex);
+        logger_.log(Logging::LogLevel::Debug, "Get vertexMomentum: vertexIndex={}", 
+                    std::source_location::current(), vertexIndex);
+        return vertexMomenta_[vertexIndex];
+    }
+    long double getVertexSpin(int vertexIndex) const {
+        validateVertexIndex(vertexIndex);
+        logger_.log(Logging::LogLevel::Debug, "Get vertexSpin: vertexIndex={}, spin={}", 
+                    std::source_location::current(), vertexIndex, vertexSpins_[vertexIndex]);
+        return vertexSpins_[vertexIndex];
+    }
+    long double getVertexWaveAmplitude(int vertexIndex) const {
+        validateVertexIndex(vertexIndex);
+        logger_.log(Logging::LogLevel::Debug, "Get vertexWaveAmplitude: vertexIndex={}, amplitude={}", 
+                    std::source_location::current(), vertexIndex, vertexWaveAmplitudes_[vertexIndex]);
+        return vertexWaveAmplitudes_[vertexIndex];
+    }
+    const glm::vec3& getProjectedVertex(int vertexIndex) const {
+        validateVertexIndex(vertexIndex);
+        logger_.log(Logging::LogLevel::Debug, "Get projectedVertex: vertexIndex={}", 
+                    std::source_location::current(), vertexIndex);
+        return projectedVerts_[vertexIndex];
+    }
 
     // Core methods
-    void advanceCycle();
-    EnergyResult compute() const;
-    void initializeCalculator(DimensionalNavigator* navigator);
-    DimensionData updateCache();
-    std::vector<DimensionData> computeBatch(int startDim = 1, int endDim = -1);
-    void exportToCSV(const std::string& filename, const std::vector<DimensionData>& data) const;
+    EnergyResult compute();
+    void initializeNCube();
+    void initializeCalculator();
     void evolveTimeStep(long double dt);
+    void updateInteractions() const;
     void updateMomentum();
-    void updateOrbitalVelocity(long double dt);
-    void updateOrbitalPositions(long double dt);
+    void advanceCycle();
+    std::vector<DimensionData> computeBatch(int startDim, int endDim);
+    void exportToCSV(const std::string& filename, const std::vector<DimensionData>& data) const;
+    DimensionData updateCache();
+
+    // Physical methods
     long double computeVertexVolume(int vertexIndex) const;
     long double computeVertexMass(int vertexIndex) const;
     long double computeVertexDensity(int vertexIndex) const;
     std::vector<long double> computeCenterOfMass() const;
     long double computeTotalSystemVolume() const;
-    long double computeGravitationalPotential(int vertexIndex1, int vertexIndex2) const;
+    long double computeGravitationalPotential(int vertexIndex1, int vertexIndex2 = -1) const;
     std::vector<long double> computeGravitationalAcceleration(int vertexIndex) const;
     std::vector<long double> computeClassicalEMField(int vertexIndex) const;
+    void updateOrbitalVelocity(long double dt);
+    void updateOrbitalPositions(long double dt);
     long double computeSystemEnergy() const;
     long double computePythagoreanScaling(int vertexIndex) const;
 
-    // Moved to public to fix access errors
+    // Quantum methods
+    long double computeNurbMatter(int vertexIndex) const;
+    long double computeNurbEnergy(int vertexIndex) const;
+    std::vector<long double> computeVectorPotential(int vertexIndex) const;
     long double computeInteraction(int vertexIndex, long double distance) const;
-    long double computePermeation(int vertexIndex) const;
-    long double computeNurbEnergy(long double distance) const;
+    long double computeSpinEnergy(int vertexIndex) const;
+    long double computeEMField(int vertexIndex) const;
+    long double computeGodWave(int vertexIndex) const;
+    long double computeGodWaveAmplitude(int vertexIndex, long double time) const;
 
-protected:
-    virtual void initializeNCube();
-    void initializeWithRetry();
-    long double safeExp(long double x) const;
-    long double computeNurbMatter(long double distance) const;
-    long double computeGodWaveAmplitude(int vertexIndex, long double distance) const;
-    long double computeNURBSBasis(int i, int p, long double u, const std::vector<long double>& knots) const;
-    long double evaluateNURBS(long double u, const std::vector<long double>& controlPoints,
-                              const std::vector<long double>& weights,
-                              const std::vector<long double>& knots, int degree) const;
-    long double computeSpinInteraction(int vertexIndex1, int vertexIndex2) const;
-    std::vector<long double> computeVectorPotential(int vertexIndex, long double distance) const;
-    std::vector<long double> computeEMField(int vertexIndex) const;
-    long double computeLorentzFactor(int vertexIndex) const;
-    long double computeCollapse() const;
-    void updateInteractions() const;
-
-    // Member variables
-    int maxDimensions_;
-    std::atomic<int> mode_;
-    std::atomic<int> currentDimension_;
-    uint64_t maxVertices_;
-    long double omega_;
-    long double invMaxDim_;
-    mutable std::atomic<long double> totalCharge_;
-    mutable std::atomic<bool> needsUpdate_;
-    mutable std::vector<std::vector<long double>> nCubeVertices_;
-    mutable std::vector<std::vector<long double>> vertexMomenta_;
-    mutable std::vector<long double> vertexSpins_;
-    mutable std::vector<long double> vertexWaveAmplitudes_;
-    mutable std::vector<DimensionInteraction> interactions_;
-    mutable std::vector<glm::vec3> projectedVerts_;
-    mutable std::atomic<long double> avgProjScale_;
-    std::vector<long double> cachedCos_;
-    DimensionalNavigator* navigator_;
-    std::vector<long double> nurbMatterControlPoints_;
-    std::vector<long double> nurbEnergyControlPoints_;
-    std::vector<long double> nurbKnots_;
-    std::vector<long double> nurbWeights_;
-    std::vector<DimensionData> dimensionData_;
+private:
+    // Thread-safe configuration parameters
     std::atomic<long double> influence_;
     std::atomic<long double> weak_;
     std::atomic<long double> collapse_;
@@ -267,8 +603,58 @@ protected:
     std::atomic<long double> renormFactor_;
     std::atomic<long double> vacuumEnergy_;
     std::atomic<long double> GodWaveFreq_;
+    std::atomic<int> currentDimension_;
+    std::atomic<int> mode_;
     std::atomic<bool> debug_;
+    std::atomic<bool> needsUpdate_;
+    std::atomic<long double> totalCharge_;
+    std::atomic<long double> avgProjScale_;
+    std::atomic<uint64_t> currentVertices_;
+    const uint64_t maxVertices_;
+    const int maxDimensions_;
+    const long double omega_;
+    const long double invMaxDim_;
+
+    // Simulation state (mutable for const methods like updateInteractions)
+    mutable std::vector<std::vector<long double>> nCubeVertices_;
+    mutable std::vector<std::vector<long double>> vertexMomenta_;
+    mutable std::vector<long double> vertexSpins_;
+    mutable std::vector<long double> vertexWaveAmplitudes_;
+    mutable std::vector<DimensionInteraction> interactions_;
+    mutable std::vector<glm::vec3> projectedVerts_;
+    std::vector<long double> cachedCos_;
+    std::vector<long double> nurbMatterControlPoints_;
+    std::vector<long double> nurbEnergyControlPoints_;
+    std::vector<long double> nurbKnots_;
+    std::vector<long double> nurbWeights_;
+    DimensionData dimensionData_;
+    DimensionalNavigator* navigator_;
     const Logging::Logger& logger_;
+
+    // Utility methods
+    void initializeWithRetry();
+    long double safeExp(long double x) const;
+    inline long double safe_div(long double a, long double b) const {
+        if (b == 0.0L || std::isnan(b) || std::isinf(b)) {
+            logger_.log(Logging::LogLevel::Warning, "Invalid divisor in safe_div: a={}, b={}", 
+                        std::source_location::current(), a, b);
+            return 0.0L;
+        }
+        long double result = a / b;
+        if (std::isnan(result) || std::isinf(result)) {
+            logger_.log(Logging::LogLevel::Warning, "Invalid result in safe_div: a={}, b={}, result={}", 
+                        std::source_location::current(), a, b, result);
+            return 0.0L;
+        }
+        return result;
+    }
+    inline void validateVertexIndex(int vertexIndex, const std::source_location& loc = std::source_location::current()) const {
+        if (vertexIndex < 0 || static_cast<size_t>(vertexIndex) >= nCubeVertices_.size()) {
+            logger_.log(Logging::LogLevel::Error, "Invalid vertexIndex: vertexIndex={}, size={}", 
+                        loc, vertexIndex, nCubeVertices_.size());
+            throw std::out_of_range("Invalid vertex index");
+        }
+    }
 };
 
 #endif // UNIVERSAL_EQUATION_HPP

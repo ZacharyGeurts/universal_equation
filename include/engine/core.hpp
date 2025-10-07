@@ -20,6 +20,7 @@
 #include <format>
 #include <span>
 #include <random>
+#include <latch>
 
 static constexpr int kMaxRenderedDimensions = 9;
 
@@ -65,17 +66,39 @@ public:
         initializeCache();
     }
 
+    void initialize(int dimension, uint64_t numVertices) {
+        logger_.log(Logging::LogLevel::Debug, "Initializing DimensionalNavigator: dimension={}, numVertices={}",
+                    std::source_location::current(), dimension, numVertices);
+        cache_.resize(std::min(static_cast<size_t>(dimension), static_cast<size_t>(kMaxRenderedDimensions)));
+        initializeCache();
+    }
+
     int getMode() const { return mode_; }
     float getZoomLevel() const { return zoomLevel_; }
     float getWavePhase() const { return wavePhase_; }
     std::span<const UniversalEquation::DimensionData> getCache() const { return cache_; }
     int getWidth() const { return width_; }
     int getHeight() const { return height_; }
-    void setMode(int mode) { mode_ = glm::clamp(mode, 1, 9); }
-    void setZoomLevel(float zoom) { zoomLevel_ = std::max(0.1f, zoom); }
-    void setWavePhase(float phase) { wavePhase_ = phase; }
-    void setWidth(int width) { width_ = width; logger_.log(Logging::LogLevel::Debug, "DimensionalNavigator width set to {}", std::source_location::current(), width); }
-    void setHeight(int height) { height_ = height; logger_.log(Logging::LogLevel::Debug, "DimensionalNavigator height set to {}", std::source_location::current(), height); }
+    void setMode(int mode) {
+        mode_ = glm::clamp(mode, 1, 9);
+        logger_.log(Logging::LogLevel::Debug, "DimensionalNavigator mode set to {}", std::source_location::current(), mode_);
+    }
+    void setZoomLevel(float zoom) {
+        zoomLevel_ = std::max(0.1f, zoom);
+        logger_.log(Logging::LogLevel::Debug, "DimensionalNavigator zoomLevel set to {}", std::source_location::current(), zoomLevel_);
+    }
+    void setWavePhase(float phase) {
+        wavePhase_ = phase;
+        logger_.log(Logging::LogLevel::Debug, "DimensionalNavigator wavePhase set to {}", std::source_location::current(), wavePhase_);
+    }
+    void setWidth(int width) {
+        width_ = width;
+        logger_.log(Logging::LogLevel::Debug, "DimensionalNavigator width set to {}", std::source_location::current(), width_);
+    }
+    void setHeight(int height) {
+        height_ = height;
+        logger_.log(Logging::LogLevel::Debug, "DimensionalNavigator height set to {}", std::source_location::current(), height_);
+    }
     VulkanRenderer& getRenderer() const { return renderer_; }
 
 private:
@@ -151,37 +174,108 @@ public:
     void update(float deltaTime);
 
     void adjustInfluence(double delta) {
+        std::latch latch(1);
         ue_.setInfluence(ue_.getInfluence() + delta);
         updateCache();
+        logger_.log(Logging::LogLevel::Debug, "Adjusted influence by {}", std::source_location::current(), delta);
+        latch.count_down();
+        latch.wait();
     }
     void adjustNurbMatter(double delta) {
+        std::latch latch(1);
         for (auto& cache : cache_) cache.nurbMatter += delta;
+        logger_.log(Logging::LogLevel::Debug, "Adjusted nurbMatter by {}", std::source_location::current(), delta);
+        latch.count_down();
+        latch.wait();
     }
     void adjustNurbEnergy(double delta) {
+        std::latch latch(1);
         for (auto& cache : cache_) cache.nurbEnergy += delta;
+        logger_.log(Logging::LogLevel::Debug, "Adjusted nurbEnergy by {}", std::source_location::current(), delta);
+        latch.count_down();
+        latch.wait();
     }
     void updateCache();
     void updateZoom(bool zoomIn);
     void setMode(int mode);
-    void togglePause() { isPaused_ = !isPaused_; }
-    void toggleUserCam() { isUserCamActive_ = !isUserCamActive_; }
-    void moveUserCam(float dx, float dy, float dz) { userCamPos_ += glm::vec3(dx, dy, dz); }
-    void setCurrentDimension(int dimension) { ue_.setCurrentDimension(dimension); }
-    void setWidth(int width) { width_ = width; logger_.log(Logging::LogLevel::Debug, "AMOURANTH width set to {}", std::source_location::current(), width); }
-    void setHeight(int height) { height_ = height; logger_.log(Logging::LogLevel::Debug, "AMOURANTH height set to {}", std::source_location::current(), height); }
+    void togglePause() {
+        isPaused_ = !isPaused_;
+        logger_.log(Logging::LogLevel::Debug, "Pause state set to {}", std::source_location::current(), isPaused_);
+    }
+    void toggleUserCam() {
+        isUserCamActive_ = !isUserCamActive_;
+        logger_.log(Logging::LogLevel::Debug, "User camera active set to {}", std::source_location::current(), isUserCamActive_);
+    }
+    void moveUserCam(float dx, float dy, float dz) {
+        userCamPos_ += glm::vec3(dx, dy, dz);
+        logger_.log(Logging::LogLevel::Debug, "Moved user camera to ({}, {}, {})",
+                    std::source_location::current(), userCamPos_.x, userCamPos_.y, userCamPos_.z);
+    }
+    void setCurrentDimension(int dimension) {
+        std::latch latch(1);
+        ue_.setCurrentDimension(dimension);
+        logger_.log(Logging::LogLevel::Debug, "Set current dimension to {}", std::source_location::current(), dimension);
+        latch.count_down();
+        latch.wait();
+    }
+    void setWidth(int width) {
+        width_ = width;
+        logger_.log(Logging::LogLevel::Debug, "AMOURANTH width set to {}", std::source_location::current(), width);
+    }
+    void setHeight(int height) {
+        height_ = height;
+        logger_.log(Logging::LogLevel::Debug, "AMOURANTH height set to {}", std::source_location::current(), height);
+    }
 
     bool getDebug() const { return ue_.getDebug(); }
-    double computeInteraction(int vertexIndex, double distance) const { return static_cast<double>(ue_.computeInteraction(vertexIndex, static_cast<long double>(distance))); }
-    double computePermeation(int vertexIndex) const { return static_cast<double>(ue_.computePermeation(vertexIndex)); }
-    double computeNurbEnergy(double distance) const { return static_cast<double>(ue_.computeNurbEnergy(static_cast<long double>(distance))); }
-    double getAlpha() const { return static_cast<double>(ue_.getAlpha()); }
-    std::span<const glm::vec3> getSphereVertices() const { return sphereVertices_; }
+    double computeInteraction(int vertexIndex, double distance) const {
+        logger_.log(Logging::LogLevel::Debug, "Computing interaction: vertexIndex={}, distance={}",
+                    std::source_location::current(), vertexIndex, distance);
+        return static_cast<double>(ue_.computeInteraction(vertexIndex, static_cast<long double>(distance)));
+    }
+    double computeNurbEnergy(double distance) const {
+        logger_.log(Logging::LogLevel::Debug, "Computing NURB energy: distance={}",
+                    std::source_location::current(), distance);
+        return static_cast<double>(ue_.computeNurbEnergy(static_cast<long double>(distance)));
+    }
+    double getAlpha() const {
+        return static_cast<double>(ue_.getAlpha());
+    }
+    std::span<const glm::vec3> getSphereVertices() const {
+        if (!sphereVertices_.empty() && reinterpret_cast<std::uintptr_t>(sphereVertices_.data()) % alignof(glm::vec3) != 0) {
+            logger_.log(Logging::LogLevel::Error, "Misaligned sphereVertices_: address={}",
+                        std::source_location::current(), reinterpret_cast<std::uintptr_t>(sphereVertices_.data()));
+            throw std::runtime_error("Misaligned sphereVertices_");
+        }
+        return sphereVertices_;
+    }
     std::span<const uint32_t> getSphereIndices() const { return sphereIndices_; }
-    std::span<const glm::vec3> getQuadVertices() const { return quadVertices_; }
+    std::span<const glm::vec3> getQuadVertices() const {
+        if (!quadVertices_.empty() && reinterpret_cast<std::uintptr_t>(quadVertices_.data()) % alignof(glm::vec3) != 0) {
+            logger_.log(Logging::LogLevel::Error, "Misaligned quadVertices_: address={}",
+                        std::source_location::current(), reinterpret_cast<std::uintptr_t>(quadVertices_.data()));
+            throw std::runtime_error("Misaligned quadVertices_");
+        }
+        return quadVertices_;
+    }
     std::span<const uint32_t> getQuadIndices() const { return quadIndices_; }
-    std::span<const glm::vec3> getTriangleVertices() const { return triangleVertices_; }
+    std::span<const glm::vec3> getTriangleVertices() const {
+        if (!triangleVertices_.empty() && reinterpret_cast<std::uintptr_t>(triangleVertices_.data()) % alignof(glm::vec3) != 0) {
+            logger_.log(Logging::LogLevel::Error, "Misaligned triangleVertices_: address={}",
+                        std::source_location::current(), reinterpret_cast<std::uintptr_t>(triangleVertices_.data()));
+            throw std::runtime_error("Misaligned triangleVertices_");
+        }
+        return triangleVertices_;
+    }
     std::span<const uint32_t> getTriangleIndices() const { return triangleIndices_; }
-    std::span<const glm::vec3> getVoxelVertices() const { return voxelVertices_; }
+    std::span<const glm::vec3> getVoxelVertices() const {
+        if (!voxelVertices_.empty() && reinterpret_cast<std::uintptr_t>(voxelVertices_.data()) % alignof(glm::vec3) != 0) {
+            logger_.log(Logging::LogLevel::Error, "Misaligned voxelVertices_: address={}",
+                        std::source_location::current(), reinterpret_cast<std::uintptr_t>(voxelVertices_.data()));
+            throw std::runtime_error("Misaligned voxelVertices_");
+        }
+        return voxelVertices_;
+    }
     std::span<const uint32_t> getVoxelIndices() const { return voxelIndices_; }
     std::span<const UniversalEquation::DimensionData> getCache() const { return cache_; }
     std::span<const Ball> getBalls() const { return balls_; }
@@ -190,7 +284,10 @@ public:
     float getZoomLevel() const { return zoomLevel_; }
     glm::vec3 getUserCamPos() const { return userCamPos_; }
     bool isUserCamActive() const { return isUserCamActive_; }
-    UniversalEquation::EnergyResult getEnergyResult() const { return ue_.compute(); }
+    UniversalEquation::EnergyResult getEnergyResult() const {
+        logger_.log(Logging::LogLevel::Debug, "Getting energy result", std::source_location::current());
+        return ue_.compute();
+    }
     std::span<const UniversalEquation::DimensionInteraction> getInteractions() const { return ue_.getInteractions(); }
     VkDevice getDevice() const { return device_; }
     VkDeviceMemory getVertexBufferMemory() const { return vertexBufferMemory_; }
@@ -206,7 +303,7 @@ private:
     void initializeBalls(float baseMass = 1.2f, float baseRadius = 0.12f, size_t numBalls = 30000);
     void updateBalls(float deltaTime);
 
-    UniversalEquation ue_;
+    mutable UniversalEquation ue_; // Mutable to allow compute() in const methods
     std::vector<UniversalEquation::DimensionData> cache_;
     std::vector<Ball> balls_;
     std::vector<glm::vec3> sphereVertices_;
@@ -233,7 +330,7 @@ private:
     VkPipeline pipeline_;
 };
 
-// Forward declarations for mode-specific rendering (unchanged)
+// Forward declarations for mode-specific rendering
 void renderMode1(AMOURANTH* amouranth, uint32_t imageIndex, VkBuffer vertexBuffer, VkCommandBuffer commandBuffer,
                  VkBuffer indexBuffer, float zoomLevel, int width, int height, float wavePhase,
                  std::span<const UniversalEquation::DimensionData> cache, VkPipelineLayout pipelineLayout, VkDescriptorSet descriptorSet,
@@ -271,7 +368,7 @@ void renderMode9(AMOURANTH* amouranth, uint32_t imageIndex, VkBuffer vertexBuffe
                  std::span<const UniversalEquation::DimensionData> cache, VkPipelineLayout pipelineLayout, VkDescriptorSet descriptorSet,
                  VkDevice device, VkDeviceMemory vertexBufferMemory, VkPipeline pipeline);
 
-// Inline implementations (unchanged except for additional validation and logging where needed)
+// Inline implementations
 inline void AMOURANTH::render(uint32_t imageIndex, VkBuffer vertexBuffer, VkCommandBuffer commandBuffer,
                               VkBuffer indexBuffer, VkPipelineLayout pipelineLayout, VkDescriptorSet descriptorSet) {
     logger_.log(Logging::LogLevel::Debug, "Rendering frame for image index {}", std::source_location::current(), imageIndex);
@@ -318,6 +415,7 @@ inline void AMOURANTH::render(uint32_t imageIndex, VkBuffer vertexBuffer, VkComm
 
 inline void AMOURANTH::update(float deltaTime) {
     if (!isPaused_) {
+        std::latch latch(1);
         wavePhase_ += waveSpeed_ * deltaTime;
         simulator_->setWavePhase(wavePhase_);
         ue_.evolveTimeStep(deltaTime);
@@ -325,10 +423,13 @@ inline void AMOURANTH::update(float deltaTime) {
         updateCache();
         logger_.log(Logging::LogLevel::Debug, "Updated simulation with deltaTime={:.3f}, wavePhase={:.3f}",
                     std::source_location::current(), deltaTime, wavePhase_);
+        latch.count_down();
+        latch.wait();
     }
 }
 
 inline void AMOURANTH::updateCache() {
+    std::latch latch(1);
     auto result = ue_.compute();
     for (size_t i = 0; i < cache_.size(); ++i) {
         cache_[i].observable = result.observable;
@@ -341,25 +442,35 @@ inline void AMOURANTH::updateCache() {
         cache_[i].GodWaveEnergy = result.GodWaveEnergy;
     }
     logger_.log(Logging::LogLevel::Debug, "Updated cache with {} entries", std::source_location::current(), cache_.size());
+    latch.count_down();
+    latch.wait();
 }
 
 inline void AMOURANTH::updateZoom(bool zoomIn) {
+    std::latch latch(1);
     zoomLevel_ *= zoomIn ? 1.1f : 0.9f;
     zoomLevel_ = std::max(0.1f, zoomLevel_);
     simulator_->setZoomLevel(zoomLevel_);
     logger_.log(Logging::LogLevel::Debug, "Updated zoom level to {:.3f}", std::source_location::current(), zoomLevel_);
+    latch.count_down();
+    latch.wait();
 }
 
 inline void AMOURANTH::setMode(int mode) {
+    std::latch latch(1);
     mode_ = glm::clamp(mode, 1, 9);
     simulator_->setMode(mode_);
-    ue_.setMode(mode_);
+    ue_.setCurrentDimension(mode_);
     logger_.log(Logging::LogLevel::Info, "Set rendering mode to {}", std::source_location::current(), mode_);
+    latch.count_down();
+    latch.wait();
 }
 
 inline void AMOURANTH::initializeSphereGeometry() {
     float radius = 0.1f; // Smaller radius for balls
     uint32_t sectors = 16, rings = 16; // Reduced for performance
+    sphereVertices_.clear();
+    sphereIndices_.clear();
     for (uint32_t i = 0; i <= rings; ++i) {
         float theta = i * std::numbers::pi_v<float> / rings;
         float sinTheta = std::sin(theta), cosTheta = std::cos(theta);
@@ -380,6 +491,11 @@ inline void AMOURANTH::initializeSphereGeometry() {
             sphereIndices_.push_back(first + 1);
         }
     }
+    if (!sphereVertices_.empty() && reinterpret_cast<std::uintptr_t>(sphereVertices_.data()) % alignof(glm::vec3) != 0) {
+        logger_.log(Logging::LogLevel::Error, "Misaligned sphereVertices_: address={}",
+                    std::source_location::current(), reinterpret_cast<std::uintptr_t>(sphereVertices_.data()));
+        throw std::runtime_error("Misaligned sphereVertices_");
+    }
     logger_.log(Logging::LogLevel::Info, "Initialized sphere geometry with {} vertices, {} indices",
                 std::source_location::current(), sphereVertices_.size(), sphereIndices_.size());
 }
@@ -387,6 +503,11 @@ inline void AMOURANTH::initializeSphereGeometry() {
 inline void AMOURANTH::initializeQuadGeometry() {
     quadVertices_ = {{-1.0f, -1.0f, 0.0f}, {1.0f, -1.0f, 0.0f}, {1.0f, 1.0f, 0.0f}, {-1.0f, 1.0f, 0.0f}};
     quadIndices_ = {0, 1, 2, 2, 3, 0};
+    if (!quadVertices_.empty() && reinterpret_cast<std::uintptr_t>(quadVertices_.data()) % alignof(glm::vec3) != 0) {
+        logger_.log(Logging::LogLevel::Error, "Misaligned quadVertices_: address={}",
+                    std::source_location::current(), reinterpret_cast<std::uintptr_t>(quadVertices_.data()));
+        throw std::runtime_error("Misaligned quadVertices_");
+    }
     logger_.log(Logging::LogLevel::Info, "Initialized quad geometry with {} vertices, {} indices",
                 std::source_location::current(), quadVertices_.size(), quadIndices_.size());
 }
@@ -394,6 +515,11 @@ inline void AMOURANTH::initializeQuadGeometry() {
 inline void AMOURANTH::initializeTriangleGeometry() {
     triangleVertices_ = {{0.0f, 0.5f, 0.0f}, {-0.5f, -0.5f, 0.0f}, {0.5f, -0.5f, 0.0f}};
     triangleIndices_ = {0, 1, 2};
+    if (!triangleVertices_.empty() && reinterpret_cast<std::uintptr_t>(triangleVertices_.data()) % alignof(glm::vec3) != 0) {
+        logger_.log(Logging::LogLevel::Error, "Misaligned triangleVertices_: address={}",
+                    std::source_location::current(), reinterpret_cast<std::uintptr_t>(triangleVertices_.data()));
+        throw std::runtime_error("Misaligned triangleVertices_");
+    }
     logger_.log(Logging::LogLevel::Info, "Initialized triangle geometry with {} vertices, {} indices",
                 std::source_location::current(), triangleVertices_.size(), triangleIndices_.size());
 }
@@ -407,17 +533,23 @@ inline void AMOURANTH::initializeVoxelGeometry() {
         0, 1, 2, 2, 3, 0, 4, 6, 5, 6, 4, 7, 0, 3, 7, 7, 4, 0,
         1, 5, 6, 6, 2, 1, 0, 4, 5, 5, 1, 0, 3, 2, 6, 6, 7, 3
     };
+    if (!voxelVertices_.empty() && reinterpret_cast<std::uintptr_t>(voxelVertices_.data()) % alignof(glm::vec3) != 0) {
+        logger_.log(Logging::LogLevel::Error, "Misaligned voxelVertices_: address={}",
+                    std::source_location::current(), reinterpret_cast<std::uintptr_t>(voxelVertices_.data()));
+        throw std::runtime_error("Misaligned voxelVertices_");
+    }
     logger_.log(Logging::LogLevel::Info, "Initialized voxel geometry with {} vertices, {} indices",
                 std::source_location::current(), voxelVertices_.size(), voxelIndices_.size());
 }
 
 inline void AMOURANTH::initializeCalculator() {
+    std::latch latch(1);
     try {
-        if (getDebug()) {
+        if (ue_.getDebug()) {
             logger_.log(Logging::LogLevel::Debug, "Initializing calculator for UniversalEquation",
                         std::source_location::current());
         }
-        ue_.initializeCalculator(simulator_);
+        ue_.initializeCalculator();
         updateCache();
         logger_.log(Logging::LogLevel::Info, "Calculator initialized successfully",
                     std::source_location::current());
@@ -426,9 +558,12 @@ inline void AMOURANTH::initializeCalculator() {
                     std::source_location::current(), e.what());
         throw;
     }
+    latch.count_down();
+    latch.wait();
 }
 
 inline void AMOURANTH::initializeBalls(float baseMass, float baseRadius, size_t numBalls) {
+    std::latch latch(1);
     balls_.clear();
     balls_.reserve(numBalls);
     auto result = ue_.compute();
@@ -442,9 +577,12 @@ inline void AMOURANTH::initializeBalls(float baseMass, float baseRadius, size_t 
     }
     logger_.log(Logging::LogLevel::Info, "Initialized {} balls with mass scale={:.3f}",
                 std::source_location::current(), balls_.size(), massScale);
+    latch.count_down();
+    latch.wait();
 }
 
 inline void AMOURANTH::updateBalls(float deltaTime) {
+    std::latch latch(1);
     auto interactions = ue_.getInteractions();
     auto result = ue_.compute();
     float simulationTime = wavePhase_;
@@ -550,6 +688,7 @@ inline void AMOURANTH::updateBalls(float deltaTime) {
         balls_[i].velocity += balls_[i].acceleration * deltaTime;
         balls_[i].position += balls_[i].velocity * deltaTime;
     }
+    logger_.log(Logging::LogLevel::Debug, "Updated {} balls", std::source_location::current(), balls_.size());
 }
 
 #endif // CORE_HPP
