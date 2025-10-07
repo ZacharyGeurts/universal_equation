@@ -1,19 +1,25 @@
-// Vulkan_RTX.hpp
-// AMOURANTH RTX Engine © 2025 by Zachary Geurts gzac5314@gmail.com is licensed under CC BY-NC 4.0
-
 #ifndef VULKAN_RTX_HPP
 #define VULKAN_RTX_HPP
+
+// AMOURANTH RTX Engine © 2025 by Zachary Geurts gzac5314@gmail.com is licensed under CC BY-NC 4.0
 
 #define VK_NO_PROTOTYPES
 #include <vulkan/vulkan.h>
 #include <vector>
 #include <string>
 #include <stdexcept>
-#include <mutex>
+#include <atomic>
+#include <mutex> // Added for mutex
 #include <glm/glm.hpp>
 #include <dlfcn.h>
+#include "engine/logging.hpp"
 
-#define VK_CHECK(result, msg) do { if ((result) != VK_SUCCESS) { throw VulkanRTXException(std::string(msg) + " (Error code: " + std::to_string(result) + ")"); } } while (0)
+#define VK_CHECK(result, msg) do { \
+    if ((result) != VK_SUCCESS) { \
+        logger_.log(Logging::LogLevel::Error, "{} (Error code: {})", std::source_location::current(), (msg), (result)); \
+        throw VulkanRTXException(std::string(msg) + " (Error code: " + std::to_string(static_cast<int>(result)) + ")"); \
+    } \
+} while (0)
 
 // Define operator== for VkAccelerationStructureBuildRangeInfoKHR in global namespace
 inline bool operator==(const VkAccelerationStructureBuildRangeInfoKHR& lhs, const VkAccelerationStructureBuildRangeInfoKHR& rhs) {
@@ -130,7 +136,7 @@ public:
         VulkanResource<VkDeviceMemory, PFN_vkFreeMemory> memory;
     };
 
-    VulkanRTX(VkDevice device, const std::vector<std::string>& shaderPaths);
+    VulkanRTX(VkDevice device, const std::vector<std::string>& shaderPaths, Logging::Logger logger = Logging::Logger());
     ~VulkanRTX() = default;
 
     void createDescriptorSetLayout();
@@ -174,11 +180,14 @@ public:
     void compactAccelerationStructures(VkPhysicalDevice physicalDevice, VkCommandPool commandPool, VkQueue queue);
 
 private:
-    static std::mutex functionPtrMutex_;
-    static std::mutex shaderModuleMutex_;
+    static std::atomic<bool> functionPtrInitialized_;
+    static std::atomic<bool> shaderModuleInitialized_;
+    static std::mutex functionPtrMutex_; // Added static mutex
+    static std::mutex shaderModuleMutex_; // Added static mutex
 
     VkDevice device_;
     std::vector<std::string> shaderPaths_;
+    Logging::Logger logger_;
     VulkanResource<VkDescriptorSetLayout, PFN_vkDestroyDescriptorSetLayout> dsLayout_;
     VulkanResource<VkDescriptorPool, PFN_vkDestroyDescriptorPool> dsPool_;
     VulkanDescriptorSet ds_;

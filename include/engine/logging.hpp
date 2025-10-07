@@ -68,6 +68,43 @@ public:
         });
     }
 
+    // Move constructor (Fix for deleted copy constructor error)
+    Logger(Logger&& other) noexcept
+        : logQueue_(std::move(other.logQueue_)),
+          head_(other.head_.load()),
+          tail_(other.tail_.load()),
+          running_(other.running_.load()),
+          level_(other.level_.load()),
+          logFile_(std::move(other.logFile_)),
+          worker_(std::move(other.worker_)) {
+        other.head_.store(0);
+        other.tail_.store(0);
+        other.running_.store(false);
+    }
+
+    // Move assignment operator
+    Logger& operator=(Logger&& other) noexcept {
+        if (this != &other) {
+            stop();
+            if (logFile_.is_open()) logFile_.close();
+            logQueue_ = std::move(other.logQueue_);
+            head_.store(other.head_.load());
+            tail_.store(other.tail_.load());
+            running_.store(other.running_.load());
+            level_.store(other.level_.load());
+            logFile_ = std::move(other.logFile_);
+            worker_ = std::move(other.worker_);
+            other.head_.store(0);
+            other.tail_.store(0);
+            other.running_.store(false);
+        }
+        return *this;
+    }
+
+    // Delete copy constructor and assignment
+    Logger(const Logger&) = delete;
+    Logger& operator=(const Logger&) = delete;
+
     ~Logger() {
         stop();
         if (logFile_.is_open()) {

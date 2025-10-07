@@ -1,43 +1,31 @@
-// VulkanRTX_Setup.cpp
 // AMOURANTH RTX Engine © 2025 by Zachary Geurts gzac5314@gmail.com is licensed under CC BY-NC 4.0
 #include "engine/Vulkan/Vulkan_RTX.hpp"
-#include <spdlog/spdlog.h>
-#include <fstream>
-#include <cstring>
-#include <array>
 #include <future>
 #include <thread>
 #include <algorithm>
 #include <ranges>
-#include <syncstream>
-#include <iostream>
-#include <format>
-
-// Define color macros for logging
-#define GREEN "\033[32m"
-#define MAGENTA "\033[35m"
-#define CYAN "\033[36m"
-#define YELLOW "\033[33m"
-#define RESET "\033[0m"
+#include <cstring> // Added for memcpy
 
 namespace VulkanRTX {
 
+std::atomic<bool> VulkanRTX::functionPtrInitialized_{false};
+std::atomic<bool> VulkanRTX::shaderModuleInitialized_{false};
 std::mutex VulkanRTX::functionPtrMutex_;
 std::mutex VulkanRTX::shaderModuleMutex_;
 
-// ShaderBindingTable implementation
+// ShaderBindingTable implementation (Moved from Vulkan_RTX.hpp)
 VulkanRTX::ShaderBindingTable::ShaderBindingTable(VkDevice device, VulkanRTX* parent_)
     : parent(parent_),
       buffer(device, VK_NULL_HANDLE, parent_->vkDestroyBuffer),
       memory(device, VK_NULL_HANDLE, parent_->vkFreeMemory) {
-    std::osyncstream(std::cout) << GREEN << "[INFO] Created ShaderBindingTable" << RESET << std::endl;
+    parent_->logger_.log(Logging::LogLevel::Info, "Created ShaderBindingTable", std::source_location::current());
 }
 
 VulkanRTX::ShaderBindingTable::~ShaderBindingTable() {
-    std::osyncstream(std::cout) << GREEN << "[INFO] Destroyed ShaderBindingTable" << RESET << std::endl;
+    parent->logger_.log(Logging::LogLevel::Info, "Destroyed ShaderBindingTable", std::source_location::current());
 }
 
-VulkanRTX::ShaderBindingTable::ShaderBindingTable(VulkanRTX::ShaderBindingTable&& other) noexcept
+VulkanRTX::ShaderBindingTable::ShaderBindingTable(ShaderBindingTable&& other) noexcept
     : raygen(other.raygen),
       miss(other.miss),
       hit(other.hit),
@@ -50,10 +38,10 @@ VulkanRTX::ShaderBindingTable::ShaderBindingTable(VulkanRTX::ShaderBindingTable&
     other.hit = {};
     other.callable = {};
     other.parent = nullptr;
-    std::osyncstream(std::cout) << GREEN << "[INFO] Moved ShaderBindingTable" << RESET << std::endl;
+    parent->logger_.log(Logging::LogLevel::Info, "Moved ShaderBindingTable", std::source_location::current());
 }
 
-VulkanRTX::ShaderBindingTable& VulkanRTX::ShaderBindingTable::operator=(VulkanRTX::ShaderBindingTable&& other) noexcept {
+VulkanRTX::ShaderBindingTable& VulkanRTX::ShaderBindingTable::operator=(ShaderBindingTable&& other) noexcept {
     if (this != &other) {
         raygen = other.raygen;
         miss = other.miss;
@@ -67,15 +55,16 @@ VulkanRTX::ShaderBindingTable& VulkanRTX::ShaderBindingTable::operator=(VulkanRT
         other.hit = {};
         other.callable = {};
         other.parent = nullptr;
-        std::osyncstream(std::cout) << GREEN << "[INFO] Move-assigned ShaderBindingTable" << RESET << std::endl;
+        parent->logger_.log(Logging::LogLevel::Info, "Move-assigned ShaderBindingTable", std::source_location::current());
     }
     return *this;
 }
 
 // Constructor: Initialize Vulkan RTX with thread-safe extension loading
-VulkanRTX::VulkanRTX(VkDevice device, const std::vector<std::string>& shaderPaths)
+VulkanRTX::VulkanRTX(VkDevice device, const std::vector<std::string>& shaderPaths, Logging::Logger logger)
     : device_(device),
       shaderPaths_(shaderPaths),
+      logger_(std::move(logger)),
       dsLayout_(device, VK_NULL_HANDLE, vkDestroyDescriptorSetLayout),
       dsPool_(device, VK_NULL_HANDLE, vkDestroyDescriptorPool),
       ds_(device, VK_NULL_HANDLE, VK_NULL_HANDLE, vkFreeDescriptorSets),
@@ -95,72 +84,85 @@ VulkanRTX::VulkanRTX(VkDevice device, const std::vector<std::string>& shaderPath
       shaderFeatures_(ShaderFeatures::None),
       sbt_(device, this) {
     if (!device) {
-        std::osyncstream(std::cerr) << MAGENTA << "[ERROR] Null Vulkan device provided" << RESET << std::endl;
+        logger_.log(Logging::LogLevel::Error, "Null Vulkan device provided", std::source_location::current());
         throw VulkanRTXException("Null Vulkan device provided.");
     }
 
-    std::osyncstream(std::cout) << GREEN << std::format("[INFO] Starting VulkanRTX initialization with {} shader paths", shaderPaths.size()) << RESET << std::endl;
+    logger_.log(Logging::LogLevel::Info, "Starting VulkanRTX initialization with {} shader paths", std::source_location::current(), shaderPaths.size());
 
-    // Load Vulkan function pointers
-    std::lock_guard<std::mutex> lock(functionPtrMutex_);
-    vkGetDeviceProcAddrFunc = reinterpret_cast<PFN_vkGetDeviceProcAddr>(dlsym(dlopen(nullptr, RTLD_LAZY), "vkGetDeviceProcAddr"));
-    vkGetBufferDeviceAddressFunc = reinterpret_cast<PFN_vkGetBufferDeviceAddress>(vkGetDeviceProcAddrFunc(device_, "vkGetBufferDeviceAddress"));
-    vkCmdTraceRaysKHR = reinterpret_cast<PFN_vkCmdTraceRaysKHR>(vkGetDeviceProcAddrFunc(device_, "vkCmdTraceRaysKHR"));
-    vkCreateASFunc = reinterpret_cast<PFN_vkCreateAccelerationStructureKHR>(vkGetDeviceProcAddrFunc(device_, "vkCreateAccelerationStructureKHR"));
-    vkDestroyASFunc = reinterpret_cast<PFN_vkDestroyAccelerationStructureKHR>(vkGetDeviceProcAddrFunc(device_, "vkDestroyAccelerationStructureKHR"));
-    vkGetASBuildSizesFunc = reinterpret_cast<PFN_vkGetAccelerationStructureBuildSizesKHR>(vkGetDeviceProcAddrFunc(device_, "vkGetAccelerationStructureBuildSizesKHR"));
-    vkCmdBuildASFunc = reinterpret_cast<PFN_vkCmdBuildAccelerationStructuresKHR>(vkGetDeviceProcAddrFunc(device_, "vkCmdBuildAccelerationStructuresKHR"));
-    vkGetASDeviceAddressFunc = reinterpret_cast<PFN_vkGetAccelerationStructureDeviceAddressKHR>(vkGetDeviceProcAddrFunc(device_, "vkGetAccelerationStructureDeviceAddressKHR"));
-    vkCreateRayTracingPipelinesKHR = reinterpret_cast<PFN_vkCreateRayTracingPipelinesKHR>(vkGetDeviceProcAddrFunc(device_, "vkCreateRayTracingPipelinesKHR"));
-    vkGetRayTracingShaderGroupHandlesKHR = reinterpret_cast<PFN_vkGetRayTracingShaderGroupHandlesKHR>(vkGetDeviceProcAddrFunc(device_, "vkGetRayTracingShaderGroupHandlesKHR"));
-    vkCmdCopyAccelerationStructureKHR = reinterpret_cast<PFN_vkCmdCopyAccelerationStructureKHR>(vkGetDeviceProcAddrFunc(device_, "vkCmdCopyAccelerationStructureKHR"));
-    vkCreateDescriptorSetLayoutFunc = reinterpret_cast<PFN_vkCreateDescriptorSetLayout>(vkGetDeviceProcAddrFunc(device_, "vkCreateDescriptorSetLayout"));
-    vkAllocateDescriptorSetsFunc = reinterpret_cast<PFN_vkAllocateDescriptorSets>(vkGetDeviceProcAddrFunc(device_, "vkAllocateDescriptorSets"));
-    vkCreateDescriptorPoolFunc = reinterpret_cast<PFN_vkCreateDescriptorPool>(vkGetDeviceProcAddrFunc(device_, "vkCreateDescriptorPool"));
-    vkGetPhysicalDeviceProperties2Func = reinterpret_cast<PFN_vkGetPhysicalDeviceProperties2>(vkGetDeviceProcAddrFunc(device_, "vkGetPhysicalDeviceProperties2"));
-    vkCreateShaderModuleFunc = reinterpret_cast<PFN_vkCreateShaderModule>(vkGetDeviceProcAddrFunc(device_, "vkCreateShaderModule"));
-    vkDestroyDescriptorSetLayout = reinterpret_cast<PFN_vkDestroyDescriptorSetLayout>(vkGetDeviceProcAddrFunc(device_, "vkDestroyDescriptorSetLayout"));
-    vkDestroyDescriptorPool = reinterpret_cast<PFN_vkDestroyDescriptorPool>(vkGetDeviceProcAddrFunc(device_, "vkDestroyDescriptorPool"));
-    vkFreeDescriptorSets = reinterpret_cast<PFN_vkFreeDescriptorSets>(vkGetDeviceProcAddrFunc(device_, "vkFreeDescriptorSets"));
-    vkDestroyPipelineLayout = reinterpret_cast<PFN_vkDestroyPipelineLayout>(vkGetDeviceProcAddrFunc(device_, "vkDestroyPipelineLayout"));
-    vkDestroyPipeline = reinterpret_cast<PFN_vkDestroyPipeline>(vkGetDeviceProcAddrFunc(device_, "vkDestroyPipeline"));
-    vkDestroyBuffer = reinterpret_cast<PFN_vkDestroyBuffer>(vkGetDeviceProcAddrFunc(device_, "vkDestroyBuffer"));
-    vkFreeMemory = reinterpret_cast<PFN_vkFreeMemory>(vkGetDeviceProcAddrFunc(device_, "vkFreeMemory"));
-    vkCreateBuffer = reinterpret_cast<PFN_vkCreateBuffer>(vkGetDeviceProcAddrFunc(device_, "vkCreateBuffer"));
-    vkAllocateMemory = reinterpret_cast<PFN_vkAllocateMemory>(vkGetDeviceProcAddrFunc(device_, "vkAllocateMemory"));
-    vkBindBufferMemory = reinterpret_cast<PFN_vkBindBufferMemory>(vkGetDeviceProcAddrFunc(device_, "vkBindBufferMemory"));
-    vkGetPhysicalDeviceMemoryProperties = reinterpret_cast<PFN_vkGetPhysicalDeviceMemoryProperties>(vkGetDeviceProcAddrFunc(device_, "vkGetPhysicalDeviceMemoryProperties"));
-    vkBeginCommandBuffer = reinterpret_cast<PFN_vkBeginCommandBuffer>(vkGetDeviceProcAddrFunc(device_, "vkBeginCommandBuffer"));
-    vkEndCommandBuffer = reinterpret_cast<PFN_vkEndCommandBuffer>(vkGetDeviceProcAddrFunc(device_, "vkEndCommandBuffer"));
-    vkAllocateCommandBuffers = reinterpret_cast<PFN_vkAllocateCommandBuffers>(vkGetDeviceProcAddrFunc(device_, "vkAllocateCommandBuffers"));
-    vkQueueSubmit = reinterpret_cast<PFN_vkQueueSubmit>(vkGetDeviceProcAddrFunc(device_, "vkQueueSubmit"));
-    vkQueueWaitIdle = reinterpret_cast<PFN_vkQueueWaitIdle>(vkGetDeviceProcAddrFunc(device_, "vkQueueWaitIdle"));
-    vkFreeCommandBuffers = reinterpret_cast<PFN_vkFreeCommandBuffers>(vkGetDeviceProcAddrFunc(device_, "vkFreeCommandBuffers"));
-    vkGetBufferMemoryRequirements = reinterpret_cast<PFN_vkGetBufferMemoryRequirements>(vkGetDeviceProcAddrFunc(device_, "vkGetBufferMemoryRequirements"));
-    vkMapMemory = reinterpret_cast<PFN_vkMapMemory>(vkGetDeviceProcAddrFunc(device_, "vkMapMemory"));
-    vkUnmapMemory = reinterpret_cast<PFN_vkUnmapMemory>(vkGetDeviceProcAddrFunc(device_, "vkUnmapMemory"));
-    vkCreateImage = reinterpret_cast<PFN_vkCreateImage>(vkGetDeviceProcAddrFunc(device_, "vkCreateImage"));
-    vkDestroyImage = reinterpret_cast<PFN_vkDestroyImage>(vkGetDeviceProcAddrFunc(device_, "vkDestroyImage"));
-    vkGetImageMemoryRequirements = reinterpret_cast<PFN_vkGetImageMemoryRequirements>(vkGetDeviceProcAddrFunc(device_, "vkGetImageMemoryRequirements"));
-    vkBindImageMemory = reinterpret_cast<PFN_vkBindImageMemory>(vkGetDeviceProcAddrFunc(device_, "vkBindImageMemory"));
-    vkCreateImageView = reinterpret_cast<PFN_vkCreateImageView>(vkGetDeviceProcAddrFunc(device_, "vkCreateImageView"));
-    vkDestroyImageView = reinterpret_cast<PFN_vkDestroyImageView>(vkGetDeviceProcAddrFunc(device_, "vkDestroyImageView"));
-    vkUpdateDescriptorSets = reinterpret_cast<PFN_vkUpdateDescriptorSets>(vkGetDeviceProcAddrFunc(device_, "vkUpdateDescriptorSets"));
-    vkCmdPipelineBarrier = reinterpret_cast<PFN_vkCmdPipelineBarrier>(vkGetDeviceProcAddrFunc(device_, "vkCmdPipelineBarrier"));
-    vkCmdBindPipeline = reinterpret_cast<PFN_vkCmdBindPipeline>(vkGetDeviceProcAddrFunc(device_, "vkCmdBindPipeline"));
-    vkCmdBindDescriptorSets = reinterpret_cast<PFN_vkCmdBindDescriptorSets>(vkGetDeviceProcAddrFunc(device_, "vkCmdBindDescriptorSets"));
-    vkCmdPushConstants = reinterpret_cast<PFN_vkCmdPushConstants>(vkGetDeviceProcAddrFunc(device_, "vkCmdPushConstants"));
-    vkCmdCopyBuffer = reinterpret_cast<PFN_vkCmdCopyBuffer>(vkGetDeviceProcAddrFunc(device_, "vkCmdCopyBuffer"));
-    vkCreatePipelineLayout = reinterpret_cast<PFN_vkCreatePipelineLayout>(vkGetDeviceProcAddrFunc(device_, "vkCreatePipelineLayout"));
-    vkCreateComputePipelines = reinterpret_cast<PFN_vkCreateComputePipelines>(vkGetDeviceProcAddrFunc(device_, "vkCreateComputePipelines"));
-    vkCmdDispatch = reinterpret_cast<PFN_vkCmdDispatch>(vkGetDeviceProcAddrFunc(device_, "vkCmdDispatch"));
-    vkDestroyShaderModule = reinterpret_cast<PFN_vkDestroyShaderModule>(vkGetDeviceProcAddrFunc(device_, "vkDestroyShaderModule"));
+    // Load Vulkan function pointers with atomic flag
+    bool expected = false;
+    if (functionPtrInitialized_.compare_exchange_strong(expected, true, std::memory_order_acq_rel)) {
+        std::lock_guard<std::mutex> lock(functionPtrMutex_);
+        vkGetDeviceProcAddrFunc = reinterpret_cast<PFN_vkGetDeviceProcAddr>(dlsym(dlopen(nullptr, RTLD_LAZY), "vkGetDeviceProcAddr"));
+        if (!vkGetDeviceProcAddrFunc) {
+            logger_.log(Logging::LogLevel::Error, "Failed to load vkGetDeviceProcAddr", std::source_location::current());
+            throw VulkanRTXException("Failed to load vkGetDeviceProcAddr.");
+        }
+
+        vkGetBufferDeviceAddressFunc = reinterpret_cast<PFN_vkGetBufferDeviceAddress>(vkGetDeviceProcAddrFunc(device_, "vkGetBufferDeviceAddress"));
+        vkCmdTraceRaysKHR = reinterpret_cast<PFN_vkCmdTraceRaysKHR>(vkGetDeviceProcAddrFunc(device_, "vkCmdTraceRaysKHR"));
+        vkCreateASFunc = reinterpret_cast<PFN_vkCreateAccelerationStructureKHR>(vkGetDeviceProcAddrFunc(device_, "vkCreateAccelerationStructureKHR"));
+        vkDestroyASFunc = reinterpret_cast<PFN_vkDestroyAccelerationStructureKHR>(vkGetDeviceProcAddrFunc(device_, "vkDestroyAccelerationStructureKHR"));
+        vkGetASBuildSizesFunc = reinterpret_cast<PFN_vkGetAccelerationStructureBuildSizesKHR>(vkGetDeviceProcAddrFunc(device_, "vkGetAccelerationStructureBuildSizesKHR"));
+        vkCmdBuildASFunc = reinterpret_cast<PFN_vkCmdBuildAccelerationStructuresKHR>(vkGetDeviceProcAddrFunc(device_, "vkCmdBuildAccelerationStructuresKHR"));
+        vkGetASDeviceAddressFunc = reinterpret_cast<PFN_vkGetAccelerationStructureDeviceAddressKHR>(vkGetDeviceProcAddrFunc(device_, "vkGetAccelerationStructureDeviceAddressKHR"));
+        vkCreateRayTracingPipelinesKHR = reinterpret_cast<PFN_vkCreateRayTracingPipelinesKHR>(vkGetDeviceProcAddrFunc(device_, "vkCreateRayTracingPipelinesKHR"));
+        vkGetRayTracingShaderGroupHandlesKHR = reinterpret_cast<PFN_vkGetRayTracingShaderGroupHandlesKHR>(vkGetDeviceProcAddrFunc(device_, "vkGetRayTracingShaderGroupHandlesKHR"));
+        vkCmdCopyAccelerationStructureKHR = reinterpret_cast<PFN_vkCmdCopyAccelerationStructureKHR>(vkGetDeviceProcAddrFunc(device_, "vkCmdCopyAccelerationStructureKHR"));
+        vkCreateDescriptorSetLayoutFunc = reinterpret_cast<PFN_vkCreateDescriptorSetLayout>(vkGetDeviceProcAddrFunc(device_, "vkCreateDescriptorSetLayout"));
+        vkAllocateDescriptorSetsFunc = reinterpret_cast<PFN_vkAllocateDescriptorSets>(vkGetDeviceProcAddrFunc(device_, "vkAllocateDescriptorSets"));
+        vkCreateDescriptorPoolFunc = reinterpret_cast<PFN_vkCreateDescriptorPool>(vkGetDeviceProcAddrFunc(device_, "vkCreateDescriptorPool"));
+        vkGetPhysicalDeviceProperties2Func = reinterpret_cast<PFN_vkGetPhysicalDeviceProperties2>(vkGetDeviceProcAddrFunc(device_, "vkGetPhysicalDeviceProperties2"));
+        vkCreateShaderModuleFunc = reinterpret_cast<PFN_vkCreateShaderModule>(vkGetDeviceProcAddrFunc(device_, "vkCreateShaderModule"));
+        vkDestroyDescriptorSetLayout = reinterpret_cast<PFN_vkDestroyDescriptorSetLayout>(vkGetDeviceProcAddrFunc(device_, "vkDestroyDescriptorSetLayout"));
+        vkDestroyDescriptorPool = reinterpret_cast<PFN_vkDestroyDescriptorPool>(vkGetDeviceProcAddrFunc(device_, "vkDestroyDescriptorPool"));
+        vkFreeDescriptorSets = reinterpret_cast<PFN_vkFreeDescriptorSets>(vkGetDeviceProcAddrFunc(device_, "vkFreeDescriptorSets"));
+        vkDestroyPipelineLayout = reinterpret_cast<PFN_vkDestroyPipelineLayout>(vkGetDeviceProcAddrFunc(device_, "vkDestroyPipelineLayout"));
+        vkDestroyPipeline = reinterpret_cast<PFN_vkDestroyPipeline>(vkGetDeviceProcAddrFunc(device_, "vkDestroyPipeline"));
+        vkDestroyBuffer = reinterpret_cast<PFN_vkDestroyBuffer>(vkGetDeviceProcAddrFunc(device_, "vkDestroyBuffer"));
+        vkFreeMemory = reinterpret_cast<PFN_vkFreeMemory>(vkGetDeviceProcAddrFunc(device_, "vkFreeMemory"));
+        vkCreateQueryPool = reinterpret_cast<PFN_vkCreateQueryPool>(vkGetDeviceProcAddrFunc(device_, "vkCreateQueryPool"));
+        vkDestroyQueryPool = reinterpret_cast<PFN_vkDestroyQueryPool>(vkGetDeviceProcAddrFunc(device_, "vkDestroyQueryPool"));
+        vkGetQueryPoolResults = reinterpret_cast<PFN_vkGetQueryPoolResults>(vkGetDeviceProcAddrFunc(device_, "vkGetQueryPoolResults"));
+        vkCmdWriteAccelerationStructuresPropertiesKHR = reinterpret_cast<PFN_vkCmdWriteAccelerationStructuresPropertiesKHR>(vkGetDeviceProcAddrFunc(device_, "vkCmdWriteAccelerationStructuresPropertiesKHR"));
+        vkCreateBuffer = reinterpret_cast<PFN_vkCreateBuffer>(vkGetDeviceProcAddrFunc(device_, "vkCreateBuffer"));
+        vkAllocateMemory = reinterpret_cast<PFN_vkAllocateMemory>(vkGetDeviceProcAddrFunc(device_, "vkAllocateMemory"));
+        vkBindBufferMemory = reinterpret_cast<PFN_vkBindBufferMemory>(vkGetDeviceProcAddrFunc(device_, "vkBindBufferMemory"));
+        vkGetPhysicalDeviceMemoryProperties = reinterpret_cast<PFN_vkGetPhysicalDeviceMemoryProperties>(vkGetDeviceProcAddrFunc(device_, "vkGetPhysicalDeviceMemoryProperties"));
+        vkBeginCommandBuffer = reinterpret_cast<PFN_vkBeginCommandBuffer>(vkGetDeviceProcAddrFunc(device_, "vkBeginCommandBuffer"));
+        vkEndCommandBuffer = reinterpret_cast<PFN_vkEndCommandBuffer>(vkGetDeviceProcAddrFunc(device_, "vkEndCommandBuffer"));
+        vkAllocateCommandBuffers = reinterpret_cast<PFN_vkAllocateCommandBuffers>(vkGetDeviceProcAddrFunc(device_, "vkAllocateCommandBuffers"));
+        vkQueueSubmit = reinterpret_cast<PFN_vkQueueSubmit>(vkGetDeviceProcAddrFunc(device_, "vkQueueSubmit"));
+        vkQueueWaitIdle = reinterpret_cast<PFN_vkQueueWaitIdle>(vkGetDeviceProcAddrFunc(device_, "vkQueueWaitIdle"));
+        vkFreeCommandBuffers = reinterpret_cast<PFN_vkFreeCommandBuffers>(vkGetDeviceProcAddrFunc(device_, "vkFreeCommandBuffers"));
+        vkCmdResetQueryPool = reinterpret_cast<PFN_vkCmdResetQueryPool>(vkGetDeviceProcAddrFunc(device_, "vkCmdResetQueryPool"));
+        vkGetBufferMemoryRequirements = reinterpret_cast<PFN_vkGetBufferMemoryRequirements>(vkGetDeviceProcAddrFunc(device_, "vkGetBufferMemoryRequirements"));
+        vkMapMemory = reinterpret_cast<PFN_vkMapMemory>(vkGetDeviceProcAddrFunc(device_, "vkMapMemory"));
+        vkUnmapMemory = reinterpret_cast<PFN_vkUnmapMemory>(vkGetDeviceProcAddrFunc(device_, "vkUnmapMemory"));
+        vkCreateImage = reinterpret_cast<PFN_vkCreateImage>(vkGetDeviceProcAddrFunc(device_, "vkCreateImage"));
+        vkDestroyImage = reinterpret_cast<PFN_vkDestroyImage>(vkGetDeviceProcAddrFunc(device_, "vkDestroyImage"));
+        vkGetImageMemoryRequirements = reinterpret_cast<PFN_vkGetImageMemoryRequirements>(vkGetDeviceProcAddrFunc(device_, "vkGetImageMemoryRequirements"));
+        vkBindImageMemory = reinterpret_cast<PFN_vkBindImageMemory>(vkGetDeviceProcAddrFunc(device_, "vkBindImageMemory"));
+        vkCreateImageView = reinterpret_cast<PFN_vkCreateImageView>(vkGetDeviceProcAddrFunc(device_, "vkCreateImageView"));
+        vkDestroyImageView = reinterpret_cast<PFN_vkDestroyImageView>(vkGetDeviceProcAddrFunc(device_, "vkDestroyImageView"));
+        vkUpdateDescriptorSets = reinterpret_cast<PFN_vkUpdateDescriptorSets>(vkGetDeviceProcAddrFunc(device_, "vkUpdateDescriptorSets"));
+        vkCmdPipelineBarrier = reinterpret_cast<PFN_vkCmdPipelineBarrier>(vkGetDeviceProcAddrFunc(device_, "vkCmdPipelineBarrier"));
+        vkCmdBindPipeline = reinterpret_cast<PFN_vkCmdBindPipeline>(vkGetDeviceProcAddrFunc(device_, "vkCmdBindPipeline"));
+        vkCmdBindDescriptorSets = reinterpret_cast<PFN_vkCmdBindDescriptorSets>(vkGetDeviceProcAddrFunc(device_, "vkCmdBindDescriptorSets"));
+        vkCmdPushConstants = reinterpret_cast<PFN_vkCmdPushConstants>(vkGetDeviceProcAddrFunc(device_, "vkCmdPushConstants"));
+        vkCmdCopyBuffer = reinterpret_cast<PFN_vkCmdCopyBuffer>(vkGetDeviceProcAddrFunc(device_, "vkCmdCopyBuffer"));
+        vkCreatePipelineLayout = reinterpret_cast<PFN_vkCreatePipelineLayout>(vkGetDeviceProcAddrFunc(device_, "vkCreatePipelineLayout"));
+        vkCreateComputePipelines = reinterpret_cast<PFN_vkCreateComputePipelines>(vkGetDeviceProcAddrFunc(device_, "vkCreateComputePipelines"));
+        vkCmdDispatch = reinterpret_cast<PFN_vkCmdDispatch>(vkGetDeviceProcAddrFunc(device_, "vkCmdDispatch"));
+        vkDestroyShaderModule = reinterpret_cast<PFN_vkDestroyShaderModule>(vkGetDeviceProcAddrFunc(device_, "vkDestroyShaderModule"));
+    }
 
     if (!vkGetBufferDeviceAddressFunc || !vkCmdTraceRaysKHR || !vkCreateASFunc ||
         !vkDestroyASFunc || !vkGetASBuildSizesFunc || !vkCmdBuildASFunc ||
         !vkGetASDeviceAddressFunc || !vkCreateRayTracingPipelinesKHR ||
         !vkGetRayTracingShaderGroupHandlesKHR) {
-        std::osyncstream(std::cerr) << MAGENTA << "[ERROR] Device lacks required ray tracing extensions" << RESET << std::endl;
+        logger_.log(Logging::LogLevel::Error, "Device lacks required ray tracing extensions (Vulkan 1.2+ with VK_KHR_ray_tracing_pipeline)", std::source_location::current());
         throw VulkanRTXException("Device lacks required ray tracing extensions (Vulkan 1.2+ with VK_KHR_ray_tracing_pipeline).");
     }
     supportsCompaction_ = (vkCmdCopyAccelerationStructureKHR != nullptr);
@@ -169,12 +171,12 @@ VulkanRTX::VulkanRTX(VkDevice device, const std::vector<std::string>& shaderPath
     blas_ = VulkanResource<VkAccelerationStructureKHR, PFN_vkDestroyAccelerationStructureKHR>(device_, VK_NULL_HANDLE, vkDestroyASFunc);
     tlas_ = VulkanResource<VkAccelerationStructureKHR, PFN_vkDestroyAccelerationStructureKHR>(device_, VK_NULL_HANDLE, vkDestroyASFunc);
 
-    std::osyncstream(std::cout) << GREEN << std::format("[INFO] VulkanRTX initialized successfully, supportsCompaction={}", supportsCompaction_) << RESET << std::endl;
+    logger_.log(Logging::LogLevel::Info, "VulkanRTX initialized successfully, supportsCompaction={}", std::source_location::current(), supportsCompaction_);
 }
 
 // Create descriptor set layout with all required bindings
 void VulkanRTX::createDescriptorSetLayout() {
-    std::osyncstream(std::cout) << GREEN << "[INFO] Creating descriptor set layout" << RESET << std::endl;
+    logger_.log(Logging::LogLevel::Info, "Creating descriptor set layout", std::source_location::current());
 
     constexpr uint32_t BINDING_COUNT = 6;
     std::array<VkDescriptorSetLayoutBinding, BINDING_COUNT> bindings = {};
@@ -236,12 +238,12 @@ void VulkanRTX::createDescriptorSetLayout() {
     VkDescriptorSetLayout tempLayout = VK_NULL_HANDLE;
     VK_CHECK(vkCreateDescriptorSetLayoutFunc(device_, &layoutInfo, nullptr, &tempLayout), "Descriptor set layout creation failed");
     dsLayout_ = VulkanResource<VkDescriptorSetLayout, PFN_vkDestroyDescriptorSetLayout>(device_, tempLayout, vkDestroyDescriptorSetLayout);
-    std::osyncstream(std::cout) << GREEN << std::format("[INFO] Created descriptor set layout with {} bindings", BINDING_COUNT) << RESET << std::endl;
+    logger_.log(Logging::LogLevel::Info, "Created descriptor set layout with {} bindings", std::source_location::current(), BINDING_COUNT);
 }
 
 // Create descriptor pool and allocate a single descriptor set
 void VulkanRTX::createDescriptorPoolAndSet() {
-    std::osyncstream(std::cout) << GREEN << "[INFO] Creating descriptor pool and set" << RESET << std::endl;
+    logger_.log(Logging::LogLevel::Info, "Creating descriptor pool and set", std::source_location::current());
 
     constexpr uint32_t POOL_SIZE_COUNT = 5;
     std::array<VkDescriptorPoolSize, POOL_SIZE_COUNT> poolSizes = {{
@@ -275,12 +277,12 @@ void VulkanRTX::createDescriptorPoolAndSet() {
     VkDescriptorSet descriptorSet = VK_NULL_HANDLE;
     VK_CHECK(vkAllocateDescriptorSetsFunc(device_, &allocInfo, &descriptorSet), "Descriptor set allocation failed");
     ds_ = VulkanDescriptorSet(device_, dsPool_.get(), descriptorSet, vkFreeDescriptorSets);
-    std::osyncstream(std::cout) << GREEN << "[INFO] Created descriptor pool and allocated descriptor set" << RESET << std::endl;
+    logger_.log(Logging::LogLevel::Info, "Created descriptor pool and allocated descriptor set", std::source_location::current());
 }
 
 // Create ray tracing pipeline with dynamic shader groups
 void VulkanRTX::createRayTracingPipeline(uint32_t maxRayRecursionDepth) {
-    std::osyncstream(std::cout) << GREEN << std::format("[INFO] Starting ray tracing pipeline creation with max recursion depth={}", maxRayRecursionDepth) << RESET << std::endl;
+    logger_.log(Logging::LogLevel::Info, "Starting ray tracing pipeline creation with max recursion depth={}", std::source_location::current(), maxRayRecursionDepth);
 
     std::vector<VkShaderModule> shaderModules(shaderPaths_.size(), VK_NULL_HANDLE);
     loadShadersAsync(shaderModules, shaderPaths_);
@@ -288,15 +290,15 @@ void VulkanRTX::createRayTracingPipeline(uint32_t maxRayRecursionDepth) {
     shaderFeatures_ = ShaderFeatures::None;
     if (shaderModules.size() > 3 && shaderModules[3] != VK_NULL_HANDLE) {
         shaderFeatures_ = static_cast<ShaderFeatures>(static_cast<uint32_t>(shaderFeatures_) | static_cast<uint32_t>(ShaderFeatures::AnyHit));
-        std::osyncstream(std::cout) << CYAN << "[DEBUG] Any-hit shader detected and enabled" << RESET << std::endl;
+        logger_.log(Logging::LogLevel::Debug, "Any-hit shader detected and enabled", std::source_location::current());
     }
     if (shaderModules.size() > 4 && shaderModules[4] != VK_NULL_HANDLE) {
         shaderFeatures_ = static_cast<ShaderFeatures>(static_cast<uint32_t>(shaderFeatures_) | static_cast<uint32_t>(ShaderFeatures::Intersection));
-        std::osyncstream(std::cout) << CYAN << "[DEBUG] Intersection shader detected and enabled for voxel procedural geometry" << RESET << std::endl;
+        logger_.log(Logging::LogLevel::Debug, "Intersection shader detected and enabled for voxel procedural geometry", std::source_location::current());
     }
     if (shaderModules.size() > 5 && shaderModules[5] != VK_NULL_HANDLE) {
         shaderFeatures_ = static_cast<ShaderFeatures>(static_cast<uint32_t>(shaderFeatures_) | static_cast<uint32_t>(ShaderFeatures::Callable));
-        std::osyncstream(std::cout) << CYAN << "[DEBUG] Callable shader detected and enabled" << RESET << std::endl;
+        logger_.log(Logging::LogLevel::Debug, "Callable shader detected and enabled", std::source_location::current());
     }
 
     std::vector<VkPipelineShaderStageCreateInfo> stages = {
@@ -390,7 +392,7 @@ void VulkanRTX::createRayTracingPipeline(uint32_t maxRayRecursionDepth) {
     VkPipelineLayout tempLayout = VK_NULL_HANDLE;
     VK_CHECK(vkCreatePipelineLayout(device_, &layoutInfo, nullptr, &tempLayout), "Ray tracing pipeline layout creation failed");
     rtPipelineLayout_ = VulkanResource<VkPipelineLayout, PFN_vkDestroyPipelineLayout>(device_, tempLayout, vkDestroyPipelineLayout);
-    std::osyncstream(std::cout) << GREEN << "[INFO] Created pipeline layout" << RESET << std::endl;
+    logger_.log(Logging::LogLevel::Info, "Created pipeline layout", std::source_location::current());
 
     VkRayTracingPipelineCreateInfoKHR createInfo = {
         .sType = VK_STRUCTURE_TYPE_RAY_TRACING_PIPELINE_CREATE_INFO_KHR,
@@ -419,12 +421,12 @@ void VulkanRTX::createRayTracingPipeline(uint32_t maxRayRecursionDepth) {
             vkDestroyShaderModule(device_, module, nullptr);
         }
     }
-    std::osyncstream(std::cout) << GREEN << std::format("[INFO] Created ray tracing pipeline with {} stages and {} groups", stages.size(), groups.size()) << RESET << std::endl;
+    logger_.log(Logging::LogLevel::Info, "Created ray tracing pipeline with {} stages and {} groups", std::source_location::current(), stages.size(), groups.size());
 }
 
 // Create shader binding table with aligned handles
 void VulkanRTX::createShaderBindingTable(VkPhysicalDevice physicalDevice) {
-    std::osyncstream(std::cout) << GREEN << "[INFO] Starting shader binding table creation" << RESET << std::endl;
+    logger_.log(Logging::LogLevel::Info, "Starting shader binding table creation", std::source_location::current());
 
     VkPhysicalDeviceRayTracingPipelinePropertiesKHR rtProperties = {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_PROPERTIES_KHR,
@@ -468,7 +470,7 @@ void VulkanRTX::createShaderBindingTable(VkPhysicalDevice physicalDevice) {
     VK_CHECK(vkMapMemory(device_, sbt_.memory.get(), 0, sbtSize, 0, &data), "SBT memory mapping failed");
     uint8_t* pData = static_cast<uint8_t*>(data);
     for (uint32_t g : std::views::iota(0u, groupCount)) {
-        std::memcpy(pData + g * handleSizeAligned, handles.data() + g * handleSize, handleSize);
+        std::memcpy(pData + g * handleSizeAligned, handles.data() + g * handleSize, handleSize); // Fixed: Use std::memcpy
     }
     vkUnmapMemory(device_, sbt_.memory.get());
 
@@ -479,7 +481,7 @@ void VulkanRTX::createShaderBindingTable(VkPhysicalDevice physicalDevice) {
     };
     VkDeviceAddress sbtAddress = vkGetBufferDeviceAddressFunc(device_, &bufferInfo);
     if (sbtAddress == 0) {
-        std::osyncstream(std::cerr) << MAGENTA << "[ERROR] SBT device address invalid (0)" << RESET << std::endl;
+        logger_.log(Logging::LogLevel::Error, "SBT device address invalid (0)", std::source_location::current());
         throw VulkanRTXException("SBT device address invalid (0).");
     }
 
@@ -489,15 +491,15 @@ void VulkanRTX::createShaderBindingTable(VkPhysicalDevice physicalDevice) {
     sbt_.miss = { sbtAddress + static_cast<VkDeviceSize>(missStart) * handleSizeAligned, handleSizeAligned, static_cast<VkDeviceSize>(NUM_MISS) * handleSizeAligned };
     sbt_.hit = { sbtAddress + static_cast<VkDeviceSize>(hitStart) * handleSizeAligned, handleSizeAligned, static_cast<VkDeviceSize>(numHit) * handleSizeAligned };
     sbt_.callable = { numCallable ? sbtAddress + static_cast<VkDeviceSize>(callableStart) * handleSizeAligned : 0, handleSizeAligned, static_cast<VkDeviceSize>(numCallable) * handleSizeAligned };
-    std::osyncstream(std::cout) << GREEN << std::format("[INFO] Created shader binding table with {} groups", groupCount) << RESET << std::endl;
+    logger_.log(Logging::LogLevel::Info, "Created shader binding table with {} groups", std::source_location::current(), groupCount);
 }
 
 // Update descriptors with batched writes
 void VulkanRTX::updateDescriptors(VkBuffer cameraBuffer, VkBuffer materialBuffer, VkBuffer dimensionBuffer) {
-    std::osyncstream(std::cout) << GREEN << "[INFO] Starting descriptor update" << RESET << std::endl;
+    logger_.log(Logging::LogLevel::Info, "Starting descriptor update", std::source_location::current());
 
     if (!cameraBuffer || !materialBuffer) {
-        std::osyncstream(std::cerr) << MAGENTA << "[ERROR] Null camera or material buffer (required for ray tracing)" << RESET << std::endl;
+        logger_.log(Logging::LogLevel::Error, "Null camera or material buffer (required for ray tracing)", std::source_location::current());
         throw VulkanRTXException("Null camera or material buffer (required for ray tracing).");
     }
 
@@ -518,7 +520,7 @@ void VulkanRTX::updateDescriptors(VkBuffer cameraBuffer, VkBuffer materialBuffer
         .pTexelBufferView = nullptr
     };
     writes.push_back(cameraWrite);
-    std::osyncstream(std::cout) << CYAN << "[DEBUG] Added camera buffer descriptor update" << RESET << std::endl;
+    logger_.log(Logging::LogLevel::Debug, "Added camera buffer descriptor update", std::source_location::current());
 
     VkDescriptorBufferInfo materialInfo = { materialBuffer, 0, VK_WHOLE_SIZE };
     VkWriteDescriptorSet materialWrite = {
@@ -534,7 +536,7 @@ void VulkanRTX::updateDescriptors(VkBuffer cameraBuffer, VkBuffer materialBuffer
         .pTexelBufferView = nullptr
     };
     writes.push_back(materialWrite);
-    std::osyncstream(std::cout) << CYAN << "[DEBUG] Added material buffer descriptor update" << RESET << std::endl;
+    logger_.log(Logging::LogLevel::Debug, "Added material buffer descriptor update", std::source_location::current());
 
     if (dimensionBuffer) {
         VkDescriptorBufferInfo dimInfo = { dimensionBuffer, 0, VK_WHOLE_SIZE };
@@ -551,28 +553,29 @@ void VulkanRTX::updateDescriptors(VkBuffer cameraBuffer, VkBuffer materialBuffer
             .pTexelBufferView = nullptr
         };
         writes.push_back(dimWrite);
-        std::osyncstream(std::cout) << CYAN << "[DEBUG] Added dimension buffer descriptor update for voxel grid" << RESET << std::endl;
+        logger_.log(Logging::LogLevel::Debug, "Added dimension buffer descriptor update for voxel grid", std::source_location::current());
     } else {
-        std::osyncstream(std::cout) << YELLOW << "[WARNING] Dimension buffer is null, skipping descriptor update" << RESET << std::endl;
+        logger_.log(Logging::LogLevel::Warning, "Dimension buffer is null, skipping descriptor update", std::source_location::current());
     }
 
     vkUpdateDescriptorSets(device_, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
-    std::osyncstream(std::cout) << GREEN << std::format("[INFO] Updated {} descriptors successfully", writes.size()) << RESET << std::endl;
+    logger_.log(Logging::LogLevel::Info, "Updated {} descriptors successfully", std::source_location::current(), writes.size());
 }
 
 // Create shader module with thread-safe file reading
 VkShaderModule VulkanRTX::createShaderModule(const std::string& filename) {
-    std::osyncstream(std::cout) << GREEN << std::format("[INFO] Creating shader module from file: {}", filename) << RESET << std::endl;
+    logger_.log(Logging::LogLevel::Info, "Creating shader module from file: {}", std::source_location::current(), filename);
+
+    if (!shaderFileExists(filename)) {
+        logger_.log(Logging::LogLevel::Error, "Shader file not found or unreadable: {}", std::source_location::current(), filename);
+        throw VulkanRTXException(std::format("Shader file not found or unreadable: {}.", filename));
+    }
 
     std::lock_guard<std::mutex> lock(shaderModuleMutex_);
     std::ifstream file(filename, std::ios::ate | std::ios::binary);
-    if (!file.is_open()) {
-        std::osyncstream(std::cerr) << MAGENTA << std::format("[ERROR] Shader file not found or unreadable: {}", filename) << RESET << std::endl;
-        throw VulkanRTXException(std::format("Shader file not found or unreadable: {}.", filename));
-    }
     size_t fileSize = static_cast<size_t>(file.tellg());
     if (fileSize == 0 || fileSize % 4 != 0) {
-        std::osyncstream(std::cerr) << MAGENTA << std::format("[ERROR] Invalid shader file size (must be multiple of 4 bytes): {}", filename) << RESET << std::endl;
+        logger_.log(Logging::LogLevel::Error, "Invalid shader file size (must be multiple of 4 bytes): {}", std::source_location::current(), filename);
         throw VulkanRTXException(std::format("Invalid shader file size (must be multiple of 4 bytes): {}.", filename));
     }
     std::vector<char> buffer(fileSize);
@@ -590,7 +593,7 @@ VkShaderModule VulkanRTX::createShaderModule(const std::string& filename) {
 
     VkShaderModule module = VK_NULL_HANDLE;
     VK_CHECK(vkCreateShaderModuleFunc(device_, &info, nullptr, &module), std::format("Shader module creation failed for: {}.", filename));
-    std::osyncstream(std::cout) << GREEN << std::format("[INFO] Created shader module for: {}", filename) << RESET << std::endl;
+    logger_.log(Logging::LogLevel::Info, "Created shader module for: {}", std::source_location::current(), filename);
     return module;
 }
 
@@ -598,16 +601,16 @@ VkShaderModule VulkanRTX::createShaderModule(const std::string& filename) {
 bool VulkanRTX::shaderFileExists(const std::string& filename) const {
     std::ifstream file(filename, std::ios::ate | std::ios::binary);
     bool exists = file.is_open();
-    std::osyncstream(std::cout) << CYAN << std::format("[DEBUG] Checking shader file {}: {}", filename, exists ? "exists" : "does not exist") << RESET << std::endl;
+    logger_.log(Logging::LogLevel::Debug, "Checking shader file {}: {}", std::source_location::current(), filename, exists ? "exists" : "does not exist");
     return exists;
 }
 
 // Load shaders asynchronously with error handling for required shaders
 void VulkanRTX::loadShadersAsync(std::vector<VkShaderModule>& modules, const std::vector<std::string>& paths) {
-    std::osyncstream(std::cout) << GREEN << std::format("[INFO] Starting async shader loading for {} shaders", paths.size()) << RESET << std::endl;
+    logger_.log(Logging::LogLevel::Info, "Starting async shader loading for {} shaders", std::source_location::current(), paths.size());
 
     if (modules.size() != paths.size()) {
-        std::osyncstream(std::cerr) << MAGENTA << std::format("[ERROR] Shader modules/paths mismatch: modules={}, paths={}", modules.size(), paths.size()) << RESET << std::endl;
+        logger_.log(Logging::LogLevel::Error, "Shader modules/paths mismatch: modules={}, paths={}", std::source_location::current(), modules.size(), paths.size());
         throw VulkanRTXException(std::format("Shader modules/paths mismatch: modules={}, paths={}.", modules.size(), paths.size()));
     }
 
@@ -620,28 +623,37 @@ void VulkanRTX::loadShadersAsync(std::vector<VkShaderModule>& modules, const std
     while (processed < numShaders) {
         size_t batchSize = std::min(maxThreads, numShaders - processed);
         futures.clear();
-        for (size_t j : std::views::iota(0u, batchSize)) {
-            size_t idx = processed + j;
-            futures.emplace_back(std::async(std::launch::async, [this, path = paths[idx]]() -> VkShaderModule {
-                return shaderFileExists(path) ? createShaderModule(path) : VK_NULL_HANDLE;
-            }));
+        #pragma omp parallel
+        {
+            #pragma omp single
+            {
+                for (size_t j : std::views::iota(0u, batchSize)) {
+                    size_t idx = processed + j;
+                    #pragma omp task
+                    {
+                        futures.emplace_back(std::async(std::launch::async, [this, path = paths[idx]]() -> VkShaderModule {
+                            return shaderFileExists(path) ? createShaderModule(path) : VK_NULL_HANDLE;
+                        }));
+                    }
+                }
+            }
         }
         for (size_t j : std::views::iota(0u, batchSize)) {
             modules[processed + j] = futures[j].get();
             if ((processed + j) < 3 && modules[processed + j] == VK_NULL_HANDLE) {
-                std::osyncstream(std::cerr) << MAGENTA << std::format("[ERROR] Required core shader missing: {}", paths[processed + j]) << RESET << std::endl;
+                logger_.log(Logging::LogLevel::Error, "Required core shader missing: {}", std::source_location::current(), paths[processed + j]);
                 throw VulkanRTXException(std::format("Required core shader missing: {}.", paths[processed + j]));
             }
         }
         processed += batchSize;
     }
-    std::osyncstream(std::cout) << GREEN << std::format("[INFO] Loaded {} shaders asynchronously", numShaders) << RESET << std::endl;
+    logger_.log(Logging::LogLevel::Info, "Loaded {} shaders asynchronously", std::source_location::current(), numShaders);
 }
 
 // Build dynamic shader groups based on available features
 void VulkanRTX::buildShaderGroups(std::vector<VkRayTracingShaderGroupCreateInfoKHR>& groups,
                                   const std::vector<VkPipelineShaderStageCreateInfo>& stages) {
-    std::osyncstream(std::cout) << GREEN << std::format("[INFO] Building shader groups for {} stages", stages.size()) << RESET << std::endl;
+    logger_.log(Logging::LogLevel::Info, "Building shader groups for {} stages", std::source_location::current(), stages.size());
 
     groups.clear();
     groups.reserve(stages.size());
@@ -657,7 +669,7 @@ void VulkanRTX::buildShaderGroups(std::vector<VkRayTracingShaderGroupCreateInfoK
         .pShaderGroupCaptureReplayHandle = nullptr
     };
     groups.push_back(raygenGroup);
-    std::osyncstream(std::cout) << CYAN << "[DEBUG] Added raygen shader group" << RESET << std::endl;
+    logger_.log(Logging::LogLevel::Debug, "Added raygen shader group", std::source_location::current());
 
     VkRayTracingShaderGroupCreateInfoKHR missGroup = {
         .sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR,
@@ -670,7 +682,7 @@ void VulkanRTX::buildShaderGroups(std::vector<VkRayTracingShaderGroupCreateInfoK
         .pShaderGroupCaptureReplayHandle = nullptr
     };
     groups.push_back(missGroup);
-    std::osyncstream(std::cout) << CYAN << "[DEBUG] Added miss shader group" << RESET << std::endl;
+    logger_.log(Logging::LogLevel::Debug, "Added miss shader group", std::source_location::current());
 
     VkRayTracingShaderGroupCreateInfoKHR hitGroup = {
         .sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR,
@@ -683,7 +695,7 @@ void VulkanRTX::buildShaderGroups(std::vector<VkRayTracingShaderGroupCreateInfoK
         .pShaderGroupCaptureReplayHandle = nullptr
     };
     groups.push_back(hitGroup);
-    std::osyncstream(std::cout) << CYAN << std::format("[DEBUG] Added triangle hit group{}", hasShaderFeature(ShaderFeatures::AnyHit) ? " with any-hit shader" : "") << RESET << std::endl;
+    logger_.log(Logging::LogLevel::Debug, "Added triangle hit group{}", std::source_location::current(), hasShaderFeature(ShaderFeatures::AnyHit) ? " with any-hit shader" : "");
 
     if (hasShaderFeature(ShaderFeatures::Intersection)) {
         VkRayTracingShaderGroupCreateInfoKHR procGroup = {
@@ -697,7 +709,7 @@ void VulkanRTX::buildShaderGroups(std::vector<VkRayTracingShaderGroupCreateInfoK
             .pShaderGroupCaptureReplayHandle = nullptr
         };
         groups.push_back(procGroup);
-        std::osyncstream(std::cout) << CYAN << "[DEBUG] Added procedural hit group for voxel intersection shader" << RESET << std::endl;
+        logger_.log(Logging::LogLevel::Debug, "Added procedural hit group for voxel intersection shader", std::source_location::current());
     }
 
     if (hasShaderFeature(ShaderFeatures::Callable)) {
@@ -712,10 +724,10 @@ void VulkanRTX::buildShaderGroups(std::vector<VkRayTracingShaderGroupCreateInfoK
             .pShaderGroupCaptureReplayHandle = nullptr
         };
         groups.push_back(callableGroup);
-        std::osyncstream(std::cout) << CYAN << "[DEBUG] Added callable shader group" << RESET << std::endl;
+        logger_.log(Logging::LogLevel::Debug, "Added callable shader group", std::source_location::current());
     }
 
-    std::osyncstream(std::cout) << GREEN << std::format("[INFO] Built {} shader groups successfully", groups.size()) << RESET << std::endl;
+    logger_.log(Logging::LogLevel::Info, "Built {} shader groups successfully", std::source_location::current(), groups.size());
 }
 
 } // namespace VulkanRTX
