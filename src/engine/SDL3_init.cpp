@@ -26,9 +26,37 @@ void SDL3Initializer::initialize(const char* title, int w, int h, Uint32 flags,
     logger_.log(Logging::LogLevel::Info, "Initializing SDL3Initializer with title={}, width={}, height={}",
                 std::source_location::current(), title, w, h);
 
-    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_GAMEPAD | SDL_INIT_EVENTS) != 0) {
-        logger_.log(Logging::LogLevel::Error, "SDL_Init failed: {}", std::source_location::current(), SDL_GetError());
-        throw std::runtime_error(std::format("SDL_Init failed: {}", SDL_GetError()));
+    // Initialize SDL subsystems individually for better error reporting
+    logger_.log(Logging::LogLevel::Info, "Initializing SDL_VIDEO", std::source_location::current());
+    if (SDL_Init(SDL_INIT_VIDEO) == 0) {
+        const char* sdlError = SDL_GetError();
+        logger_.log(Logging::LogLevel::Error, "SDL_INIT_VIDEO failed: '{}'", 
+                    std::source_location::current(), sdlError ? sdlError : "No error message provided");
+        throw std::runtime_error(std::format("SDL_INIT_VIDEO failed: {}", sdlError ? sdlError : "No error message provided"));
+    }
+
+    logger_.log(Logging::LogLevel::Info, "Initializing SDL_EVENTS", std::source_location::current());
+    if (SDL_InitSubSystem(SDL_INIT_EVENTS) == 0) {
+        const char* sdlError = SDL_GetError();
+        logger_.log(Logging::LogLevel::Error, "SDL_INIT_EVENTS failed: '{}'", 
+                    std::source_location::current(), sdlError ? sdlError : "No error message provided");
+        throw std::runtime_error(std::format("SDL_INIT_EVENTS failed: {}", sdlError ? sdlError : "No error message provided"));
+    }
+
+    logger_.log(Logging::LogLevel::Info, "Initializing SDL_AUDIO", std::source_location::current());
+    if (SDL_InitSubSystem(SDL_INIT_AUDIO) == 0) {
+        const char* sdlError = SDL_GetError();
+        logger_.log(Logging::LogLevel::Warning, "SDL_INIT_AUDIO failed: '{}'. Continuing without audio", 
+                    std::source_location::current(), sdlError ? sdlError : "No error message provided");
+        m_audioDevice = 0;
+        m_audioStream = nullptr;
+    }
+
+    logger_.log(Logging::LogLevel::Info, "Initializing SDL_GAMEPAD", std::source_location::current());
+    if (SDL_InitSubSystem(SDL_INIT_GAMEPAD) == 0) {
+        const char* sdlError = SDL_GetError();
+        logger_.log(Logging::LogLevel::Warning, "SDL_INIT_GAMEPAD failed: '{}'. Continuing without gamepad", 
+                    std::source_location::current(), sdlError ? sdlError : "No error message provided");
     }
 
     m_useVulkan = (flags & SDL_WINDOW_VULKAN) != 0;
@@ -67,7 +95,12 @@ void SDL3Initializer::initialize(const char* title, int w, int h, Uint32 flags,
     }
 
     if (!fontPath.empty()) {
-        m_fontManager.initialize(fontPath);
+        try {
+            m_fontManager.initialize(fontPath);
+        } catch (const std::runtime_error& e) {
+            logger_.log(Logging::LogLevel::Warning, "Font initialization failed: {}. Continuing without font",
+                        std::source_location::current(), e.what());
+        }
     }
 
     logger_.log(Logging::LogLevel::Info, "Initializing input", std::source_location::current());
