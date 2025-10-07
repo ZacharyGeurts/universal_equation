@@ -202,12 +202,16 @@ public:
     long double computeSystemEnergy() const;
     long double computePythagoreanScaling(int vertexIndex) const;
 
+    // Moved to public to fix access errors
+    long double computeInteraction(int vertexIndex, long double distance) const;
+    long double computePermeation(int vertexIndex) const;
+    long double computeNurbEnergy(long double distance) const;
+
 protected:
     virtual void initializeNCube();
     void initializeWithRetry();
     long double safeExp(long double x) const;
     long double computeNurbMatter(long double distance) const;
-    long double computeNurbEnergy(long double distance) const;
     long double computeGodWaveAmplitude(int vertexIndex, long double distance) const;
     long double computeNURBSBasis(int i, int p, long double u, const std::vector<long double>& knots) const;
     long double evaluateNURBS(long double u, const std::vector<long double>& controlPoints,
@@ -217,8 +221,6 @@ protected:
     std::vector<long double> computeVectorPotential(int vertexIndex, long double distance) const;
     std::vector<long double> computeEMField(int vertexIndex) const;
     long double computeLorentzFactor(int vertexIndex) const;
-    long double computeInteraction(int vertexIndex, long double distance) const;
-    long double computePermeation(int vertexIndex) const;
     long double computeCollapse() const;
     void updateInteractions() const;
 

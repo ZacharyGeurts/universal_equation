@@ -1,75 +1,84 @@
 #ifndef MAIN_HPP
 #define MAIN_HPP
 
-#include "engine/SDL3_init.hpp"
-#include "engine/Vulkan_init.hpp"
+// AMOURANTH RTX Engine, October 2025 - Main application class for Vulkan-based rendering.
+// Manages initialization, rendering, and input handling for the Universal Equation simulation.
+// Supports multiple rendering modes (1-9), with mode1 implemented for instanced sphere rendering.
+// Dependencies: Vulkan 1.3+, SDL3, GLM, C++20 standard library.
+// Usage: Create Application instance, call initialize(), then run() in a loop.
+// Zachary Geurts 2025
+
 #include "engine/core.hpp"
-#include "engine/logging.hpp"
-#include <stdexcept>
-#include <format>
+#include "engine/Vulkan_init.hpp"
+#include "engine/SDL3_init.hpp"
+#include "engine/handleinput.hpp"
+#include <vector>
+#include <memory>
 
 class Application {
 public:
-    Application(const char* name, int width, int height)
-        : logger_(Logging::LogLevel::Info, "application.log"),
-          simulator_(nullptr),
-          sdlInitializer_(logger_),
-          width_(width),
-          height_(height) {
-        logger_.log(Logging::LogLevel::Info, "Initializing Application with name={}, width={}, height={}",
-                    std::source_location::current(), name, width, height);
+    Application(const char* title, int width, int height)
+        : title_(title), width_(width), height_(height), mode_(1) {}
 
-        // Use SDL3Initializer for SDL and window initialization
-        try {
-            sdlInitializer_.initialize(name, width, height, SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE,
-                                       true, "assets/fonts/sf-plasmatica-open.ttf");
-        } catch (const std::runtime_error& e) {
-            logger_.log(Logging::LogLevel::Error, "SDL3Initializer failed: {}", 
-                        std::source_location::current(), e.what());
-            throw;
-        }
+    void initialize() {
+        sdl_ = std::make_unique<SDL3Initializer>(title_, width_, height_);
+        vertices_ = {
+            glm::vec3(-0.5f, -0.5f, 0.0f),
+            glm::vec3(0.5f, -0.5f, 0.0f),
+            glm::vec3(0.0f, 0.5f, 0.0f)
+        };
+        indices_ = {0, 1, 2};
 
-        window_ = sdlInitializer_.getWindow();
-        if (!window_) {
-            logger_.log(Logging::LogLevel::Error, "Failed to retrieve window from SDL3Initializer",
-                        std::source_location::current());
-            throw std::runtime_error("Failed to retrieve window");
-        }
+        renderer_ = std::make_unique<VulkanRenderer>(
+            sdl_->getInstance(), sdl_->getSurface(),
+            vertices_, indices_,
+            width_, height_
+        );
 
-        simulator_ = new DimensionalNavigator("Dimensional Navigator", width_, height_, logger_);
-        amouranth_ = new AMOURANTH(simulator_, logger_);
-    }
+        VkShaderModule vertShaderModule = renderer_->createShaderModule("shaders/vertex.spv");
+        VkShaderModule fragShaderModule = renderer_->createShaderModule("shaders/fragment.spv");
 
-    ~Application() {
-        logger_.log(Logging::LogLevel::Info, "Destroying Application", std::source_location::current());
-        delete amouranth_;
-        delete simulator_;
-        // Window and SDL cleanup handled by sdlInitializer_
-        sdlInitializer_.cleanup();
+        // Update renderer with shader modules
+        renderer_->setShaderModules(vertShaderModule, fragShaderModule);
+
+        vkDestroyShaderModule(renderer_->getContext().device, vertShaderModule, nullptr);
+        vkDestroyShaderModule(renderer_->getContext().device, fragShaderModule, nullptr);
     }
 
     void run() {
-        // Assuming run uses sdlInitializer_.eventLoop
-        auto renderCallback = []() {
-            // Placeholder for rendering logic
-            // Add Vulkan or other rendering here
-        };
-        sdlInitializer_.eventLoop(renderCallback, [this](int w, int h) {
-            width_ = w;
-            height_ = h;
-            logger_.log(Logging::LogLevel::Info, "Window resized to width={}, height={}",
-                        std::source_location::current(), w, h);
-        });
+        while (!sdl_->shouldQuit()) {
+            sdl_->pollEvents();
+            inputHandler_.handleInput(*this);
+            render();
+        }
     }
 
+    void render() {
+        renderer_->beginFrame();
+        AMOURANTH::render(
+            renderer_->getCurrentImageIndex(),
+            renderer_->getVertexBuffer(),
+            renderer_->getCommandBuffer(),
+            renderer_->getIndexBuffer(),
+            renderer_->getPipelineLayout(),
+            renderer_->getDescriptorSet()
+        );
+        renderer_->endFrame();
+    }
+
+    void setRenderMode(int mode) { mode_ = mode; }
+    int getWidth() const { return width_; }
+    int getHeight() const { return height_; }
+
 private:
-    Logging::Logger logger_;
-    DimensionalNavigator* simulator_;
-    SDL3Initializer::SDL3Initializer sdlInitializer_;
-    SDL_Window* window_;
-    AMOURANTH* amouranth_;
-    int width_;
-    int height_;
+    std::string title_;
+    int width_, height_;
+    int mode_;
+    std::unique_ptr<SDL3Initializer> sdl_;
+    std::unique_ptr<VulkanRenderer> renderer_;
+    InputHandler inputHandler_;
+    std::vector<glm::vec3> vertices_;
+    std::vector<uint32_t> indices_;
 };
 
 #endif // MAIN_HPP

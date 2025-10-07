@@ -18,7 +18,7 @@ namespace SDL3Initializer {
 
 class SDL3Font {
 public:
-    explicit SDL3Font(const Logging::Logger& logger) : logger_(logger), m_font(nullptr) {
+    explicit SDL3Font(const Logging::Logger& logger) : m_font(nullptr), m_fontFuture(), logger_(logger) {
         logger_.log(Logging::LogLevel::Info, "Constructing SDL3Font", std::source_location::current());
     }
 

@@ -73,16 +73,16 @@ void HandleInput::defaultKeyboardHandler(const SDL_KeyboardEvent& key) {
                 amouranth_->adjustInfluence(-0.1f);
                 break;
             case SDL_SCANCODE_J:
-                amouranth_->adjustDarkMatter(0.1f);
+                amouranth_->adjustNurbMatter(0.1f);
                 break;
             case SDL_SCANCODE_K:
-                amouranth_->adjustDarkMatter(-0.1f);
+                amouranth_->adjustNurbMatter(-0.1f);
                 break;
             case SDL_SCANCODE_N:
-                amouranth_->adjustDarkEnergy(0.1f);
+                amouranth_->adjustNurbEnergy(0.1f);
                 break;
             case SDL_SCANCODE_M:
-                amouranth_->adjustDarkEnergy(-0.1f);
+                amouranth_->adjustNurbEnergy(-0.1f);
                 break;
             case SDL_SCANCODE_P:
                 amouranth_->togglePause();
