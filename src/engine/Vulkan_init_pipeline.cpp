@@ -3,79 +3,63 @@
 // Dependencies: Vulkan 1.3+, GLM, C++20 standard library.
 // Zachary Geurts 2025
 
-#include "engine/Vulkan_init_pipeline.hpp"
 #include "engine/Vulkan_init.hpp"
-#include "engine/Vulkan/Vulkan_func.hpp" // for PushConstants
-#include "engine/logging.hpp"
-#include "engine/core.hpp"
 #include <stdexcept>
+#include <vector>
+#include <cstdint>
+#include <source_location>
 #include <format>
 #include <fstream>
 
 VulkanPipelineManager::VulkanPipelineManager(VulkanContext& context)
     : context_(context), vertShaderModule_(VK_NULL_HANDLE), fragShaderModule_(VK_NULL_HANDLE), logger_() {
-    logger_.log(Logging::LogLevel::Debug, "VulkanPipelineManager initialized", std::source_location::current());
+    logger_.log(Logging::LogLevel::Info, "Constructing VulkanPipelineManager",
+                std::source_location::current());
 }
 
 VulkanPipelineManager::~VulkanPipelineManager() {
-    cleanupPipeline();
-    logger_.log(Logging::LogLevel::Info, "VulkanPipelineManager destroyed", std::source_location::current());
+    logger_.log(Logging::LogLevel::Info, "Destroying VulkanPipelineManager",
+                std::source_location::current());
 }
 
 VkShaderModule VulkanPipelineManager::createShaderModule(const std::string& filename) {
     std::ifstream file(filename, std::ios::ate | std::ios::binary);
     if (!file.is_open()) {
-        std::string error = std::format("Failed to open shader file: {}", filename);
-        logger_.log(Logging::LogLevel::Error, "{}", std::source_location::current(), error);
-        throw std::runtime_error(error);
+        logger_.log(Logging::LogLevel::Error, "Failed to open shader file: {}", 
+                    std::source_location::current(), filename);
+        throw std::runtime_error("Failed to open shader file: " + filename);
     }
-
     size_t fileSize = static_cast<size_t>(file.tellg());
     std::vector<char> buffer(fileSize);
     file.seekg(0);
     file.read(buffer.data(), fileSize);
     file.close();
-    logger_.log(Logging::LogLevel::Info, "Loaded shader file: {}, size: {} bytes", std::source_location::current(), filename, fileSize);
 
     VkShaderModuleCreateInfo createInfo = {
         .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
         .pNext = nullptr,
         .flags = 0,
         .codeSize = buffer.size(),
-        .pCode = reinterpret_cast<const uint32_t*>(buffer.data()),
+        .pCode = reinterpret_cast<const uint32_t*>(buffer.data())
     };
-
     VkShaderModule shaderModule;
     if (vkCreateShaderModule(context_.device, &createInfo, nullptr, &shaderModule) != VK_SUCCESS) {
-        std::string error = std::format("Failed to create shader module for {}", filename);
-        logger_.log(Logging::LogLevel::Error, "{}", std::source_location::current(), error);
-        throw std::runtime_error(error);
+        logger_.log(Logging::LogLevel::Error, "Failed to create shader module for file: {}", 
+                    std::source_location::current(), filename);
+        throw std::runtime_error("Failed to create shader module");
     }
-
-    logger_.log(Logging::LogLevel::Info, "Created shader module for {}", std::source_location::current(), filename);
+    logger_.log(Logging::LogLevel::Debug, "Shader module created for file: {}", 
+                std::source_location::current(), filename);
     return shaderModule;
 }
 
 void VulkanPipelineManager::initializePipeline(int width, int height) {
-    logger_.log(Logging::LogLevel::Debug, "Initializing pipeline", std::source_location::current());
+    logger_.log(Logging::LogLevel::Debug, "Initializing pipeline with width={}, height={}", 
+                std::source_location::current(), width, height);
 
-    // Create shader modules
-    try {
-        vertShaderModule_ = createShaderModule("assets/shaders/rasterization/vertex.spv");
-        fragShaderModule_ = createShaderModule("assets/shaders/rasterization/fragment.spv");
-    } catch (const std::exception& e) {
-        logger_.log(Logging::LogLevel::Error, "Shader module creation failed: {}", std::source_location::current(), e.what());
-        throw;
-    }
+    vertShaderModule_ = createShaderModule("assets/shaders/rasterization/vertex.spv");
+    fragShaderModule_ = createShaderModule("assets/shaders/rasterization/fragment.spv");
 
-    // Validate shader modules
-    if (vertShaderModule_ == VK_NULL_HANDLE || fragShaderModule_ == VK_NULL_HANDLE) {
-        std::string error = "Invalid shader module provided";
-        logger_.log(Logging::LogLevel::Error, "{}", std::source_location::current(), error);
-        throw std::runtime_error(error);
-    }
-
-    // Create render pass
     VkAttachmentDescription colorAttachment = {
         .flags = 0,
         .format = VK_FORMAT_B8G8R8A8_SRGB,
@@ -85,12 +69,14 @@ void VulkanPipelineManager::initializePipeline(int width, int height) {
         .stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
         .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
         .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-        .finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+        .finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR
     };
+
     VkAttachmentReference colorAttachmentRef = {
         .attachment = 0,
-        .layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+        .layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL
     };
+
     VkSubpassDescription subpass = {
         .flags = 0,
         .pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS,
@@ -101,8 +87,19 @@ void VulkanPipelineManager::initializePipeline(int width, int height) {
         .pResolveAttachments = nullptr,
         .pDepthStencilAttachment = nullptr,
         .preserveAttachmentCount = 0,
-        .pPreserveAttachments = nullptr,
+        .pPreserveAttachments = nullptr
     };
+
+    VkSubpassDependency dependency = {
+        .srcSubpass = VK_SUBPASS_EXTERNAL,
+        .dstSubpass = 0,
+        .srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+        .dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+        .srcAccessMask = 0,
+        .dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+        .dependencyFlags = 0
+    };
+
     VkRenderPassCreateInfo renderPassInfo = {
         .sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
         .pNext = nullptr,
@@ -111,140 +108,129 @@ void VulkanPipelineManager::initializePipeline(int width, int height) {
         .pAttachments = &colorAttachment,
         .subpassCount = 1,
         .pSubpasses = &subpass,
-        .dependencyCount = 0,
-        .pDependencies = nullptr,
+        .dependencyCount = 1,
+        .pDependencies = &dependency
     };
-    if (vkCreateRenderPass(context_.device, &renderPassInfo, nullptr, &context_.renderPass) != VK_SUCCESS) {
-        std::string error = "Failed to create render pass";
-        logger_.log(Logging::LogLevel::Error, "{}", std::source_location::current(), error);
-        throw std::runtime_error(error);
-    }
-    logger_.log(Logging::LogLevel::Info, "Render pass created", std::source_location::current());
 
-    // Create descriptor set layout
+    if (vkCreateRenderPass(context_.device, &renderPassInfo, nullptr, &context_.renderPass) != VK_SUCCESS) {
+        logger_.log(Logging::LogLevel::Error, "Failed to create render pass", 
+                    std::source_location::current());
+        throw std::runtime_error("Failed to create render pass");
+    }
+    logger_.log(Logging::LogLevel::Info, "Render pass created", 
+                std::source_location::current());
+
     VkDescriptorSetLayoutBinding layoutBinding = {
         .binding = 0,
         .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
         .descriptorCount = 1,
         .stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
-        .pImmutableSamplers = nullptr,
+        .pImmutableSamplers = nullptr
     };
+
     VkDescriptorSetLayoutCreateInfo layoutInfo = {
         .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
         .pNext = nullptr,
         .flags = 0,
         .bindingCount = 1,
-        .pBindings = &layoutBinding,
+        .pBindings = &layoutBinding
     };
-    if (vkCreateDescriptorSetLayout(context_.device, &layoutInfo, nullptr, &context_.descriptorSetLayout) != VK_SUCCESS) {
-        std::string error = "Failed to create descriptor set layout";
-        logger_.log(Logging::LogLevel::Error, "{}", std::source_location::current(), error);
-        throw std::runtime_error(error);
-    }
-    logger_.log(Logging::LogLevel::Info, "Descriptor set layout created", std::source_location::current());
 
-    // Create descriptor pool
+    if (vkCreateDescriptorSetLayout(context_.device, &layoutInfo, nullptr, &context_.descriptorSetLayout) != VK_SUCCESS) {
+        logger_.log(Logging::LogLevel::Error, "Failed to create descriptor set layout", 
+                    std::source_location::current());
+        throw std::runtime_error("Failed to create descriptor set layout");
+    }
+    logger_.log(Logging::LogLevel::Info, "Descriptor set layout created", 
+                std::source_location::current());
+
     VkDescriptorPoolSize poolSize = {
         .type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-        .descriptorCount = 1,
+        .descriptorCount = 1
     };
+
     VkDescriptorPoolCreateInfo descriptorPoolInfo = {
         .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
         .pNext = nullptr,
         .flags = 0,
         .maxSets = 1,
         .poolSizeCount = 1,
-        .pPoolSizes = &poolSize,
+        .pPoolSizes = &poolSize
     };
-    if (vkCreateDescriptorPool(context_.device, &descriptorPoolInfo, nullptr, &context_.descriptorPool) != VK_SUCCESS) {
-        std::string error = "Failed to create descriptor pool";
-        logger_.log(Logging::LogLevel::Error, "{}", std::source_location::current(), error);
-        throw std::runtime_error(error);
-    }
-    logger_.log(Logging::LogLevel::Info, "Descriptor pool created", std::source_location::current());
 
-    // Allocate descriptor set
+    if (vkCreateDescriptorPool(context_.device, &descriptorPoolInfo, nullptr, &context_.descriptorPool) != VK_SUCCESS) {
+        logger_.log(Logging::LogLevel::Error, "Failed to create descriptor pool", 
+                    std::source_location::current());
+        throw std::runtime_error("Failed to create descriptor pool");
+    }
+    logger_.log(Logging::LogLevel::Info, "Descriptor pool created", 
+                std::source_location::current());
+
     VkDescriptorSetAllocateInfo descriptorAllocInfo = {
         .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
         .pNext = nullptr,
         .descriptorPool = context_.descriptorPool,
         .descriptorSetCount = 1,
-        .pSetLayouts = &context_.descriptorSetLayout,
+        .pSetLayouts = &context_.descriptorSetLayout
     };
-    if (vkAllocateDescriptorSets(context_.device, &descriptorAllocInfo, &context_.descriptorSet) != VK_SUCCESS) {
-        std::string error = "Failed to allocate descriptor set";
-        logger_.log(Logging::LogLevel::Error, "{}", std::source_location::current(), error);
-        throw std::runtime_error(error);
-    }
-    logger_.log(Logging::LogLevel::Info, "Descriptor set allocated", std::source_location::current());
 
-    // Vertex input setup
+    if (vkAllocateDescriptorSets(context_.device, &descriptorAllocInfo, &context_.descriptorSet) != VK_SUCCESS) {
+        logger_.log(Logging::LogLevel::Error, "Failed to allocate descriptor set", 
+                    std::source_location::current());
+        throw std::runtime_error("Failed to allocate descriptor set");
+    }
+    logger_.log(Logging::LogLevel::Info, "Descriptor set allocated", 
+                std::source_location::current());
+
     VkVertexInputBindingDescription bindingDescriptions[] = {
         {
             .binding = 0,
             .stride = sizeof(glm::vec3),
-            .inputRate = VK_VERTEX_INPUT_RATE_VERTEX,
-        },
-        {
-            .binding = 1,
-            .stride = sizeof(glm::mat4),
-            .inputRate = VK_VERTEX_INPUT_RATE_INSTANCE,
+            .inputRate = VK_VERTEX_INPUT_RATE_VERTEX
         }
     };
+
     VkVertexInputAttributeDescription attributeDescriptions[] = {
         {
             .location = 0,
             .binding = 0,
             .format = VK_FORMAT_R32G32B32_SFLOAT,
-            .offset = 0,
-        },
-        {
-            .location = 1,
-            .binding = 1,
-            .format = VK_FORMAT_R32G32B32_SFLOAT,
-            .offset = 0,
-        },
-        {
-            .location = 2,
-            .binding = 1,
-            .format = VK_FORMAT_R32_SFLOAT,
-            .offset = sizeof(glm::vec3),
-        },
-        {
-            .location = 3,
-            .binding = 1,
-            .format = VK_FORMAT_R32G32B32A32_SFLOAT,
-            .offset = sizeof(glm::vec3) + sizeof(float),
+            .offset = 0
         }
     };
+
     VkPipelineVertexInputStateCreateInfo vertexInputInfo = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
         .pNext = nullptr,
         .flags = 0,
-        .vertexBindingDescriptionCount = 2,
+        .vertexBindingDescriptionCount = 1,
         .pVertexBindingDescriptions = bindingDescriptions,
-        .vertexAttributeDescriptionCount = 4,
-        .pVertexAttributeDescriptions = attributeDescriptions,
+        .vertexAttributeDescriptionCount = 1,
+        .pVertexAttributeDescriptions = attributeDescriptions
     };
+
     VkPipelineInputAssemblyStateCreateInfo inputAssembly = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
         .pNext = nullptr,
         .flags = 0,
         .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
-        .primitiveRestartEnable = VK_FALSE,
+        .primitiveRestartEnable = VK_FALSE
     };
+
     VkViewport viewport = {
         .x = 0.0f,
         .y = 0.0f,
         .width = static_cast<float>(width),
         .height = static_cast<float>(height),
         .minDepth = 0.0f,
-        .maxDepth = 1.0f,
+        .maxDepth = 1.0f
     };
+
     VkRect2D scissor = {
         .offset = {0, 0},
-        .extent = {static_cast<uint32_t>(width), static_cast<uint32_t>(height)},
+        .extent = {static_cast<uint32_t>(width), static_cast<uint32_t>(height)}
     };
+
     VkPipelineViewportStateCreateInfo viewportState = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
         .pNext = nullptr,
@@ -252,8 +238,9 @@ void VulkanPipelineManager::initializePipeline(int width, int height) {
         .viewportCount = 1,
         .pViewports = &viewport,
         .scissorCount = 1,
-        .pScissors = &scissor,
+        .pScissors = &scissor
     };
+
     VkPipelineRasterizationStateCreateInfo rasterizer = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
         .pNext = nullptr,
@@ -267,8 +254,9 @@ void VulkanPipelineManager::initializePipeline(int width, int height) {
         .depthBiasConstantFactor = 0.0f,
         .depthBiasClamp = 0.0f,
         .depthBiasSlopeFactor = 0.0f,
-        .lineWidth = 1.0f,
+        .lineWidth = 1.0f
     };
+
     VkPipelineMultisampleStateCreateInfo multisampling = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
         .pNext = nullptr,
@@ -278,8 +266,9 @@ void VulkanPipelineManager::initializePipeline(int width, int height) {
         .minSampleShading = 1.0f,
         .pSampleMask = nullptr,
         .alphaToCoverageEnable = VK_FALSE,
-        .alphaToOneEnable = VK_FALSE,
+        .alphaToOneEnable = VK_FALSE
     };
+
     VkPipelineColorBlendAttachmentState colorBlendAttachment = {
         .blendEnable = VK_FALSE,
         .srcColorBlendFactor = VK_BLEND_FACTOR_ONE,
@@ -288,8 +277,9 @@ void VulkanPipelineManager::initializePipeline(int width, int height) {
         .srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE,
         .dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO,
         .alphaBlendOp = VK_BLEND_OP_ADD,
-        .colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT,
+        .colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT
     };
+
     VkPipelineColorBlendStateCreateInfo colorBlending = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
         .pNext = nullptr,
@@ -298,13 +288,15 @@ void VulkanPipelineManager::initializePipeline(int width, int height) {
         .logicOp = VK_LOGIC_OP_COPY,
         .attachmentCount = 1,
         .pAttachments = &colorBlendAttachment,
-        .blendConstants = {0.0f, 0.0f, 0.0f, 0.0f},
+        .blendConstants = {0.0f, 0.0f, 0.0f, 0.0f}
     };
+
     VkPushConstantRange pushConstantRange = {
         .stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
         .offset = 0,
-        .size = sizeof(PushConstants),
+        .size = sizeof(PushConstants)
     };
+
     VkPipelineLayoutCreateInfo pipelineLayoutInfo = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
         .pNext = nullptr,
@@ -312,16 +304,17 @@ void VulkanPipelineManager::initializePipeline(int width, int height) {
         .setLayoutCount = 1,
         .pSetLayouts = &context_.descriptorSetLayout,
         .pushConstantRangeCount = 1,
-        .pPushConstantRanges = &pushConstantRange,
+        .pPushConstantRanges = &pushConstantRange
     };
-    if (vkCreatePipelineLayout(context_.device, &pipelineLayoutInfo, nullptr, &context_.pipelineLayout) != VK_SUCCESS) {
-        std::string error = "Failed to create pipeline layout";
-        logger_.log(Logging::LogLevel::Error, "{}", std::source_location::current(), error);
-        throw std::runtime_error(error);
-    }
-    logger_.log(Logging::LogLevel::Info, "Pipeline layout created", std::source_location::current());
 
-    // Create graphics pipeline
+    if (vkCreatePipelineLayout(context_.device, &pipelineLayoutInfo, nullptr, &context_.pipelineLayout) != VK_SUCCESS) {
+        logger_.log(Logging::LogLevel::Error, "Failed to create pipeline layout", 
+                    std::source_location::current());
+        throw std::runtime_error("Failed to create pipeline layout");
+    }
+    logger_.log(Logging::LogLevel::Info, "Pipeline layout created", 
+                std::source_location::current());
+
     VkPipelineShaderStageCreateInfo shaderStages[] = {
         {
             .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
@@ -330,7 +323,7 @@ void VulkanPipelineManager::initializePipeline(int width, int height) {
             .stage = VK_SHADER_STAGE_VERTEX_BIT,
             .module = vertShaderModule_,
             .pName = "main",
-            .pSpecializationInfo = nullptr,
+            .pSpecializationInfo = nullptr
         },
         {
             .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
@@ -339,9 +332,10 @@ void VulkanPipelineManager::initializePipeline(int width, int height) {
             .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
             .module = fragShaderModule_,
             .pName = "main",
-            .pSpecializationInfo = nullptr,
+            .pSpecializationInfo = nullptr
         }
     };
+
     VkGraphicsPipelineCreateInfo pipelineInfo = {
         .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
         .pNext = nullptr,
@@ -361,22 +355,22 @@ void VulkanPipelineManager::initializePipeline(int width, int height) {
         .renderPass = context_.renderPass,
         .subpass = 0,
         .basePipelineHandle = VK_NULL_HANDLE,
-        .basePipelineIndex = -1,
+        .basePipelineIndex = -1
     };
-    if (vkCreateGraphicsPipelines(context_.device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &context_.pipeline) != VK_SUCCESS) {
-        std::string error = "Failed to create graphics pipeline";
-        logger_.log(Logging::LogLevel::Error, "{}", std::source_location::current(), error);
-        throw std::runtime_error(error);
-    }
-    logger_.log(Logging::LogLevel::Info, "Graphics pipeline created", std::source_location::current());
 
-    // Clean up shader modules after pipeline creation
+    if (vkCreateGraphicsPipelines(context_.device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &context_.pipeline) != VK_SUCCESS) {
+        logger_.log(Logging::LogLevel::Error, "Failed to create graphics pipeline", 
+                    std::source_location::current());
+        throw std::runtime_error("Failed to create graphics pipeline");
+    }
+    logger_.log(Logging::LogLevel::Info, "Graphics pipeline created", 
+                std::source_location::current());
+
     vkDestroyShaderModule(context_.device, vertShaderModule_, nullptr);
     vkDestroyShaderModule(context_.device, fragShaderModule_, nullptr);
     vertShaderModule_ = VK_NULL_HANDLE;
     fragShaderModule_ = VK_NULL_HANDLE;
 
-    // Create framebuffers
     context_.swapchainFramebuffers.resize(context_.swapchainImageViews.size());
     for (size_t i = 0; i < context_.swapchainImageViews.size(); ++i) {
         VkImageView attachments[] = {context_.swapchainImageViews[i]};
@@ -387,21 +381,23 @@ void VulkanPipelineManager::initializePipeline(int width, int height) {
             .renderPass = context_.renderPass,
             .attachmentCount = 1,
             .pAttachments = attachments,
-            .width = static_cast<uint32_t>(width),
-            .height = static_cast<uint32_t>(height),
-            .layers = 1,
+            .width = context_.swapchainExtent.width,
+            .height = context_.swapchainExtent.height,
+            .layers = 1
         };
         if (vkCreateFramebuffer(context_.device, &framebufferInfo, nullptr, &context_.swapchainFramebuffers[i]) != VK_SUCCESS) {
-            std::string error = "Failed to create framebuffer";
-            logger_.log(Logging::LogLevel::Error, "{}", std::source_location::current(), error);
-            throw std::runtime_error(error);
+            logger_.log(Logging::LogLevel::Error, "Failed to create framebuffer for index {}", 
+                        std::source_location::current(), i);
+            throw std::runtime_error("Failed to create framebuffer");
         }
     }
-    logger_.log(Logging::LogLevel::Info, "Created {} framebuffers", std::source_location::current(), context_.swapchainFramebuffers.size());
+    logger_.log(Logging::LogLevel::Info, "Created {} framebuffers", 
+                std::source_location::current(), context_.swapchainFramebuffers.size());
 }
 
 void VulkanPipelineManager::cleanupPipeline() {
-    logger_.log(Logging::LogLevel::Debug, "Cleaning up pipeline", std::source_location::current());
+    logger_.log(Logging::LogLevel::Debug, "Cleaning up pipeline", 
+                std::source_location::current());
 
     if (context_.pipeline != VK_NULL_HANDLE) {
         vkDestroyPipeline(context_.device, context_.pipeline, nullptr);
@@ -424,8 +420,11 @@ void VulkanPipelineManager::cleanupPipeline() {
         context_.renderPass = VK_NULL_HANDLE;
     }
     for (auto framebuffer : context_.swapchainFramebuffers) {
-        vkDestroyFramebuffer(context_.device, framebuffer, nullptr);
+        if (framebuffer != VK_NULL_HANDLE) {
+            vkDestroyFramebuffer(context_.device, framebuffer, nullptr);
+        }
     }
     context_.swapchainFramebuffers.clear();
-    logger_.log(Logging::LogLevel::Info, "Pipeline cleaned up", std::source_location::current());
+    logger_.log(Logging::LogLevel::Info, "Pipeline cleaned up", 
+                std::source_location::current());
 }

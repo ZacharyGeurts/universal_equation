@@ -14,23 +14,16 @@
 #include <syncstream>
 #include "engine/SDL3/SDL3_window.hpp"
 
-// ANSI color codes for consistent logging
-#define RESET "\033[0m"
-#define MAGENTA "\033[1;35m" // Bold magenta for errors
-#define CYAN "\033[1;36m"    // Bold cyan for debug
-#define YELLOW "\033[1;33m"  // Bold yellow for warnings
-#define GREEN "\033[1;32m"   // Bold green for info
-
 namespace SDL3Initializer {
 
 struct VulkanInstanceDeleter {
-    void operator()(VkInstance instance) const;
+    void operator()(VkInstance instance);
 };
 
 struct VulkanSurfaceDeleter {
     VulkanSurfaceDeleter() = default;
     explicit VulkanSurfaceDeleter(VkInstance instance) : m_instance(instance) {}
-    void operator()(VkSurfaceKHR surface) const;
+    void operator()(VkSurfaceKHR surface);
     VkInstance m_instance = nullptr;
 };
 

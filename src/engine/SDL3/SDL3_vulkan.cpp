@@ -5,6 +5,7 @@
 
 #include "engine/SDL3/SDL3_vulkan.hpp"
 #include "engine/logging.hpp"
+#include <SDL3/SDL.h>
 #include <SDL3/SDL_vulkan.h>
 #include <vulkan/vulkan.h>
 #ifdef _WIN32
@@ -17,7 +18,7 @@
 
 namespace SDL3Initializer {
 
-void VulkanInstanceDeleter::operator()(VkInstance instance) const {
+void VulkanInstanceDeleter::operator()(VkInstance instance) {
     Logging::Logger logger;
     if (instance) {
         logger.log(Logging::LogLevel::Info, "Destroying Vulkan instance", std::source_location::current());
@@ -25,7 +26,7 @@ void VulkanInstanceDeleter::operator()(VkInstance instance) const {
     }
 }
 
-void VulkanSurfaceDeleter::operator()(VkSurfaceKHR surface) const {
+void VulkanSurfaceDeleter::operator()(VkSurfaceKHR surface) {
     Logging::Logger logger;
     if (surface && m_instance) {
         logger.log(Logging::LogLevel::Info, "Destroying Vulkan surface", std::source_location::current());
@@ -47,7 +48,18 @@ void initVulkan(
     Logging::Logger logger;
     logger.log(Logging::LogLevel::Info, "Initializing Vulkan with title: {}", std::source_location::current(), title);
 
-    // Get Vulkan instance extensions from SDL
+    // Verify SDL_Window has Vulkan flag
+    if ((SDL_GetWindowFlags(window) & SDL_WINDOW_VULKAN) == 0) {
+        std::string error = "SDL_Window not created with SDL_WINDOW_VULKAN flag";
+        logger.log(Logging::LogLevel::Error, "{}", std::source_location::current(), error);
+        throw std::runtime_error(error);
+    }
+
+    // Check SDL video driver to prefer Wayland if available (avoids X11 issues)
+    const char* videoDriver = SDL_GetCurrentVideoDriver();
+    logger.log(Logging::LogLevel::Info, "Current SDL video driver: {}", std::source_location::current(), videoDriver ? videoDriver : "none");
+
+    // Get Vulkan instance extensions from SDL (handles KHR surface extensions for AMD/Intel/NVIDIA)
     logger.log(Logging::LogLevel::Debug, "Getting Vulkan instance extensions from SDL", std::source_location::current());
     Uint32 extCount;
     auto exts = SDL_Vulkan_GetInstanceExtensions(&extCount);
@@ -65,41 +77,30 @@ void initVulkan(
     // Check available Vulkan instance extensions
     logger.log(Logging::LogLevel::Debug, "Checking Vulkan instance extensions", std::source_location::current());
     uint32_t instanceExtCount;
-    vkEnumerateInstanceExtensionProperties(nullptr, &instanceExtCount, nullptr);
+    VkResult result = vkEnumerateInstanceExtensionProperties(nullptr, &instanceExtCount, nullptr);
+    if (result != VK_SUCCESS) {
+        std::string error = std::format("vkEnumerateInstanceExtensionProperties failed: {}", result);
+        logger.log(Logging::LogLevel::Error, "{}", std::source_location::current(), error);
+        throw std::runtime_error(error);
+    }
     std::vector<VkExtensionProperties> instanceExtensions(instanceExtCount);
-    vkEnumerateInstanceExtensionProperties(nullptr, &instanceExtCount, instanceExtensions.data());
+    result = vkEnumerateInstanceExtensionProperties(nullptr, &instanceExtCount, instanceExtensions.data());
+    if (result != VK_SUCCESS) {
+        std::string error = std::format("vkEnumerateInstanceExtensionProperties failed: {}", result);
+        logger.log(Logging::LogLevel::Error, "{}", std::source_location::current(), error);
+        throw std::runtime_error(error);
+    }
 
     bool hasSurfaceExtension = false;
-    std::vector<std::string> platformSurfaceExtensions;
-    std::string_view platform = SDL_GetPlatform();
-    logger.log(Logging::LogLevel::Info, "Detected platform: {}", std::source_location::current(), platform);
-
     for (const auto& ext : instanceExtensions) {
         logger.log(Logging::LogLevel::Debug, "Available instance extension: {}", std::source_location::current(), ext.extensionName);
         if (std::strcmp(ext.extensionName, VK_KHR_SURFACE_EXTENSION_NAME) == 0) {
             hasSurfaceExtension = true;
             logger.log(Logging::LogLevel::Info, "VK_KHR_surface extension found", std::source_location::current());
         }
-        if (platform == "Linux") {
-            if (std::strcmp(ext.extensionName, VK_KHR_XLIB_SURFACE_EXTENSION_NAME) == 0 ||
-                std::strcmp(ext.extensionName, VK_KHR_WAYLAND_SURFACE_EXTENSION_NAME) == 0) {
-                platformSurfaceExtensions.emplace_back(ext.extensionName);
-            }
-        }
-#ifdef _WIN32
-        else if (platform == "Windows" && std::strcmp(ext.extensionName, VK_KHR_WIN32_SURFACE_EXTENSION_NAME) == 0) {
-            platformSurfaceExtensions.emplace_back(ext.extensionName);
-        }
-#endif
     }
 
-    for (const auto& extName : platformSurfaceExtensions) {
-        if (std::find(extensions.begin(), extensions.end(), extName.c_str()) == extensions.end()) {
-            logger.log(Logging::LogLevel::Debug, "Adding platform surface extension: {}", std::source_location::current(), extName);
-            extensions.push_back(extName.c_str());
-        }
-    }
-
+    // Add ray-tracing KHR extensions if requested
     if (rt) {
         logger.log(Logging::LogLevel::Debug, "Enumerating Vulkan instance extension properties for ray tracing", std::source_location::current());
         const char* rtExts[] = {
@@ -111,8 +112,10 @@ void initVulkan(
         for (auto ext : rtExts) {
             if (std::any_of(instanceExtensions.begin(), instanceExtensions.end(), 
                             [ext](const auto& p) { return std::strcmp(p.extensionName, ext) == 0; })) {
-                logger.log(Logging::LogLevel::Debug, "Adding Vulkan extension: {}", std::source_location::current(), ext);
+                logger.log(Logging::LogLevel::Debug, "Adding Vulkan KHR extension: {}", std::source_location::current(), ext);
                 extensions.push_back(ext);
+            } else {
+                logger.log(Logging::LogLevel::Warning, "Ray tracing extension {} not supported", std::source_location::current(), ext);
             }
         }
     }
@@ -121,7 +124,26 @@ void initVulkan(
 #ifndef NDEBUG
     if (enableValidation) {
         logger.log(Logging::LogLevel::Info, "Adding Vulkan validation layer", std::source_location::current());
-        layers.push_back("VK_LAYER_KHRONOS_validation");
+        uint32_t layerCount;
+        result = vkEnumerateInstanceLayerProperties(&layerCount, nullptr);
+        if (result != VK_SUCCESS) {
+            std::string error = std::format("vkEnumerateInstanceLayerProperties failed: {}", result);
+            logger.log(Logging::LogLevel::Error, "{}", std::source_location::current(), error);
+            throw std::runtime_error(error);
+        }
+        std::vector<VkLayerProperties> availableLayers(layerCount);
+        result = vkEnumerateInstanceLayerProperties(&layerCount, availableLayers.data());
+        if (result != VK_SUCCESS) {
+            std::string error = std::format("vkEnumerateInstanceLayerProperties failed: {}", result);
+            logger.log(Logging::LogLevel::Error, "{}", std::source_location::current(), error);
+            throw std::runtime_error(error);
+        }
+        if (std::any_of(availableLayers.begin(), availableLayers.end(), 
+                        [](const auto& layer) { return std::strcmp(layer.layerName, "VK_LAYER_KHRONOS_validation") == 0; })) {
+            layers.push_back("VK_LAYER_KHRONOS_validation");
+        } else {
+            logger.log(Logging::LogLevel::Warning, "Validation layer VK_LAYER_KHRONOS_validation not available", std::source_location::current());
+        }
     }
 #endif
 
@@ -152,9 +174,9 @@ void initVulkan(
         .ppEnabledExtensionNames = extensions.data()
     };
     VkInstance vkInstance;
-    VkResult result = vkCreateInstance(&ci, nullptr, &vkInstance);
+    result = vkCreateInstance(&ci, nullptr, &vkInstance);
     if (result != VK_SUCCESS) {
-        std::string error = std::format("vkCreateInstance failed: {}", result);
+        std::string error = std::format("vkCreateInstance failed with VkResult: {}", result);
         logger.log(Logging::LogLevel::Error, "{}", std::source_location::current(), error);
         throw std::runtime_error(error);
     }
@@ -187,9 +209,19 @@ std::vector<std::string> getVulkanExtensions() {
     Logging::Logger logger;
     logger.log(Logging::LogLevel::Debug, "Querying Vulkan instance extensions", std::source_location::current());
     uint32_t count;
-    vkEnumerateInstanceExtensionProperties(nullptr, &count, nullptr);
+    VkResult result = vkEnumerateInstanceExtensionProperties(nullptr, &count, nullptr);
+    if (result != VK_SUCCESS) {
+        std::string error = std::format("vkEnumerateInstanceExtensionProperties failed: {}", result);
+        logger.log(Logging::LogLevel::Error, "{}", std::source_location::current(), error);
+        throw std::runtime_error(error);
+    }
     std::vector<VkExtensionProperties> props(count);
-    vkEnumerateInstanceExtensionProperties(nullptr, &count, props.data());
+    result = vkEnumerateInstanceExtensionProperties(nullptr, &count, props.data());
+    if (result != VK_SUCCESS) {
+        std::string error = std::format("vkEnumerateInstanceExtensionProperties failed: {}", result);
+        logger.log(Logging::LogLevel::Error, "{}", std::source_location::current(), error);
+        throw std::runtime_error(error);
+    }
     std::vector<std::string> extensions;
     for (const auto& prop : props) {
         extensions.emplace_back(prop.extensionName);

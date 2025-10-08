@@ -1,9 +1,4 @@
-#include "main.hpp"  // Include the Application class header (defines the main engine coordinator).
-#include <iostream>  // For std::cerr (error logging) and std::endl (output flushing).
-#include <ctime>     // For std::time, std::localtime, and std::strftime (timestamp generation).
-#include <stdexcept> // For std::runtime_error (custom exception throwing on invalid resolution).
-
-// AMOURANTH RTX engine September, 2025 - Entry point for the application.
+// AMOURANTH RTX Engine, October 2025 - Entry point for the application.
 // This file serves as the program's main entry point, responsible for:
 // - Validating minimum resolution requirements (320x200) to ensure Vulkan swapchain compatibility.
 // - Instantiating the Application class with user-specified (or default) window dimensions.
@@ -14,33 +9,33 @@
 // - Resolution clamping: Enforces minimum size to prevent Vulkan validation errors.
 // - Simplicity: Minimal main function; all logic delegated to Application class.
 // - Extensibility: Easy to modify resolution or add command-line parsing (e.g., for variable sizes).
-// - Cross-platform readiness: Defaults to 1280x720 on desktop (Linux, Windows, macOS); uses 0x0 on Android for fullscreen auto-sizing.
+// - Platform support: Designed for Linux and Windows; enforces 1280x720 default resolution.
 // Requirements:
 // - Application class from main.hpp (integrates SDL3, Vulkan, and engine logic).
-// - Compiled with -O3 -std=c++17 -Wall -Wextra -g -fopenmp -Iinclude (for OpenMP and debugging).
+// - Compiled with -O3 -std=c++20 -Wall -Wextra -g -fopenmp -Iinclude (for OpenMP and debugging).
 // Usage: Compile and run; the app launches a Vulkan window with the Dimensional Navigator renderer.
 // Notes:
-// - On Android: Window size parameters are ignored by SDL3; fullscreen is used automatically.
 // - On error: Logs "[YYYY-MM-DD HH:MM:SS] Error: <message>" and exits with code 1.
 // - For debugging: Use Vulkan validation layers to catch GPU issues; enable SDL3 logging for input/window events.
+// - X11 BadMatch: Ensure SDL3 window attributes match Vulkan surface requirements (e.g., SDL_WINDOW_VULKAN).
+
+#include "main.hpp"  // Include the Application class header (defines the main engine coordinator).
+#include <iostream>  // For std::cerr (error logging) and std::endl (output flushing).
+#include <ctime>     // For std::time, std::localtime, and std::strftime (timestamp generation).
+#include <stdexcept> // For std::runtime_error (custom exception throwing on invalid resolution).
+#include <sstream>   // For std::stringstream (timestamp and error message formatting).
 
 int main() {
     try {
         // Define and validate the initial window resolution.
         // Minimum size (320x200) ensures Vulkan swapchain creation succeeds without validation errors.
-        // On Android, use 0x0 to let SDL3 handle fullscreen sizing automatically.
-        int width, height;
-#ifdef __ANDROID__
-        width = 0;
-        height = 0;
-#else
-        width = 1280;   // Horizontal resolution (pixels; customizable for testing).
-        height = 720;   // Vertical resolution (pixels; customizable for testing).
-#endif
-        // Only validate if explicit size is provided (skip for Android's auto-sizing).
-        if (width > 0 && height > 0 && (width < 320 || height < 200)) {
+        int width = 1280;  // Horizontal resolution (pixels; customizable for testing).
+        int height = 720;  // Vertical resolution (pixels; customizable for testing).
+        if (width < 320 || height < 200) {
             // Throw early if resolution is invalid to prevent downstream Vulkan failures.
-            throw std::runtime_error("Resolution must be at least 320x200");
+            std::stringstream ss;
+            ss << "Resolution must be at least 320x200, got " << width << "x" << height;
+            throw std::runtime_error(ss.str());
         }
 
         // Instantiate the Application class, passing title and resolution.
@@ -58,8 +53,10 @@ int main() {
         std::time_t now = std::time(nullptr);  // Get current time as Unix timestamp.
         char timeStr[64];                      // Buffer for formatted timestamp (YYYY-MM-DD HH:MM:SS).
         std::strftime(timeStr, sizeof(timeStr), "%Y-%m-%d %H:%M:%S", std::localtime(&now));  // Format local time.
-        // Log error with timestamp to stderr (visible in console/terminal).
-        std::cerr << "[" << timeStr << "] Error: " << e.what() << std::endl;
+        // Log error with timestamp and platform info to stderr (visible in console/terminal).
+        std::stringstream ss;
+        ss << "[" << timeStr << "] Error on " << SDL_GetPlatform() << ": " << e.what();
+        std::cerr << ss.str() << std::endl;
         // Return non-zero exit code to indicate failure (useful for scripts/automation).
         return 1;
     }

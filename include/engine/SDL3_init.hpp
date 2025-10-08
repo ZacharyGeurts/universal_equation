@@ -14,7 +14,7 @@
 #include <string>
 #include <vector>
 
-// Forward declaration to avoid including full logging.hpp
+// Forward declarations
 namespace Logging {
     class Logger;
 }
@@ -28,6 +28,7 @@ public:
     VkSurfaceKHR getSurface() const { return surface_; }
     bool shouldQuit() const;
     void pollEvents();
+    SDL_Window* getWindow() const { return window_; }
 
 private:
     SDL_Window* window_;

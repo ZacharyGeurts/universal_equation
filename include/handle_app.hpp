@@ -1,10 +1,10 @@
+#ifndef HANDLE_APP_HPP
+#define HANDLE_APP_HPP
+
 // AMOURANTH RTX Engine, October 2025 - Application lifecycle management.
 // Manages SDL3 input events, Vulkan rendering, audio, and core application loop.
 // Dependencies: SDL3, Vulkan, GLM, C++20 standard library.
 // Zachary Geurts 2025
-
-#ifndef HANDLE_APP_HPP
-#define HANDLE_APP_HPP
 
 #include "engine/SDL3_init.hpp"
 #include "engine/SDL3/SDL3_audio.hpp"

@@ -1,29 +1,8 @@
-// AMOURANTH RTX Engine, October 2025 - Vulkan swapchain management.
-// Initializes and manages swapchain, image views, and framebuffers.
+// AMOURANTH RTX Engine, October 2025 - Vulkan swapchain initialization.
+// Manages swapchain creation and resizing.
 // Dependencies: Vulkan 1.3+, C++20 standard library.
 // Zachary Geurts 2025
 
-#ifndef VULKAN_INIT_SWAPCHAIN_HPP
-#define VULKAN_INIT_SWAPCHAIN_HPP
+#pragma once
 
-#include <vulkan/vulkan.h>
-#include <vector>
-
-// Forward declaration of VulkanContext
-struct VulkanContext;
-
-class VulkanSwapchainManager {
-public:
-    VulkanSwapchainManager(VulkanContext& context, VkSurfaceKHR surface);
-    ~VulkanSwapchainManager();
-
-    void initializeSwapchain(int width, int height);
-    void handleResize(int width, int height);
-    void cleanupSwapchain();
-
-private:
-    VulkanContext& context_;
-    VkSurfaceKHR surface_;
-};
-
-#endif // VULKAN_INIT_SWAPCHAIN_HPP
+// Empty header; all definitions moved to Vulkan_init.hpp to avoid redefinition

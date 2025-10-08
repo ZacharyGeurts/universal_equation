@@ -38,7 +38,7 @@ std::unique_ptr<SDL_Window, SDLWindowDeleter> createWindow(
     const char* title, 
     int w, 
     int h, 
-    Uint32 flags,
+    Uint32 flags = SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE,
     std::function<void(const std::string&)> logMessage = [](const std::string& msg) {
         Logging::Logger logger;
         logger.log(Logging::LogLevel::Info, "{}", std::source_location::current(), msg);

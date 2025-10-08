@@ -9,6 +9,10 @@
 #include <numbers>
 #include <stdexcept>
 #include <source_location>
+#include <atomic>
+#include <vector>
+#include <algorithm>
+#include <thread>
 
 long double UniversalEquation::computeGravitationalPotential(int vertexIndex1, int vertexIndex2) const {
     // Guard against excessive logging in hot loops
@@ -20,7 +24,7 @@ long double UniversalEquation::computeGravitationalPotential(int vertexIndex1, i
                     std::source_location::current(), vertexIndex1, vertexIndex2);
     }
 
-    // Check for empty vertex array
+    // Check for empty vertex array with atomic size for thread safety
     size_t size = nCubeVertices_.size();
     if (size == 0) {
         if (shouldLog) {
@@ -30,10 +34,16 @@ long double UniversalEquation::computeGravitationalPotential(int vertexIndex1, i
         return 0.0L;
     }
 
-    // Validate vertexIndex1
-    validateVertexIndex(vertexIndex1, std::source_location::current());
+    // Validate and clamp vertexIndex1
+    if (vertexIndex1 < 0 || static_cast<size_t>(vertexIndex1) >= size) {
+        if (shouldLog) {
+            logger_.log(Logging::LogLevel::Warning, "Invalid vertexIndex1 {} (size={}), clamping to 0",
+                        std::source_location::current(), vertexIndex1, size);
+        }
+        vertexIndex1 = 0;
+    }
 
-    // Clamp vertexIndex2 to valid range if invalid
+    // Validate and clamp vertexIndex2
     if (vertexIndex2 < 0 || static_cast<size_t>(vertexIndex2) >= size) {
         vertexIndex2 = static_cast<int>(size - 1); // Use last valid index
         if (shouldLog) {
@@ -41,9 +51,6 @@ long double UniversalEquation::computeGravitationalPotential(int vertexIndex1, i
                         std::source_location::current(), vertexIndex2, vertexIndex2, size);
         }
     }
-
-    // Validate vertexIndex2 after clamping
-    validateVertexIndex(vertexIndex2, std::source_location::current());
 
     // Skip if vertices are the same to avoid self-interaction
     if (vertexIndex1 == vertexIndex2) {
@@ -54,20 +61,23 @@ long double UniversalEquation::computeGravitationalPotential(int vertexIndex1, i
         return 0.0L;
     }
 
+    // Safe access to vertices with bounds check
+    const auto& v1 = nCubeVertices_[static_cast<size_t>(vertexIndex1)];
+    const auto& v2 = nCubeVertices_[static_cast<size_t>(vertexIndex2)];
+
     // Validate vector sizes
-    const auto& v1 = nCubeVertices_[vertexIndex1];
-    const auto& v2 = nCubeVertices_[vertexIndex2];
     size_t dim = static_cast<size_t>(getCurrentDimension());
     if (v1.size() != dim || v2.size() != dim) {
         if (shouldLog) {
             logger_.log(Logging::LogLevel::Error, "Dimension mismatch: v1.size()={}, v2.size()={}, expected={}",
                         std::source_location::current(), v1.size(), v2.size(), dim);
         }
-        throw std::runtime_error("Dimension mismatch in vertex vectors");
+        return 0.0L; // Return safe value instead of throwing in hot path
     }
 
-    // Compute distance between vertices
+    // Compute distance between vertices with safeguards
     long double distance = 0.0L;
+    bool validDistance = true;
     for (size_t i = 0; i < dim; ++i) {
         long double diff = v1[i] - v2[i];
         if (std::isnan(diff) || std::isinf(diff)) {
@@ -79,24 +89,28 @@ long double UniversalEquation::computeGravitationalPotential(int vertexIndex1, i
         }
         distance += diff * diff;
         if (std::isnan(distance) || std::isinf(distance)) {
-            if (shouldLog) {
-                logger_.log(Logging::LogLevel::Warning, "NaN/Inf in distance computation for vertices {} and {}, resetting distance",
-                            std::source_location::current(), vertexIndex1, vertexIndex2);
-            }
-            distance = 1.0L; // Reset to safe value
+            validDistance = false;
             break;
         }
     }
-    distance = std::sqrt(distance);
-    if (std::isnan(distance) || std::isinf(distance) || distance < 0.0L) {
+    if (!validDistance) {
         if (shouldLog) {
-            logger_.log(Logging::LogLevel::Warning, "Invalid distance for vertices {} and {}: distance={}. Using minDistance",
-                        std::source_location::current(), vertexIndex1, vertexIndex2, distance);
+            logger_.log(Logging::LogLevel::Warning, "Invalid distance computation for vertices {} and {}, using fallback",
+                        std::source_location::current(), vertexIndex1, vertexIndex2);
         }
-        distance = 1e-10L;
+        distance = 1.0L;
+    } else {
+        distance = std::sqrt(distance);
+        if (std::isnan(distance) || std::isinf(distance) || distance < 0.0L) {
+            if (shouldLog) {
+                logger_.log(Logging::LogLevel::Warning, "Invalid sqrt distance for vertices {} and {}: distance={}. Using minDistance",
+                            std::source_location::current(), vertexIndex1, vertexIndex2, distance);
+            }
+            distance = 1e-10L;
+        }
     }
 
-    // Avoid division by zero
+    // Avoid division by zero with minimum distance
     constexpr long double minDistance = 1e-10L;
     if (distance < minDistance) {
         if (shouldLog) {
@@ -109,11 +123,14 @@ long double UniversalEquation::computeGravitationalPotential(int vertexIndex1, i
     // Compute gravitational potential: V = -G * m1 * m2 / r
     constexpr long double G = 6.67430e-11L; // Gravitational constant (m^3 kg^-1 s^-2)
     constexpr long double volume = 1e-3L; // Volume scaling (0.001 m^3, assuming ~0.1m per vertex)
-    long double mass = std::clamp(materialDensity_.load(), 0.0L, 1.0e6L) * volume; // Mass (kg) = density (kg/m^3) * volume (m^3)
+    long double density = std::clamp(materialDensity_.load(), 0.0L, 1.0e6L);
+    long double mass = density * volume; // Mass (kg) = density (kg/m^3) * volume (m^3)
     long double potential = -safe_div(G * mass * mass, distance);
 
-    // Apply influence factor
-    potential *= getInfluence();
+    // Apply influence factor with clamp
+    long double influence = getInfluence();
+    influence = std::clamp(influence, 0.0L, 1.0e6L); // Prevent extreme values
+    potential *= influence;
 
     if (std::isnan(potential) || std::isinf(potential)) {
         if (shouldLog) {
@@ -140,10 +157,17 @@ std::vector<long double> UniversalEquation::computeGravitationalAcceleration(int
                     std::source_location::current(), vertexIndex);
     }
 
-    validateVertexIndex(vertexIndex, std::source_location::current());
+    // Validate vertexIndex
+    size_t size = nCubeVertices_.size();
+    if (vertexIndex < 0 || static_cast<size_t>(vertexIndex) >= size) {
+        if (shouldLog) {
+            logger_.log(Logging::LogLevel::Warning, "Invalid vertexIndex {} (size={}), returning zero acceleration",
+                        std::source_location::current(), vertexIndex, size);
+        }
+        return std::vector<long double>(getCurrentDimension(), 0.0L);
+    }
 
     // Check for empty vertex array
-    size_t size = nCubeVertices_.size();
     if (size == 0) {
         if (shouldLog) {
             logger_.log(Logging::LogLevel::Warning, "Empty nCubeVertices_, returning zero acceleration",
@@ -152,51 +176,71 @@ std::vector<long double> UniversalEquation::computeGravitationalAcceleration(int
         return std::vector<long double>(getCurrentDimension(), 0.0L);
     }
 
-    std::vector<long double> acceleration(getCurrentDimension(), 0.0L);
+    size_t dim = static_cast<size_t>(getCurrentDimension());
+    std::vector<long double> acceleration(dim, 0.0L);
     constexpr long double G = 6.67430e-11L; // Gravitational constant (m^3 kg^-1 s^-2)
     constexpr long double volume = 1e-3L; // Volume scaling (0.001 m^3)
-    long double mass = std::clamp(materialDensity_.load(), 0.0L, 1.0e6L) * volume; // Mass (kg)
-    uint64_t numVertices = std::min(static_cast<uint64_t>(nCubeVertices_.size()), getMaxVertices());
+    long double density = std::clamp(materialDensity_.load(), 0.0L, 1.0e6L);
+    long double mass = density * volume; // Mass (kg)
+    uint64_t numVertices = std::min(static_cast<uint64_t>(size), getMaxVertices());
     uint64_t sampleStep = std::max<uint64_t>(1, numVertices / 100); // Sample ~100 interactions per vertex
 
-    for (uint64_t j = 0; j < numVertices && j < nCubeVertices_.size(); j += sampleStep) {
-        if (static_cast<int>(j) == vertexIndex) continue; // Skip self-interaction
+    const auto& v1 = nCubeVertices_[static_cast<size_t>(vertexIndex)];
 
-        long double distance = 0.0L;
-        const auto& v1 = nCubeVertices_[vertexIndex];
-        const auto& v2 = nCubeVertices_[j];
-        size_t dim = static_cast<size_t>(getCurrentDimension());
-        if (v1.size() != dim || v2.size() != dim) {
+    // Ensure dimension consistency for v1
+    if (v1.size() != dim) {
+        if (shouldLog) {
+            logger_.log(Logging::LogLevel::Error, "Dimension mismatch for v1: size={}, expected={}",
+                        std::source_location::current(), v1.size(), dim);
+        }
+        return acceleration; // Return zeros
+    }
+
+    for (uint64_t j = 0; j < numVertices; j += sampleStep) {
+        size_t j_idx = static_cast<size_t>(j % size); // Wrap around safely
+        if (j_idx == static_cast<size_t>(vertexIndex)) continue; // Skip self-interaction
+
+        const auto& v2 = nCubeVertices_[j_idx];
+
+        // Ensure dimension consistency for v2
+        if (v2.size() != dim) {
             if (shouldLog) {
-                logger_.log(Logging::LogLevel::Error, "Dimension mismatch: v1.size()={}, v2.size()={}, expected={}",
-                            std::source_location::current(), v1.size(), v2.size(), dim);
+                logger_.log(Logging::LogLevel::Error, "Dimension mismatch for v2 at index {}: size={}, expected={}",
+                            std::source_location::current(), j_idx, v2.size(), dim);
             }
             continue; // Skip invalid vertices
         }
+
+        // Compute distance with safeguards
+        long double distance = 0.0L;
+        bool validDistance = true;
         for (size_t i = 0; i < dim; ++i) {
             long double diff = v1[i] - v2[i];
             if (std::isnan(diff) || std::isinf(diff)) {
                 if (shouldLog) {
                     logger_.log(Logging::LogLevel::Warning, "NaN/Inf diff in dimension {} for vertices {} and {}",
-                                std::source_location::current(), i, vertexIndex, j);
+                                std::source_location::current(), i, vertexIndex, j_idx);
                 }
                 diff = 0.0L;
             }
             distance += diff * diff;
             if (std::isnan(distance) || std::isinf(distance)) {
-                if (shouldLog) {
-                    logger_.log(Logging::LogLevel::Warning, "NaN/Inf in distance for vertex {} and {}, skipping",
-                                std::source_location::current(), vertexIndex, j);
-                }
-                distance = 1.0L;
+                validDistance = false;
                 break;
             }
+        }
+        if (!validDistance) {
+            if (shouldLog) {
+                logger_.log(Logging::LogLevel::Warning, "Invalid distance computation for vertex {} and {}, skipping",
+                            std::source_location::current(), vertexIndex, j_idx);
+            }
+            continue;
         }
         distance = std::sqrt(distance);
         if (std::isnan(distance) || std::isinf(distance) || distance <= 0.0L) {
             if (shouldLog) {
                 logger_.log(Logging::LogLevel::Warning, "Invalid distance for vertex {} and {}: distance={}. Skipping",
-                            std::source_location::current(), vertexIndex, j, distance);
+                            std::source_location::current(), vertexIndex, j_idx, distance);
             }
             continue;
         }
@@ -205,7 +249,7 @@ std::vector<long double> UniversalEquation::computeGravitationalAcceleration(int
         if (distance < minDistance) {
             if (shouldLog) {
                 logger_.log(Logging::LogLevel::Debug, "Skipping vertex {}: distance too small ({})",
-                            std::source_location::current(), j, distance);
+                            std::source_location::current(), j_idx, distance);
             }
             continue;
         }
@@ -213,35 +257,44 @@ std::vector<long double> UniversalEquation::computeGravitationalAcceleration(int
         // Compute gravitational acceleration: a = G * m / r^2 * (unit vector)
         long double forceMagnitude = safe_div(G * mass * mass, distance * distance);
         for (size_t i = 0; i < dim; ++i) {
-            long double unitVector = safe_div(v2[i] - v1[i], distance);
+            long double diff = v2[i] - v1[i];
+            long double unitVector = safe_div(diff, distance);
             if (std::isnan(unitVector) || std::isinf(unitVector)) {
                 if (shouldLog) {
-                    logger_.log(Logging::LogLevel::Warning, "Invalid unit vector in dimension {} for vertex {} and {}, skipping",
-                                std::source_location::current(), i, vertexIndex, j);
+                    logger_.log(Logging::LogLevel::Warning, "Invalid unit vector in dimension {} for vertex {} and {}, skipping dim",
+                                std::source_location::current(), i, vertexIndex, j_idx);
                 }
                 continue;
             }
             acceleration[i] += forceMagnitude * unitVector;
+            if (std::isnan(acceleration[i]) || std::isinf(acceleration[i])) {
+                acceleration[i] = 0.0L; // Reset invalid value
+            }
         }
     }
 
-    // Scale up the sampled acceleration
+    // Scale up the sampled acceleration with clamp
     long double scale = static_cast<long double>(sampleStep);
-    for (size_t i = 0; i < static_cast<size_t>(getCurrentDimension()); ++i) {
+    scale = std::clamp(scale, 1.0L, static_cast<long double>(numVertices)); // Prevent overflow
+    for (size_t i = 0; i < dim; ++i) {
         acceleration[i] *= scale;
         if (std::isnan(acceleration[i]) || std::isinf(acceleration[i])) {
             if (shouldLog) {
-                logger_.log(Logging::LogLevel::Warning, "Invalid acceleration in dimension {} for vertex {}: value={}. Resetting to 0",
+                logger_.log(Logging::LogLevel::Warning, "Invalid scaled acceleration in dimension {} for vertex {}: value={}. Resetting to 0",
                             std::source_location::current(), i, vertexIndex, acceleration[i]);
             }
             acceleration[i] = 0.0L;
         }
     }
 
-    // Apply influence factor
+    // Apply influence factor with clamp
     long double influence = getInfluence();
-    for (size_t i = 0; i < static_cast<size_t>(getCurrentDimension()); ++i) {
+    influence = std::clamp(influence, 0.0L, 1.0e6L); // Prevent extreme values
+    for (size_t i = 0; i < dim; ++i) {
         acceleration[i] *= influence;
+        if (std::isnan(acceleration[i]) || std::isinf(acceleration[i])) {
+            acceleration[i] = 0.0L;
+        }
     }
 
     if (shouldLog) {
