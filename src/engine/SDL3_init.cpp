@@ -13,7 +13,7 @@ SDL3Initializer::SDL3Initializer(const std::string& title, int width, int height
     logger_.log(Logging::LogLevel::Info, "Initializing SDL3 with title={}, width={}, height={}",
                 std::source_location::current(), title, width, height);
 
-    if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS)) {
+    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS | SDL_INIT_AUDIO) == 0) {
         logger_.log(Logging::LogLevel::Error, "SDL_Init failed: {}", std::source_location::current(), SDL_GetError());
         throw std::runtime_error("SDL_Init failed: " + std::string(SDL_GetError()));
     }

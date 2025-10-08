@@ -64,7 +64,7 @@ void initAudio(const AudioConfig& c, SDL_AudioDeviceID& audioDevice, SDL_AudioSt
         SDL_PauseAudioDevice(audioDevice);
 
         logger.log(Logging::LogLevel::Debug, "Binding audio stream to device ID: {}", std::source_location::current(), audioDevice);
-        if (SDL_BindAudioStream(audioDevice, audioStream) != 0) {
+        if (SDL_BindAudioStream(audioDevice, audioStream) == 0) {
             std::string error = std::format("SDL_BindAudioStream failed: {}", SDL_GetError());
             logger.log(Logging::LogLevel::Error, "{}", std::source_location::current(), error);
             if (audioStream) {
