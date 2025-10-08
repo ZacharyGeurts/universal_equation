@@ -1,5 +1,5 @@
 // AMOURANTH RTX Engine, October 2025 - Application lifecycle management.
-// Manages SDL3 input events, Vulkan rendering, and core application loop.
+// Manages SDL3 input events, Vulkan rendering, audio, and core application loop.
 // Dependencies: SDL3, Vulkan, GLM, C++20 standard library.
 // Zachary Geurts 2025
 
@@ -7,6 +7,7 @@
 #define HANDLE_APP_HPP
 
 #include "engine/SDL3_init.hpp"
+#include "engine/SDL3/SDL3_audio.hpp"
 #include "engine/Vulkan_init.hpp"
 #include "engine/logging.hpp"
 #include "engine/core.hpp"
@@ -14,6 +15,8 @@
 #include <functional>
 #include <memory>
 #include <vector>
+#include <optional>
+#include <span>
 #include <glm/glm.hpp>
 #include <chrono>
 
@@ -32,6 +35,7 @@ public:
 
 private:
     void initializeInput();
+    void initializeAudio();
 
     std::string title_;
     int width_;
@@ -41,11 +45,13 @@ private:
     std::vector<uint32_t> indices_;
     std::unique_ptr<SDL3Initializer> sdl_;
     std::unique_ptr<VulkanRenderer> renderer_;
-    Logging::Logger logger_;
     std::unique_ptr<DimensionalNavigator> navigator_;
-    AMOURANTH amouranth_;
+    std::optional<AMOURANTH> amouranth_;
     std::unique_ptr<HandleInput> inputHandler_;
-    std::chrono::steady_clock::time_point lastFrameTime_; // Added for dynamic deltaTime
+    Logging::Logger logger_;
+    SDL_AudioDeviceID audioDevice_;
+    SDL_AudioStream* audioStream_;
+    std::chrono::steady_clock::time_point lastFrameTime_;
 };
 
 class HandleInput {
@@ -60,7 +66,7 @@ public:
     using GamepadAxisCallback = std::function<void(const SDL_GamepadAxisEvent&)>;
     using GamepadConnectCallback = std::function<void(bool, SDL_JoystickID, SDL_Gamepad*)>;
 
-    HandleInput(AMOURANTH* amouranth, DimensionalNavigator* navigator, const Logging::Logger& logger);
+    HandleInput(AMOURANTH& amouranth, DimensionalNavigator* navigator, const Logging::Logger& logger);
     void handleInput(Application& app);
     void setCallbacks(
         KeyboardCallback kb = nullptr,
@@ -85,7 +91,7 @@ private:
     void defaultGamepadAxisHandler(const SDL_GamepadAxisEvent& ga);
     void defaultGamepadConnectHandler(bool connected, SDL_JoystickID id, SDL_Gamepad* pad);
 
-    AMOURANTH* amouranth_;
+    AMOURANTH& amouranth_;
     DimensionalNavigator* navigator_;
     const Logging::Logger& logger_;
     KeyboardCallback keyboardCallback_;

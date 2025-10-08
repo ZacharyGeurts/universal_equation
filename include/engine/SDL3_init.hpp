@@ -14,9 +14,14 @@
 #include <string>
 #include <vector>
 
+// Forward declaration to avoid including full logging.hpp
+namespace Logging {
+    class Logger;
+}
+
 class SDL3Initializer {
 public:
-    SDL3Initializer(const std::string& title, int width, int height);
+    SDL3Initializer(const std::string& title, int width, int height, const Logging::Logger& logger);
     ~SDL3Initializer();
 
     VkInstance getInstance() const { return instance_; }
@@ -28,6 +33,7 @@ private:
     SDL_Window* window_;
     VkInstance instance_;
     VkSurfaceKHR surface_;
+    const Logging::Logger& logger_;
 };
 
 #endif // SDL3_INIT_HPP

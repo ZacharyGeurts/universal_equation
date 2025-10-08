@@ -75,10 +75,17 @@ public:
     uint32_t getCurrentImageIndex() const { return currentImageIndex_; }
     VkBuffer getVertexBuffer() const { return context_.vertexBuffer; }
     VkBuffer getIndexBuffer() const { return context_.indexBuffer; }
-    VkCommandBuffer getCommandBuffer() const { return context_.commandBuffers[currentFrame_]; }
+    VkCommandBuffer getCommandBuffer() const { return context_.commandBuffers[currentImageIndex_]; }
     VkPipelineLayout getPipelineLayout() const { return context_.pipelineLayout; }
     VkDescriptorSet getDescriptorSet() const { return context_.descriptorSet; }
     const VulkanContext& getContext() const { return context_; }
+
+    // Additional getters for AMOURANTH integration
+    VkDevice getDevice() const { return context_.device; }
+    VkDeviceMemory getVertexBufferMemory() const { return context_.vertexBufferMemory; }
+    VkPipeline getGraphicsPipeline() const { return context_.pipeline; }
+    VkRenderPass getRenderPass() const { return context_.renderPass; }
+    VkFramebuffer getFramebuffer() const { return context_.swapchainFramebuffers[currentImageIndex_]; }
 
 private:
     VulkanContext context_;

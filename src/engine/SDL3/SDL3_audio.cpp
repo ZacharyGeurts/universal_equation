@@ -10,7 +10,7 @@
 #include <vector>
 #include <format>
 
-namespace SDL3Initializer {
+namespace SDL3Audio {
 
 void initAudio(const AudioConfig& c, SDL_AudioDeviceID& audioDevice, SDL_AudioStream*& audioStream, const Logging::Logger& logger) {
     logger.log(Logging::LogLevel::Info, "Initializing audio with frequency: {}, channels: {}, format: {:#x}",
@@ -94,4 +94,4 @@ SDL_AudioDeviceID getAudioDevice(const SDL_AudioDeviceID& audioDevice, const Log
     return audioDevice;
 }
 
-} // namespace SDL3Initializer
+} // namespace SDL3Audio

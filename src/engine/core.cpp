@@ -1,5 +1,11 @@
+// AMOURANTH RTX Engine, October 2025 - Core simulation logic implementation.
+// Implements AMOURANTH and DimensionalNavigator functionality.
+// Dependencies: Vulkan 1.3+, GLM, SDL3, C++20 standard library.
+// Zachary Geurts 2025
+
 #include "engine/core.hpp"
-#include "Mia.hpp"
+#include "engine/logging.hpp"
+#include "engine/Vulkan_init.hpp"
 #include <glm/gtc/matrix_transform.hpp>
 #include <stdexcept>
 #include <algorithm>
@@ -63,34 +69,34 @@ AMOURANTH::AMOURANTH(DimensionalNavigator* navigator, const Logging::Logger& log
       height_(navigator ? navigator->getHeight() : 600), logger_(logger), device_(device),
       vertexBufferMemory_(vertexBufferMemory), pipeline_(pipeline), ue_(logger, 8, 8, 2.5, 0.0072973525693, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, true, 30000) {
     if (!navigator) {
-        logger_.log(Logging::LogLevel::Error, "Null DimensionalNavigator provided", std::source_location::current());
+        logger_.get().log(Logging::LogLevel::Error, "Null DimensionalNavigator provided", std::source_location::current());
         throw std::runtime_error("AMOURANTH: Null DimensionalNavigator provided");
     }
     if (!device_ || !vertexBufferMemory_ || !pipeline_) {
-        logger_.log(Logging::LogLevel::Error, "Invalid Vulkan resources: device={:p}, vertexBufferMemory={:p}, pipeline={:p}",
-                    std::source_location::current(), static_cast<void*>(device_), static_cast<void*>(vertexBufferMemory_), static_cast<void*>(pipeline_));
+        logger_.get().log(Logging::LogLevel::Error, "Invalid Vulkan resources: device={:p}, vertexBufferMemory={:p}, pipeline={:p}",
+                          std::source_location::current(), static_cast<void*>(device_), static_cast<void*>(vertexBufferMemory_), static_cast<void*>(pipeline_));
         throw std::runtime_error("AMOURANTH: Invalid Vulkan resources");
     }
-    logger_.log(Logging::LogLevel::Info, "Initializing AMOURANTH with width={}, height={}",
-                std::source_location::current(), width_, height_);
+    logger_.get().log(Logging::LogLevel::Info, "Initializing AMOURANTH with width={}, height={}",
+                      std::source_location::current(), width_, height_);
     initializeSphereGeometry();
     initializeQuadGeometry();
     initializeTriangleGeometry();
     initializeVoxelGeometry();
     initializeCalculator();
     initializeBalls();
-    logger_.log(Logging::LogLevel::Info, "AMOURANTH initialized successfully", std::source_location::current());
+    logger_.get().log(Logging::LogLevel::Info, "AMOURANTH initialized successfully", std::source_location::current());
 }
 
 void AMOURANTH::render(uint32_t imageIndex, VkBuffer vertexBuffer, VkCommandBuffer commandBuffer,
                        VkBuffer indexBuffer, VkPipelineLayout pipelineLayout, VkDescriptorSet descriptorSet,
                        VkRenderPass renderPass, VkFramebuffer framebuffer, float deltaTime) {
-    logger_.log(Logging::LogLevel::Debug, "Rendering frame for image index {}", std::source_location::current(), imageIndex);
+    logger_.get().log(Logging::LogLevel::Debug, "Rendering frame for image index {}", std::source_location::current(), imageIndex);
     if (!device_ || !vertexBuffer || !commandBuffer || !indexBuffer || !pipelineLayout || !descriptorSet || !renderPass || !framebuffer) {
-        logger_.log(Logging::LogLevel::Error, "Invalid Vulkan resources in render: device={:p}, vertexBuffer={:p}, commandBuffer={:p}, indexBuffer={:p}, pipelineLayout={:p}, descriptorSet={:p}, renderPass={:p}, framebuffer={:p}",
-                    std::source_location::current(), static_cast<void*>(device_), static_cast<void*>(vertexBuffer),
-                    static_cast<void*>(commandBuffer), static_cast<void*>(indexBuffer), static_cast<void*>(pipelineLayout),
-                    static_cast<void*>(descriptorSet), static_cast<void*>(renderPass), static_cast<void*>(framebuffer));
+        logger_.get().log(Logging::LogLevel::Error, "Invalid Vulkan resources in render: device={:p}, vertexBuffer={:p}, commandBuffer={:p}, indexBuffer={:p}, pipelineLayout={:p}, descriptorSet={:p}, renderPass={:p}, framebuffer={:p}",
+                          std::source_location::current(), static_cast<void*>(device_), static_cast<void*>(vertexBuffer),
+                          static_cast<void*>(commandBuffer), static_cast<void*>(indexBuffer), static_cast<void*>(pipelineLayout),
+                          static_cast<void*>(descriptorSet), static_cast<void*>(renderPass), static_cast<void*>(framebuffer));
         throw std::runtime_error("Invalid Vulkan resources in AMOURANTH::render");
     }
     switch (simulator_->getMode()) {
@@ -133,8 +139,8 @@ void AMOURANTH::update(float deltaTime) {
         wavePhase_ += waveSpeed_ * deltaTime;
         simulator_->setWavePhase(wavePhase_);
         updateCache();
-        logger_.log(Logging::LogLevel::Debug, "Updated simulation with deltaTime={:.3f}, wavePhase={:.3f}",
-                    std::source_location::current(), deltaTime, wavePhase_);
+        logger_.get().log(Logging::LogLevel::Debug, "Updated simulation with deltaTime={:.3f}, wavePhase={:.3f}",
+                          std::source_location::current(), deltaTime, wavePhase_);
         latch.count_down();
         latch.wait();
     }
@@ -144,7 +150,7 @@ void AMOURANTH::adjustInfluence(double delta) {
     std::latch latch(1);
     ue_.setInfluence(ue_.getInfluence() + delta);
     updateCache();
-    logger_.log(Logging::LogLevel::Debug, "Adjusted influence by {}", std::source_location::current(), delta);
+    logger_.get().log(Logging::LogLevel::Debug, "Adjusted influence by {}", std::source_location::current(), delta);
     latch.count_down();
     latch.wait();
 }
@@ -152,7 +158,7 @@ void AMOURANTH::adjustInfluence(double delta) {
 void AMOURANTH::adjustNurbMatter(double delta) {
     std::latch latch(1);
     for (auto& cache : cache_) cache.nurbMatter += delta;
-    logger_.log(Logging::LogLevel::Debug, "Adjusted nurbMatter by {}", std::source_location::current(), delta);
+    logger_.get().log(Logging::LogLevel::Debug, "Adjusted nurbMatter by {}", std::source_location::current(), delta);
     latch.count_down();
     latch.wait();
 }
@@ -160,7 +166,7 @@ void AMOURANTH::adjustNurbMatter(double delta) {
 void AMOURANTH::adjustNurbEnergy(double delta) {
     std::latch latch(1);
     for (auto& cache : cache_) cache.nurbEnergy += delta;
-    logger_.log(Logging::LogLevel::Debug, "Adjusted nurbEnergy by {}", std::source_location::current(), delta);
+    logger_.get().log(Logging::LogLevel::Debug, "Adjusted nurbEnergy by {}", std::source_location::current(), delta);
     latch.count_down();
     latch.wait();
 }
@@ -174,7 +180,7 @@ void AMOURANTH::updateCache() {
         cache_[i].nurbMatter = result.nurbMatter;
         cache_[i].nurbEnergy = result.nurbEnergy;
     }
-    logger_.log(Logging::LogLevel::Debug, "Updated cache with {} entries", std::source_location::current(), cache_.size());
+    logger_.get().log(Logging::LogLevel::Debug, "Updated cache with {} entries", std::source_location::current(), cache_.size());
     latch.count_down();
     latch.wait();
 }
@@ -184,7 +190,7 @@ void AMOURANTH::updateZoom(bool zoomIn) {
     zoomLevel_ *= zoomIn ? 1.1f : 0.9f;
     zoomLevel_ = std::max(0.1f, zoomLevel_);
     simulator_->setZoomLevel(zoomLevel_);
-    logger_.log(Logging::LogLevel::Debug, "Updated zoom level to {:.3f}", std::source_location::current(), zoomLevel_);
+    logger_.get().log(Logging::LogLevel::Debug, "Updated zoom level to {:.3f}", std::source_location::current(), zoomLevel_);
     latch.count_down();
     latch.wait();
 }
@@ -194,43 +200,43 @@ void AMOURANTH::setMode(int mode) {
     mode_ = glm::clamp(mode, 1, 9);
     simulator_->setMode(mode_);
     ue_.setMode(mode_);
-    logger_.log(Logging::LogLevel::Info, "Set rendering mode to {}", std::source_location::current(), mode_);
+    logger_.get().log(Logging::LogLevel::Info, "Set rendering mode to {}", std::source_location::current(), mode_);
     latch.count_down();
     latch.wait();
 }
 
 void AMOURANTH::togglePause() {
     isPaused_ = !isPaused_;
-    logger_.log(Logging::LogLevel::Debug, "Pause state set to {}", std::source_location::current(), isPaused_);
+    logger_.get().log(Logging::LogLevel::Debug, "Pause state set to {}", std::source_location::current(), isPaused_);
 }
 
 void AMOURANTH::toggleUserCam() {
     isUserCamActive_ = !isUserCamActive_;
-    logger_.log(Logging::LogLevel::Debug, "User camera active set to {}", std::source_location::current(), isUserCamActive_);
+    logger_.get().log(Logging::LogLevel::Debug, "User camera active set to {}", std::source_location::current(), isUserCamActive_);
 }
 
 void AMOURANTH::moveUserCam(float dx, float dy, float dz) {
     userCamPos_ += glm::vec3(dx, dy, dz);
-    logger_.log(Logging::LogLevel::Debug, "Moved user camera to ({}, {}, {})",
-                std::source_location::current(), userCamPos_.x, userCamPos_.y, userCamPos_.z);
+    logger_.get().log(Logging::LogLevel::Debug, "Moved user camera to ({}, {}, {})",
+                      std::source_location::current(), userCamPos_.x, userCamPos_.y, userCamPos_.z);
 }
 
 void AMOURANTH::setCurrentDimension(int dimension) {
     std::latch latch(1);
     ue_.setCurrentDimension(dimension);
-    logger_.log(Logging::LogLevel::Debug, "Set current dimension to {}", std::source_location::current(), dimension);
+    logger_.get().log(Logging::LogLevel::Debug, "Set current dimension to {}", std::source_location::current(), dimension);
     latch.count_down();
     latch.wait();
 }
 
 void AMOURANTH::setWidth(int width) {
     width_ = width;
-    logger_.log(Logging::LogLevel::Debug, "AMOURANTH width set to {}", std::source_location::current(), width);
+    logger_.get().log(Logging::LogLevel::Debug, "AMOURANTH width set to {}", std::source_location::current(), width);
 }
 
 void AMOURANTH::setHeight(int height) {
     height_ = height;
-    logger_.log(Logging::LogLevel::Debug, "AMOURANTH height set to {}", std::source_location::current(), height);
+    logger_.get().log(Logging::LogLevel::Debug, "AMOURANTH height set to {}", std::source_location::current(), height);
 }
 
 void AMOURANTH::initializeSphereGeometry() {
@@ -259,36 +265,36 @@ void AMOURANTH::initializeSphereGeometry() {
         }
     }
     if (!sphereVertices_.empty() && reinterpret_cast<std::uintptr_t>(sphereVertices_.data()) % alignof(glm::vec3) != 0) {
-        logger_.log(Logging::LogLevel::Error, "Misaligned sphereVertices_: address={}",
-                    std::source_location::current(), reinterpret_cast<std::uintptr_t>(sphereVertices_.data()));
+        logger_.get().log(Logging::LogLevel::Error, "Misaligned sphereVertices_: address={}",
+                          std::source_location::current(), reinterpret_cast<std::uintptr_t>(sphereVertices_.data()));
         throw std::runtime_error("Misaligned sphereVertices_");
     }
-    logger_.log(Logging::LogLevel::Info, "Initialized sphere geometry with {} vertices, {} indices",
-                std::source_location::current(), sphereVertices_.size(), sphereIndices_.size());
+    logger_.get().log(Logging::LogLevel::Info, "Initialized sphere geometry with {} vertices, {} indices",
+                      std::source_location::current(), sphereVertices_.size(), sphereIndices_.size());
 }
 
 void AMOURANTH::initializeQuadGeometry() {
     quadVertices_ = {{-1.0f, -1.0f, 0.0f}, {1.0f, -1.0f, 0.0f}, {1.0f, 1.0f, 0.0f}, {-1.0f, 1.0f, 0.0f}};
     quadIndices_ = {0, 1, 2, 2, 3, 0};
     if (!quadVertices_.empty() && reinterpret_cast<std::uintptr_t>(quadVertices_.data()) % alignof(glm::vec3) != 0) {
-        logger_.log(Logging::LogLevel::Error, "Misaligned quadVertices_: address={}",
-                    std::source_location::current(), reinterpret_cast<std::uintptr_t>(quadVertices_.data()));
+        logger_.get().log(Logging::LogLevel::Error, "Misaligned quadVertices_: address={}",
+                          std::source_location::current(), reinterpret_cast<std::uintptr_t>(quadVertices_.data()));
         throw std::runtime_error("Misaligned quadVertices_");
     }
-    logger_.log(Logging::LogLevel::Info, "Initialized quad geometry with {} vertices, {} indices",
-                std::source_location::current(), quadVertices_.size(), quadIndices_.size());
+    logger_.get().log(Logging::LogLevel::Info, "Initialized quad geometry with {} vertices, {} indices",
+                      std::source_location::current(), quadVertices_.size(), quadIndices_.size());
 }
 
 void AMOURANTH::initializeTriangleGeometry() {
     triangleVertices_ = {{0.0f, 0.5f, 0.0f}, {-0.5f, -0.5f, 0.0f}, {0.5f, -0.5f, 0.0f}};
     triangleIndices_ = {0, 1, 2};
     if (!triangleVertices_.empty() && reinterpret_cast<std::uintptr_t>(triangleVertices_.data()) % alignof(glm::vec3) != 0) {
-        logger_.log(Logging::LogLevel::Error, "Misaligned triangleVertices_: address={}",
-                    std::source_location::current(), reinterpret_cast<std::uintptr_t>(triangleVertices_.data()));
+        logger_.get().log(Logging::LogLevel::Error, "Misaligned triangleVertices_: address={}",
+                          std::source_location::current(), reinterpret_cast<std::uintptr_t>(triangleVertices_.data()));
         throw std::runtime_error("Misaligned triangleVertices_");
     }
-    logger_.log(Logging::LogLevel::Info, "Initialized triangle geometry with {} vertices, {} indices",
-                std::source_location::current(), triangleVertices_.size(), triangleIndices_.size());
+    logger_.get().log(Logging::LogLevel::Info, "Initialized triangle geometry with {} vertices, {} indices",
+                      std::source_location::current(), triangleVertices_.size(), triangleIndices_.size());
 }
 
 void AMOURANTH::initializeVoxelGeometry() {
@@ -301,28 +307,28 @@ void AMOURANTH::initializeVoxelGeometry() {
         1, 5, 6, 6, 2, 1, 0, 4, 5, 5, 1, 0, 3, 2, 6, 6, 7, 3
     };
     if (!voxelVertices_.empty() && reinterpret_cast<std::uintptr_t>(voxelVertices_.data()) % alignof(glm::vec3) != 0) {
-        logger_.log(Logging::LogLevel::Error, "Misaligned voxelVertices_: address={}",
-                    std::source_location::current(), reinterpret_cast<std::uintptr_t>(voxelVertices_.data()));
+        logger_.get().log(Logging::LogLevel::Error, "Misaligned voxelVertices_: address={}",
+                          std::source_location::current(), reinterpret_cast<std::uintptr_t>(voxelVertices_.data()));
         throw std::runtime_error("Misaligned voxelVertices_");
     }
-    logger_.log(Logging::LogLevel::Info, "Initialized voxel geometry with {} vertices, {} indices",
-                std::source_location::current(), voxelVertices_.size(), voxelIndices_.size());
+    logger_.get().log(Logging::LogLevel::Info, "Initialized voxel geometry with {} vertices, {} indices",
+                      std::source_location::current(), voxelVertices_.size(), voxelIndices_.size());
 }
 
 void AMOURANTH::initializeCalculator() {
     std::latch latch(1);
     try {
         if (ue_.getDebug()) {
-            logger_.log(Logging::LogLevel::Debug, "Initializing calculator for UniversalEquation",
-                        std::source_location::current());
+            logger_.get().log(Logging::LogLevel::Debug, "Initializing calculator for UniversalEquation",
+                              std::source_location::current());
         }
         ue_.initializeCalculator(this);
         updateCache();
-        logger_.log(Logging::LogLevel::Info, "Calculator initialized successfully",
-                    std::source_location::current());
+        logger_.get().log(Logging::LogLevel::Info, "Calculator initialized successfully",
+                          std::source_location::current());
     } catch (const std::exception& e) {
-        logger_.log(Logging::LogLevel::Error, "Calculator initialization failed: {}",
-                    std::source_location::current(), e.what());
+        logger_.get().log(Logging::LogLevel::Error, "Calculator initialization failed: {}",
+                          std::source_location::current(), e.what());
         throw;
     }
     latch.count_down();
@@ -342,16 +348,16 @@ void AMOURANTH::initializeBalls(float baseMass, float baseRadius, size_t numBall
         balls_[i].mass = baseMass;
         balls_[i].radius = baseRadius;
     }
-    logger_.log(Logging::LogLevel::Info, "Initialized {} balls with mass scale={:.3f}",
-                std::source_location::current(), balls_.size(), baseMass);
+    logger_.get().log(Logging::LogLevel::Info, "Initialized {} balls with mass scale={:.3f}",
+                      std::source_location::current(), balls_.size(), baseMass);
     latch.count_down();
     latch.wait();
 }
 
 std::span<const glm::vec3> AMOURANTH::getSphereVertices() const {
     if (!sphereVertices_.empty() && reinterpret_cast<std::uintptr_t>(sphereVertices_.data()) % alignof(glm::vec3) != 0) {
-        logger_.log(Logging::LogLevel::Error, "Misaligned sphereVertices_: address={}",
-                    std::source_location::current(), reinterpret_cast<std::uintptr_t>(sphereVertices_.data()));
+        logger_.get().log(Logging::LogLevel::Error, "Misaligned sphereVertices_: address={}",
+                          std::source_location::current(), reinterpret_cast<std::uintptr_t>(sphereVertices_.data()));
         throw std::runtime_error("Misaligned sphereVertices_");
     }
     return sphereVertices_;
@@ -361,8 +367,8 @@ std::span<const uint32_t> AMOURANTH::getSphereIndices() const { return sphereInd
 
 std::span<const glm::vec3> AMOURANTH::getQuadVertices() const {
     if (!quadVertices_.empty() && reinterpret_cast<std::uintptr_t>(quadVertices_.data()) % alignof(glm::vec3) != 0) {
-        logger_.log(Logging::LogLevel::Error, "Misaligned quadVertices_: address={}",
-                    std::source_location::current(), reinterpret_cast<std::uintptr_t>(quadVertices_.data()));
+        logger_.get().log(Logging::LogLevel::Error, "Misaligned quadVertices_: address={}",
+                          std::source_location::current(), reinterpret_cast<std::uintptr_t>(quadVertices_.data()));
         throw std::runtime_error("Misaligned quadVertices_");
     }
     return quadVertices_;
@@ -372,8 +378,8 @@ std::span<const uint32_t> AMOURANTH::getQuadIndices() const { return quadIndices
 
 std::span<const glm::vec3> AMOURANTH::getTriangleVertices() const {
     if (!triangleVertices_.empty() && reinterpret_cast<std::uintptr_t>(triangleVertices_.data()) % alignof(glm::vec3) != 0) {
-        logger_.log(Logging::LogLevel::Error, "Misaligned triangleVertices_: address={}",
-                    std::source_location::current(), reinterpret_cast<std::uintptr_t>(triangleVertices_.data()));
+        logger_.get().log(Logging::LogLevel::Error, "Misaligned triangleVertices_: address={}",
+                          std::source_location::current(), reinterpret_cast<std::uintptr_t>(triangleVertices_.data()));
         throw std::runtime_error("Misaligned triangleVertices_");
     }
     return triangleVertices_;
@@ -383,8 +389,8 @@ std::span<const uint32_t> AMOURANTH::getTriangleIndices() const { return triangl
 
 std::span<const glm::vec3> AMOURANTH::getVoxelVertices() const {
     if (!voxelVertices_.empty() && reinterpret_cast<std::uintptr_t>(voxelVertices_.data()) % alignof(glm::vec3) != 0) {
-        logger_.log(Logging::LogLevel::Error, "Misaligned voxelVertices_: address={}",
-                    std::source_location::current(), reinterpret_cast<std::uintptr_t>(voxelVertices_.data()));
+        logger_.get().log(Logging::LogLevel::Error, "Misaligned voxelVertices_: address={}",
+                          std::source_location::current(), reinterpret_cast<std::uintptr_t>(voxelVertices_.data()));
         throw std::runtime_error("Misaligned voxelVertices_");
     }
     return voxelVertices_;

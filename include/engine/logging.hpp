@@ -1,6 +1,3 @@
-#ifndef ENGINE_LOGGING_HPP
-#define ENGINE_LOGGING_HPP
-
 // https://www.twitch.tv/elliefier Logging, October 2025
 // Thread-safe, asynchronous logging with ANSI-colored output, source location, and delta time.
 // Supports C++20 std::format for flexible message formatting.
@@ -9,6 +6,9 @@
 // Delta time format: microseconds (<10ms), milliseconds (10ms-1s), seconds (1s-1min), minutes (1min-1hr), hours (>1hr).
 // Usage: Logger logger; logger.log(LogLevel::Info, "Message: {}", "value");
 // Zachary Geurts 2025
+
+#ifndef ENGINE_LOGGING_HPP
+#define ENGINE_LOGGING_HPP
 
 #include <string_view>
 #include <source_location>
@@ -23,7 +23,10 @@
 #include <memory>
 #include <omp.h>
 #include <chrono>
-#include <cstdint> // Added for uint64_t
+#include <cstdint>
+#include <glm/glm.hpp>
+#include <type_traits>
+#include <concepts>  // For std::same_as
 
 namespace Logging {
 
@@ -120,7 +123,7 @@ public:
 
     // Log method for asynchronous logging
     template<typename... Args>
-    void log(LogLevel level, std::string_view message, const std::source_location& location, const Args&... args) const {
+    void log(LogLevel level, std::string_view message, const std::source_location& location = std::source_location::current(), const Args&... args) const {
         if (static_cast<int>(level) < static_cast<int>(level_.load(std::memory_order_relaxed))) {
             return; // Skip logging if level is below threshold
         }
@@ -230,7 +233,7 @@ private:
                                     timeStr = std::format("{:.3f}ms", delta / 1000.0);
                                 } else if (delta < 60000000) {
                                     timeStr = std::format("{:.3f}s", delta / 1000000.0);
-                                } else if (delta < 3600000000) {
+                                } else if (delta < 3600000000LL) {
                                     timeStr = std::format("{:.3f}m", delta / 60000000.0);
                                 } else {
                                     timeStr = std::format("{:.3f}h", delta / 3600000000.0);
@@ -264,6 +267,7 @@ private:
 } // namespace Logging
 
 namespace std {
+// Formatter for VkResult
 template<>
 struct formatter<VkResult, char> {
     constexpr auto parse(format_parse_context& ctx) { return ctx.begin(); }
@@ -297,7 +301,7 @@ struct formatter<VkResult, char> {
     }
 };
 
-// Formatter for uint64_t to catch invalid sizes
+// Formatter for uint64_t
 template<>
 struct formatter<uint64_t, char> {
     constexpr auto parse(format_parse_context& ctx) { return ctx.begin(); }
@@ -310,6 +314,57 @@ struct formatter<uint64_t, char> {
         return format_to(ctx.out(), "{}", value);
     }
 };
+
+// Formatter for const glm::vec3*
+template<>
+struct formatter<const glm::vec3*, char> {
+    constexpr auto parse(format_parse_context& ctx) { return ctx.begin(); }
+
+    template<typename FormatContext>
+    auto format(const glm::vec3* ptr, FormatContext& ctx) const {
+        if (ptr == nullptr) {
+            return format_to(ctx.out(), "nullptr");
+        }
+        return format_to(ctx.out(), "{:p}", static_cast<const void*>(ptr));
+    }
+};
+
+// Formatter for const unsigned int*
+template<>
+struct formatter<const unsigned int*, char> {
+    constexpr auto parse(format_parse_context& ctx) { return ctx.begin(); }
+
+    template<typename FormatContext>
+    auto format(const unsigned int* ptr, FormatContext& ctx) const {
+        if (ptr == nullptr) {
+            return format_to(ctx.out(), "nullptr");
+        }
+        return format_to(ctx.out(), "{:p}", static_cast<const void*>(ptr));
+    }
+};
+
+// Formatter for Vulkan pointer types
+template <typename T>
+requires (
+    std::same_as<T, VkBuffer> ||
+    std::same_as<T, VkCommandBuffer> ||
+    std::same_as<T, VkPipelineLayout> ||
+    std::same_as<T, VkDescriptorSet> ||
+    std::same_as<T, VkRenderPass> ||
+    std::same_as<T, VkFramebuffer>
+)
+struct formatter<T, char> {
+    constexpr auto parse(format_parse_context& ctx) { return ctx.begin(); }
+
+    template<typename FormatContext>
+    auto format(T ptr, FormatContext& ctx) const {
+        if (ptr == VK_NULL_HANDLE) {
+            return format_to(ctx.out(), "VK_NULL_HANDLE");
+        }
+        return format_to(ctx.out(), "{:p}", static_cast<const void*>(ptr));
+    }
+};
+
 } // namespace std
 
 #endif // ENGINE_LOGGING_HPP

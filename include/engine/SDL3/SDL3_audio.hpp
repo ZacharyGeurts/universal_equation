@@ -14,7 +14,7 @@
 #include "engine/logging.hpp"
 #include <format>
 
-namespace SDL3Initializer {
+namespace SDL3Audio {
 
 struct AudioConfig {
     int frequency = 44100;
@@ -27,7 +27,7 @@ void initAudio(const AudioConfig& c, SDL_AudioDeviceID& audioDevice, SDL_AudioSt
 
 SDL_AudioDeviceID getAudioDevice(const SDL_AudioDeviceID& audioDevice, const Logging::Logger& logger);
 
-} // namespace SDL3Initializer
+} // namespace SDL3Audio
 
 // Custom formatter for SDL_AudioFormat
 namespace std {
