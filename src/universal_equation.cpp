@@ -380,9 +380,11 @@ long double UniversalEquation::computeKineticEnergy(int vertexIndex) const {
     for (size_t j = 0; j < static_cast<size_t>(getCurrentDimension()); ++j) {
         kineticEnergy += momentum[j] * momentum[j]; // Sum of squared momentum components
     }
-    kineticEnergy *= 0.5L * materialDensity_; // KE = (1/2) * mass * v^2, assuming density as mass proxy
-    logger_.log(Logging::LogLevel::Debug, "Computed kinetic energy for vertex {}: result={}",
-                std::source_location::current(), vertexIndex, kineticEnergy);
+    kineticEnergy *= 0.5L * materialDensity_.load(); // KE = (1/2) * mass * v^2, assuming density as mass proxy
+    if (debug_.load()) {
+        logger_.log(Logging::LogLevel::Debug, "Computed kinetic energy for vertex {}: result={}",
+                    std::source_location::current(), vertexIndex, kineticEnergy);
+    }
     return kineticEnergy;
 }
 
@@ -396,17 +398,20 @@ void UniversalEquation::updateInteractions() const {
 
     size_t d = static_cast<size_t>(getCurrentDimension());
     uint64_t numVertices = std::min(static_cast<uint64_t>(nCubeVertices_.size()), getMaxVertices());
-    numVertices = static_cast<uint64_t>(nCubeVertices_.size());
-    logger_.log(Logging::LogLevel::Debug, "Processing {} vertices (maxVertices_={}, capped at 1024)",
-                std::source_location::current(), numVertices, getMaxVertices());
+    if (debug_.load()) {
+        logger_.log(Logging::LogLevel::Debug, "Processing {} vertices (maxVertices_={})",
+                    std::source_location::current(), numVertices, getMaxVertices());
+    }
 
     std::vector<std::vector<DimensionInteraction>> localInteractions(omp_get_max_threads());
     std::vector<std::vector<glm::vec3>> localProjected(omp_get_max_threads());
     for (int t = 0; t < omp_get_max_threads(); ++t) {
         localInteractions[t].reserve(numVertices / omp_get_max_threads() + 1);
         localProjected[t].reserve(numVertices / omp_get_max_threads() + 1);
-        logger_.log(Logging::LogLevel::Debug, "Thread {}: reserved {} elements for localInteractions and localProjected",
-                    std::source_location::current(), t, numVertices / omp_get_max_threads() + 1);
+        if (debug_.load()) {
+            logger_.log(Logging::LogLevel::Debug, "Thread {}: reserved {} elements for localInteractions and localProjected",
+                        std::source_location::current(), t, numVertices / omp_get_max_threads() + 1);
+        }
     }
 
     std::vector<long double> referenceVertex(d, 0.0L);
@@ -433,13 +438,17 @@ void UniversalEquation::updateInteractions() const {
     #pragma omp parallel
     {
         int thread_id = omp_get_thread_num();
-        logger_.log(Logging::LogLevel::Debug, "Thread {}: processing vertices 0 to {}",
-                    std::source_location::current(), thread_id, numVertices);
+        if (debug_.load()) {
+            logger_.log(Logging::LogLevel::Debug, "Thread {}: processing vertices 0 to {}",
+                        std::source_location::current(), thread_id, numVertices);
+        }
         #pragma omp for schedule(dynamic)
         for (uint64_t i = 0; i < numVertices; ++i) {
             if (i >= nCubeVertices_.size()) {
-                logger_.log(Logging::LogLevel::Warning, "Thread {}: skipping vertex {} (exceeds nCubeVertices_.size()={})",
-                            std::source_location::current(), thread_id, i, nCubeVertices_.size());
+                if (debug_.load()) {
+                    logger_.log(Logging::LogLevel::Warning, "Thread {}: skipping vertex {} (exceeds nCubeVertices_.size()={})",
+                                std::source_location::current(), thread_id, i, nCubeVertices_.size());
+                }
                 continue;
             }
             validateVertexIndex(static_cast<int>(i));
@@ -447,8 +456,10 @@ void UniversalEquation::updateInteractions() const {
             long double depthI = v[depthIdx] + trans;
             if (depthI <= 0.0L) {
                 depthI = 0.001L;
-                logger_.log(Logging::LogLevel::Warning, "Thread {}: clamped depthI to 0.001 for vertex {}",
-                            std::source_location::current(), thread_id, i);
+                if (debug_.load()) {
+                    logger_.log(Logging::LogLevel::Warning, "Thread {}: clamped depthI to 0.001 for vertex {}",
+                                std::source_location::current(), thread_id, i);
+                }
             }
             long double scaleI = safe_div(focal, depthI);
             long double distance = 0.0L;
@@ -457,6 +468,13 @@ void UniversalEquation::updateInteractions() const {
                 distance += diff * diff;
             }
             distance = std::sqrt(distance);
+            if (distance <= 0.0L || std::isnan(distance) || std::isinf(distance)) {
+                distance = 1e-10L;
+                if (debug_.load()) {
+                    logger_.log(Logging::LogLevel::Warning, "Thread {}: invalid distance for vertex {}, using default={}",
+                                std::source_location::current(), thread_id, i, distance);
+                }
+            }
             long double strength = computeInteraction(static_cast<int>(i), distance);
             auto vecPot = computeVectorPotential(static_cast<int>(i));
             long double GodWaveAmp = computeGodWave(static_cast<int>(i));
@@ -504,30 +522,66 @@ UniversalEquation::EnergyResult UniversalEquation::compute() {
     }
 
     EnergyResult result{0.0L, 0.0L, 0.0L, 0.0L, 0.0L, 0.0L, 0.0L, 0.0L};
-    std::vector<long double> potentials(getMaxVertices(), 0.0L);
-    std::vector<long double> nurbMatters(getMaxVertices(), 0.0L);
-    std::vector<long double> nurbEnergies(getMaxVertices(), 0.0L);
-    std::vector<long double> spinEnergies(getMaxVertices(), 0.0L);
-    std::vector<long double> momentumEnergies(getMaxVertices(), 0.0L);
-    std::vector<long double> fieldEnergies(getMaxVertices(), 0.0L);
-    std::vector<long double> GodWaveEnergies(getMaxVertices(), 0.0L);
+    uint64_t numVertices = std::min(static_cast<uint64_t>(nCubeVertices_.size()), getMaxVertices());
+    std::vector<long double> potentials(numVertices, 0.0L);
+    std::vector<long double> nurbMatters(numVertices, 0.0L);
+    std::vector<long double> nurbEnergies(numVertices, 0.0L);
+    std::vector<long double> spinEnergies(numVertices, 0.0L);
+    std::vector<long double> momentumEnergies(numVertices, 0.0L);
+    std::vector<long double> fieldEnergies(numVertices, 0.0L);
+    std::vector<long double> GodWaveEnergies(numVertices, 0.0L);
+
+    // Ensure vectors are properly sized
+    if (nCubeVertices_.size() != numVertices || vertexMomenta_.size() != numVertices ||
+        vertexSpins_.size() != numVertices || vertexWaveAmplitudes_.size() != numVertices) {
+        logger_.log(Logging::LogLevel::Error, "Vector size mismatch: nCubeVertices_={}, vertexMomenta_={}, vertexSpins_={}, vertexWaveAmplitudes_={}",
+                    std::source_location::current(), nCubeVertices_.size(), vertexMomenta_.size(),
+                    vertexSpins_.size(), vertexWaveAmplitudes_.size());
+        throw std::runtime_error("Vector size mismatch in compute");
+    }
 
     std::latch latch(omp_get_max_threads());
     #pragma omp parallel
     {
         int thread_id = omp_get_thread_num();
-        logger_.log(Logging::LogLevel::Debug, "Thread {}: computing energies for vertices",
-                    std::source_location::current(), thread_id);
-        #pragma omp for schedule(dynamic)
-        for (uint64_t i = 0; i < getMaxVertices(); ++i) {
-            if (i >= nCubeVertices_.size()) continue;
+        if (debug_.load()) {
+            logger_.log(Logging::LogLevel::Debug, "Thread {}: computing energies for vertices",
+                        std::source_location::current(), thread_id);
+        }
+        #pragma omp for schedule(dynamic) nowait
+        for (uint64_t i = 0; i < numVertices; ++i) {
+            if (i >= nCubeVertices_.size()) {
+                if (debug_.load()) {
+                    logger_.log(Logging::LogLevel::Warning, "Thread {}: skipping vertex {} (exceeds nCubeVertices_.size()={})",
+                                std::source_location::current(), thread_id, i, nCubeVertices_.size());
+                }
+                continue;
+            }
             validateVertexIndex(static_cast<int>(i));
 
-            // Compute total gravitational potential for vertex i by summing over all other vertices
+            // Compute total gravitational potential for vertex i by summing over sampled vertices
             long double totalPotential = 0.0L;
-            for (size_t j = 0; j < nCubeVertices_.size(); ++j) {
-                if (i == j) continue; // Skip self-interaction
-                totalPotential += computeGravitationalPotential(static_cast<int>(i), static_cast<int>(j));
+            uint64_t sampleStep = std::max<uint64_t>(1, numVertices / 100); // Sample ~100 pairs per vertex
+            for (uint64_t j = 0; j < numVertices && j < nCubeVertices_.size(); j += sampleStep) {
+                if (static_cast<int>(j) == static_cast<int>(i)) continue; // Skip self-interaction
+                try {
+                    totalPotential += computeGravitationalPotential(static_cast<int>(i), static_cast<int>(j));
+                } catch (const std::out_of_range& e) {
+                    if (debug_.load()) {
+                        logger_.log(Logging::LogLevel::Warning, "Thread {}: skipping invalid vertex pair ({}, {}): {}",
+                                    std::source_location::current(), thread_id, i, j, e.what());
+                    }
+                    continue;
+                }
+            }
+            // Scale up the sampled potential to approximate full sum
+            totalPotential *= static_cast<long double>(sampleStep);
+            if (std::isnan(totalPotential) || std::isinf(totalPotential)) {
+                if (debug_.load()) {
+                    logger_.log(Logging::LogLevel::Warning, "Thread {}: invalid totalPotential for vertex {}: {}, resetting to 0",
+                                std::source_location::current(), thread_id, i, totalPotential);
+                }
+                totalPotential = 0.0L;
             }
             potentials[i] = totalPotential;
 
@@ -542,7 +596,7 @@ UniversalEquation::EnergyResult UniversalEquation::compute() {
     }
     latch.wait();
 
-    for (uint64_t i = 0; i < getMaxVertices() && i < nCubeVertices_.size(); ++i) {
+    for (uint64_t i = 0; i < numVertices && i < nCubeVertices_.size(); ++i) {
         result.observable += potentials[i] + nurbMatters[i] + nurbEnergies[i] + spinEnergies[i] + momentumEnergies[i] + fieldEnergies[i] + GodWaveEnergies[i];
         result.potential += potentials[i];
         result.nurbMatter += nurbMatters[i];
@@ -552,7 +606,7 @@ UniversalEquation::EnergyResult UniversalEquation::compute() {
         result.fieldEnergy += fieldEnergies[i];
         result.GodWaveEnergy += GodWaveEnergies[i];
     }
-    result.observable = safe_div(result.observable, static_cast<long double>(getMaxVertices()));
+    result.observable = safe_div(result.observable, static_cast<long double>(numVertices));
     logger_.log(Logging::LogLevel::Info, "Compute completed: {}",
                 std::source_location::current(), result.toString());
     return result;
@@ -639,48 +693,60 @@ void UniversalEquation::setGodWaveFreq(long double value) {
 long double UniversalEquation::computeNurbMatter(int vertexIndex) const {
     validateVertexIndex(vertexIndex);
     long double result = getNurbMatterStrength() * vertexWaveAmplitudes_[vertexIndex] * 0.5L;
-    logger_.log(Logging::LogLevel::Debug, "Computed NURB matter for vertex {}: result={}",
-                std::source_location::current(), vertexIndex, result);
+    if (debug_.load()) {
+        logger_.log(Logging::LogLevel::Debug, "Computed NURB matter for vertex {}: result={}",
+                    std::source_location::current(), vertexIndex, result);
+    }
     return result;
 }
 
 long double UniversalEquation::computeNurbEnergy(int vertexIndex) const {
     validateVertexIndex(vertexIndex);
     long double result = getNurbEnergyStrength() * vertexWaveAmplitudes_[vertexIndex] * 0.3L;
-    logger_.log(Logging::LogLevel::Debug, "Computed NURB energy for vertex {}: result={}",
-                std::source_location::current(), vertexIndex, result);
+    if (debug_.load()) {
+        logger_.log(Logging::LogLevel::Debug, "Computed NURB energy for vertex {}: result={}",
+                    std::source_location::current(), vertexIndex, result);
+    }
     return result;
 }
 
 long double UniversalEquation::computeSpinEnergy(int vertexIndex) const {
     validateVertexIndex(vertexIndex);
     long double result = getSpinInteraction() * vertexSpins_[vertexIndex] * 0.2L;
-    logger_.log(Logging::LogLevel::Debug, "Computed spin energy for vertex {}: result={}",
-                std::source_location::current(), vertexIndex, result);
+    if (debug_.load()) {
+        logger_.log(Logging::LogLevel::Debug, "Computed spin energy for vertex {}: result={}",
+                    std::source_location::current(), vertexIndex, result);
+    }
     return result;
 }
 
 long double UniversalEquation::computeEMField(int vertexIndex) const {
     validateVertexIndex(vertexIndex);
     long double result = getEMFieldStrength() * vertexWaveAmplitudes_[vertexIndex] * 0.01L;
-    logger_.log(Logging::LogLevel::Debug, "Computed EM field for vertex {}: result={}",
-                std::source_location::current(), vertexIndex, result);
+    if (debug_.load()) {
+        logger_.log(Logging::LogLevel::Debug, "Computed EM field for vertex {}: result={}",
+                    std::source_location::current(), vertexIndex, result);
+    }
     return result;
 }
 
 long double UniversalEquation::computeGodWave(int vertexIndex) const {
     validateVertexIndex(vertexIndex);
     long double result = getGodWaveFreq() * vertexWaveAmplitudes_[vertexIndex] * 0.1L;
-    logger_.log(Logging::LogLevel::Debug, "Computed God wave for vertex {}: result={}",
-                std::source_location::current(), vertexIndex, result);
+    if (debug_.load()) {
+        logger_.log(Logging::LogLevel::Debug, "Computed God wave for vertex {}: result={}",
+                    std::source_location::current(), vertexIndex, result);
+    }
     return result;
 }
 
 long double UniversalEquation::computeInteraction(int vertexIndex, long double distance) const {
     validateVertexIndex(vertexIndex);
     long double result = getInfluence() * safe_div(1.0L, distance + 1e-10L);
-    logger_.log(Logging::LogLevel::Debug, "Computed interaction for vertex {}: distance={}, result={}",
-                std::source_location::current(), vertexIndex, distance, result);
+    if (debug_.load()) {
+        logger_.log(Logging::LogLevel::Debug, "Computed interaction for vertex {}: distance={}, result={}",
+                    std::source_location::current(), vertexIndex, distance, result);
+    }
     return result;
 }
 
@@ -690,40 +756,54 @@ std::vector<long double> UniversalEquation::computeVectorPotential(int vertexInd
     for (int i = 0; i < std::min(3, getCurrentDimension()); ++i) {
         result[i] = vertexMomenta_[vertexIndex][i] * getWeak();
     }
-    logger_.log(Logging::LogLevel::Debug, "Computed vector potential for vertex {}: result size={}",
-                std::source_location::current(), vertexIndex, result.size());
+    if (debug_.load()) {
+        logger_.log(Logging::LogLevel::Debug, "Computed vector potential for vertex {}: result size={}",
+                    std::source_location::current(), vertexIndex, result.size());
+    }
     return result;
 }
 
 long double UniversalEquation::safeExp(long double x) const {
     if (std::isnan(x) || std::isinf(x)) {
-        logger_.log(Logging::LogLevel::Warning, "Invalid input to safeExp: x={}", std::source_location::current(), x);
+        if (debug_.load()) {
+            logger_.log(Logging::LogLevel::Warning, "Invalid input to safeExp: x={}", std::source_location::current(), x);
+        }
         return 0.0L;
     }
     if (x > 100.0L) {
-        logger_.log(Logging::LogLevel::Warning, "Clamping large exponent in safeExp: x={}", std::source_location::current(), x);
+        if (debug_.load()) {
+            logger_.log(Logging::LogLevel::Warning, "Clamping large exponent in safeExp: x={}", std::source_location::current(), x);
+        }
         x = 100.0L;
     }
     long double result = std::exp(x);
-    logger_.log(Logging::LogLevel::Debug, "Computed safeExp: x={}, result={}",
-                std::source_location::current(), x, result);
+    if (debug_.load()) {
+        logger_.log(Logging::LogLevel::Debug, "Computed safeExp: x={}, result={}",
+                    std::source_location::current(), x, result);
+    }
     return result;
 }
 
 long double UniversalEquation::safe_div(long double a, long double b) const {
     if (b == 0.0L || std::isnan(b) || std::isinf(b)) {
-        logger_.log(Logging::LogLevel::Warning, "Invalid divisor in safe_div: a={}, b={}",
-                    std::source_location::current(), a, b);
+        if (debug_.load()) {
+            logger_.log(Logging::LogLevel::Warning, "Invalid divisor in safe_div: a={}, b={}",
+                        std::source_location::current(), a, b);
+        }
         return 0.0L;
     }
     long double result = a / b;
     if (std::isnan(result) || std::isinf(result)) {
-        logger_.log(Logging::LogLevel::Warning, "Invalid result in safe_div: a={}, b={}, result={}",
-                    std::source_location::current(), a, b, result);
+        if (debug_.load()) {
+            logger_.log(Logging::LogLevel::Warning, "Invalid result in safe_div: a={}, b={}, result={}",
+                        std::source_location::current(), a, b, result);
+        }
         return 0.0L;
     }
-    logger_.log(Logging::LogLevel::Debug, "Computed safe_div: a={}, b={}, result={}",
-                std::source_location::current(), a, b, result);
+    if (debug_.load()) {
+        logger_.log(Logging::LogLevel::Debug, "Computed safe_div: a={}, b={}, result={}",
+                    std::source_location::current(), a, b, result);
+    }
     return result;
 }
 
@@ -954,9 +1034,16 @@ void UniversalEquation::setTotalCharge(long double value) {
     logger_.log(Logging::LogLevel::Debug, "Set totalCharge: value={}", std::source_location::current(), value);
 }
 
+void UniversalEquation::setMaterialDensity(long double density) {
+    materialDensity_.store(std::clamp(density, 0.0L, 1.0e6L)); // Reasonable range for density
+    needsUpdate_.store(true);
+    logger_.log(Logging::LogLevel::Debug, "Set materialDensity: value={}", std::source_location::current(), materialDensity_.load());
+}
+
 void UniversalEquation::evolveTimeStep(long double dt) {
     logger_.log(Logging::LogLevel::Info, "Evolving time step: dt={}", std::source_location::current(), dt);
     for (size_t i = 0; i < nCubeVertices_.size(); ++i) {
+        validateVertexIndex(static_cast<int>(i));
         for (size_t j = 0; j < static_cast<size_t>(getCurrentDimension()); ++j) {
             nCubeVertices_[i][j] += vertexMomenta_[i][j] * dt;
         }
@@ -969,6 +1056,7 @@ void UniversalEquation::evolveTimeStep(long double dt) {
 void UniversalEquation::updateMomentum() {
     logger_.log(Logging::LogLevel::Info, "Updating momentum for {} vertices", std::source_location::current(), nCubeVertices_.size());
     for (size_t i = 0; i < vertexMomenta_.size(); ++i) {
+        validateVertexIndex(static_cast<int>(i));
         auto acc = computeGravitationalAcceleration(static_cast<int>(i));
         for (size_t j = 0; j < static_cast<size_t>(getCurrentDimension()); ++j) {
             vertexMomenta_[i][j] += acc[j] * 0.01L;
@@ -1004,7 +1092,9 @@ std::vector<UniversalEquation::DimensionData> UniversalEquation::computeBatch(in
         data.fieldEnergy = result.fieldEnergy;
         data.GodWaveEnergy = result.GodWaveEnergy;
         results.push_back(data);
-        logger_.log(Logging::LogLevel::Debug, "Computed dimension {}: {}", std::source_location::current(), dim, data.toString());
+        if (debug_.load()) {
+            logger_.log(Logging::LogLevel::Debug, "Computed dimension {}: {}", std::source_location::current(), dim, data.toString());
+        }
     }
     setCurrentDimension(originalDim);
     initializeWithRetry();
@@ -1042,14 +1132,43 @@ UniversalEquation::DimensionData UniversalEquation::updateCache() {
     dimensionData_.momentumEnergy = result.momentumEnergy;
     dimensionData_.fieldEnergy = result.fieldEnergy;
     dimensionData_.GodWaveEnergy = result.GodWaveEnergy;
-    logger_.log(Logging::LogLevel::Debug, "Cache updated: {}", std::source_location::current(), dimensionData_.toString());
+    if (debug_.load()) {
+        logger_.log(Logging::LogLevel::Debug, "Cache updated: {}", std::source_location::current(), dimensionData_.toString());
+    }
     return dimensionData_;
 }
 
 long double UniversalEquation::computeGodWaveAmplitude(int vertexIndex, long double time) const {
     validateVertexIndex(vertexIndex);
     long double result = getGodWaveFreq() * vertexWaveAmplitudes_[vertexIndex] * std::cos(getGodWaveFreq() * time);
-    logger_.log(Logging::LogLevel::Debug, "Computed God wave amplitude for vertex {} at time {}: result={}",
-                std::source_location::current(), vertexIndex, time, result);
+    if (debug_.load()) {
+        logger_.log(Logging::LogLevel::Debug, "Computed God wave amplitude for vertex {} at time {}: result={}",
+                    std::source_location::current(), vertexIndex, time, result);
+    }
     return result;
+}
+
+const std::vector<long double>& UniversalEquation::getNCubeVertex(int vertexIndex) const {
+    validateVertexIndex(vertexIndex);
+    return nCubeVertices_[vertexIndex];
+}
+
+const std::vector<long double>& UniversalEquation::getVertexMomentum(int vertexIndex) const {
+    validateVertexIndex(vertexIndex);
+    return vertexMomenta_[vertexIndex];
+}
+
+long double UniversalEquation::getVertexSpin(int vertexIndex) const {
+    validateVertexIndex(vertexIndex);
+    return vertexSpins_[vertexIndex];
+}
+
+long double UniversalEquation::getVertexWaveAmplitude(int vertexIndex) const {
+    validateVertexIndex(vertexIndex);
+    return vertexWaveAmplitudes_[vertexIndex];
+}
+
+const glm::vec3& UniversalEquation::getProjectedVertex(int vertexIndex) const {
+    validateVertexIndex(vertexIndex);
+    return projectedVerts_[vertexIndex];
 }
