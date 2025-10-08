@@ -7,7 +7,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 # Global options
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
-add_compile_options(-Wall -Wextra -Wpedantic -O3 -g)
+add_compile_options(-Wall -Wextra -Wpedantic -O3 -g -std=c++20)
 # Enable AddressSanitizer for debug builds
 if(CMAKE_BUILD_TYPE MATCHES Debug)
     add_compile_options(-fsanitize=address)
@@ -42,6 +42,7 @@ set(SOURCE_DIRS
     "${CMAKE_CURRENT_SOURCE_DIR}/assets/scripts"
     "${CMAKE_CURRENT_SOURCE_DIR}/shaders/raytracing"
     "${CMAKE_CURRENT_SOURCE_DIR}/shaders/rasterization"
+    "${CMAKE_CURRENT_SOURCE_DIR}/shaders/compute"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/engine/SDL3"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/engine/Vulkan"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/modes"
@@ -283,7 +284,7 @@ endif()
 target_compile_options(amouranth_engine PRIVATE -fPIC)
 
 # Shader compilation (parallelized)
-set(SHADER_EXTS "*.vert" "*.frag" "*.rahit" "*.rchit" "*.rmiss" "*.rgen" "*.rint" "*.rcall")
+set(SHADER_EXTS "*.vert" "*.frag" "*.rahit" "*.rchit" "*.rmiss" "*.rgen" "*.rint" "*.rcall" "*.comp")
 set(SHADER_OUTPUTS "")
 foreach(EXT ${SHADER_EXTS})
     # Process rasterization shaders
@@ -323,6 +324,25 @@ foreach(EXT ${SHADER_EXTS})
         )
         list(APPEND SHADER_OUTPUTS ${SHADER_OUTPUT})
     endforeach()
+
+    # Process compute shaders
+    file(GLOB COMPUTE_SHADERS "${SHADER_DIR}/compute/${EXT}")
+    foreach(SHADER ${COMPUTE_SHADERS})
+        get_filename_component(SHADER_NAME ${SHADER} NAME_WE)
+        set(SHADER_OUTPUT "${LINUX_BIN_DIR}/assets/shaders/compute/${SHADER_NAME}.spv")
+        if(IS_WINDOWS)
+            set(SHADER_OUTPUT "${WINDOWS_BIN_DIR}/assets/shaders/compute/${SHADER_NAME}.spv")
+        endif()
+        add_custom_command(
+            OUTPUT ${SHADER_OUTPUT}
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${LINUX_BIN_DIR}/assets/shaders/compute"
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${WINDOWS_BIN_DIR}/assets/shaders/compute"
+            COMMAND ${GLSLC} ${SHADER} -o ${SHADER_OUTPUT} --target-env=vulkan1.3
+            DEPENDS ${SHADER}
+            COMMENT "Compiling compute shader ${SHADER_NAME}"
+        )
+        list(APPEND SHADER_OUTPUTS ${SHADER_OUTPUT})
+    endforeach()
 endforeach()
 if(SHADER_OUTPUTS)
     add_custom_target(shaders DEPENDS ${SHADER_OUTPUTS})
@@ -336,6 +356,7 @@ set(OUTPUT_DIRS
     "${CMAKE_BINARY_DIR}/bin/Linux/assets/shaders"
     "${CMAKE_BINARY_DIR}/bin/Linux/assets/shaders/rasterization"
     "${CMAKE_BINARY_DIR}/bin/Linux/assets/shaders/raytracing"
+    "${CMAKE_BINARY_DIR}/bin/Linux/assets/shaders/compute"
     "${CMAKE_BINARY_DIR}/bin/Linux/assets/fonts"
     "${CMAKE_BINARY_DIR}/bin/Linux/assets/textures"
     "${CMAKE_BINARY_DIR}/bin/Linux/assets/objects"
@@ -348,6 +369,7 @@ set(OUTPUT_DIRS
     "${CMAKE_BINARY_DIR}/bin/Windows/assets/shaders"
     "${CMAKE_BINARY_DIR}/bin/Windows/assets/shaders/rasterization"
     "${CMAKE_BINARY_DIR}/bin/Windows/assets/shaders/raytracing"
+    "${CMAKE_BINARY_DIR}/bin/Windows/assets/shaders/compute"
     "${CMAKE_BINARY_DIR}/bin/Windows/assets/fonts"
     "${CMAKE_BINARY_DIR}/bin/Windows/assets/textures"
     "${CMAKE_BINARY_DIR}/bin/Windows/assets/objects"
