@@ -1,419 +1,314 @@
 #ifndef UE_INIT_HPP
 #define UE_INIT_HPP
 
-// AMOURANTH RTX Physics, October 2025
-// Computes multidimensional physics for visualization of 30,000 balls in dimension 8.
-// Thread-safe with std::atomic and OpenMP; uses C++20 features for parallelism.
-// Dependencies: GLM, OpenMP, C++20 standard library.
-// Usage: Instantiate with max dimensions, mode, influence, alpha, and debug flag.
+// UniversalEquation, October 2025
+// Core physics simulation for AMOURANTH RTX Engine.
+// Manages N-dimensional calculations, nurb matter, and energy dynamics.
+// Dependencies: C++20, GLM, Logging
 // Zachary Geurts 2025
 
-#include <vector>
-#include <cmath>
-#include <atomic>
-#include <algorithm>
+#include "engine/logging.hpp"
+//#include "engine/core.hpp"
 #include <glm/glm.hpp>
-#include <random>
+#include <vector>
+#include <string>
+#include <cstdint>
+#include <atomic>
+#include <numbers>
 #include <format>
-#include <iostream>
-#include <syncstream>
-#include <omp.h>
+#include <span>
+#include <sstream>
+#include <iomanip>
 
-class AMOURANTH; // Forward declaration, defined in core.hpp
-
-struct DimensionData {
-    int dimension;
-    double observable;
-    double potential;
-    double nurbMatter;
-    double nurbEnergy;
-};
-
-struct EnergyResult {
-    double observable = 0.0;
-    double potential = 0.0;
-    double nurbMatter = 0.0;
-    double nurbEnergy = 0.0;
-};
-
-struct DimensionInteraction {
-    int dimension;
-    double strength;
-    double phase;
-    DimensionInteraction(int dim, double str, double ph)
-        : dimension(dim), strength(str), phase(ph) {}
-};
-
-struct Ball {
-    glm::vec3 position;
-    glm::vec3 velocity;
-    glm::vec3 acceleration;
-    float mass;
-    float radius;
-    float startTime;
-    Ball(const glm::vec3& pos, const glm::vec3& vel, float m, float r, float start)
-        : position(pos), velocity(vel), acceleration(0.0f), mass(m), radius(r), startTime(start) {}
-};
-
-// Custom formatters for std::atomic types
-template <>
-struct std::formatter<std::atomic<int>, char> {
-    template <typename ParseContext>
-    constexpr auto parse(ParseContext& ctx) { return ctx.begin(); }
-    template <typename FormatContext>
-    auto format(const std::atomic<int>& value, FormatContext& ctx) const {
-        return std::format_to(ctx.out(), "{}", value.load());
-    }
-};
-
-template <>
-struct std::formatter<std::atomic<double>, char> {
-    template <typename ParseContext>
-    constexpr auto parse(ParseContext& ctx) { return ctx.begin(); }
-    template <typename FormatContext>
-    auto format(const std::atomic<double>& value, FormatContext& ctx) const {
-        return std::format_to(ctx.out(), "{:.10f}", value.load());
-    }
-};
-
-template <>
-struct std::formatter<std::atomic<bool>, char> {
-    template <typename ParseContext>
-    constexpr auto parse(ParseContext& ctx) { return ctx.begin(); }
-    template <typename FormatContext>
-    auto format(const std::atomic<bool>& value, FormatContext& ctx) const {
-        return std::format_to(ctx.out(), "{}", value.load());
-    }
-};
-
-class Xorshift {
-public:
-    Xorshift(uint32_t seed) : state_(seed) {}
-    float nextFloat(float min, float max) {
-        state_ ^= state_ << 13;
-        state_ ^= state_ >> 17;
-        state_ ^= state_ << 5;
-        return min + (max - min) * (state_ & 0x7FFFFFFF) / static_cast<float>(0x7FFFFFFF);
-    }
-private:
-    uint32_t state_;
-};
+// Forward declarations
+class AMOURANTH;
+class DimensionalNavigator;
 
 class UniversalEquation {
 public:
+    struct EnergyResult {
+        long double observable;
+        long double potential;
+        long double nurbMatter;
+        long double nurbEnergy;
+        long double spinEnergy;
+        long double momentumEnergy;
+        long double fieldEnergy;
+        long double GodWaveEnergy;
+        std::string toString() const {
+            std::ostringstream oss;
+            oss << std::fixed << std::setprecision(10)
+                << "Observable: " << observable
+                << ", Potential: " << potential
+                << ", NURB Matter: " << nurbMatter
+                << ", NURB Energy: " << nurbEnergy
+                << ", Spin Energy: " << spinEnergy
+                << ", Momentum Energy: " << momentumEnergy
+                << ", Field Energy: " << fieldEnergy
+                << ", God Wave Energy: " << GodWaveEnergy;
+            return oss.str();
+        }
+    };
+
+    struct DimensionInteraction {
+        int vertexIndex;
+        long double distance;
+        long double strength;
+        std::vector<long double> vectorPotential;
+        long double waveAmplitude;
+        DimensionInteraction() : vertexIndex(0), distance(0.0L), strength(0.0L), vectorPotential(), waveAmplitude(0.0L) {}
+        DimensionInteraction(int idx, long double dist, long double str, const std::vector<long double>& vecPot, long double amp)
+            : vertexIndex(idx), distance(dist), strength(str), vectorPotential(vecPot), waveAmplitude(amp) {}
+    };
+
+    struct DimensionData {
+        int dimension;
+        long double observable;
+        long double potential;
+        long double nurbMatter;
+        long double nurbEnergy;
+        long double spinEnergy;
+        long double momentumEnergy;
+        long double fieldEnergy;
+        long double GodWaveEnergy;
+        std::string toString() const {
+            std::ostringstream oss;
+            oss << std::fixed << std::setprecision(10)
+                << "Dimension: " << dimension << ", " << EnergyResult{observable, potential, nurbMatter, nurbEnergy, spinEnergy, momentumEnergy, fieldEnergy, GodWaveEnergy}.toString();
+            return oss.str();
+        }
+    };
+
     UniversalEquation(
-        int maxDimensions = 8,
-        int mode = 8,
-        double influence = 2.5,
-        double alpha = 0.0072973525693,
-        bool debug = false
-    ) : maxDimensions_(maxDimensions),
-        currentDimension_(std::clamp(mode, 1, maxDimensions)),
-        mode_(std::clamp(mode, 1, maxDimensions)),
-        influence_(std::clamp(influence, 0.0, 10.0)),
-        alpha_(std::clamp(alpha, 0.1, 10.0)),
-        debug_(debug),
-        wavePhase_(0.0),
-        simulationTime_(0.0),
-        needsUpdate_(true),
-        navigator_(nullptr) {
-        if (debug_) {
-            std::osyncstream(std::cout) << std::format("[DEBUG] Constructing UniversalEquation: maxDimensions={}, mode={}, influence={}, alpha={}, debug={}\n",
-                                                       maxDimensions_, mode_, influence_, alpha_, debug_);
-        }
-        initializeNCube();
-        if (debug_) {
-            std::osyncstream(std::cout) << std::format("[DEBUG] UniversalEquation constructed successfully\n");
-        }
-    }
+        const Logging::Logger& logger,
+        int maxDimensions,
+        int mode,
+        long double influence,
+        long double weak,
+        long double collapse,
+        long double twoD,
+        long double threeDInfluence,
+        long double oneDPermeation,
+        long double nurbMatterStrength,
+        long double nurbEnergyStrength,
+        long double alpha,
+        long double beta,
+        long double carrollFactor,
+        long double meanFieldApprox,
+        long double asymCollapse,
+        long double perspectiveTrans,
+        long double perspectiveFocal,
+        long double spinInteraction,
+        long double emFieldStrength,
+        long double renormFactor,
+        long double vacuumEnergy,
+        long double GodWaveFreq,
+        bool debug,
+        uint64_t numVertices
+    );
 
-    void setCurrentDimension(int dimension) {
-        currentDimension_.store(std::clamp(dimension, 1, maxDimensions_));
-        needsUpdate_.store(true);
-    }
-    void setInfluence(double influence) {
-        influence_.store(std::clamp(influence, 0.0, 10.0));
-        needsUpdate_.store(true);
-    }
-    void setAlpha(double alpha) {
-        alpha_.store(std::clamp(alpha, 0.1, 10.0));
-        needsUpdate_.store(true);
-    }
-    void setDebug(bool debug) { debug_.store(debug); }
-    void setMode(int mode) {
-        mode_.store(std::clamp(mode, 1, maxDimensions_));
-        needsUpdate_.store(true);
-    }
+    UniversalEquation(
+        const Logging::Logger& logger,
+        int maxDimensions,
+        int mode,
+        long double influence,
+        long double weak,
+        bool debug,
+        uint64_t numVertices = 30000
+    );
 
+    UniversalEquation(const UniversalEquation& other);
+    UniversalEquation& operator=(const UniversalEquation& other);
+    virtual ~UniversalEquation();
+
+    void initializeCalculator(AMOURANTH* amouranth);
+    EnergyResult compute();
+    void initializeNCube();
+    void updateInteractions() const;
+    void initializeWithRetry();
+    void setCurrentDimension(int dimension);
+    void setMode(int mode);
+    void setInfluence(long double value);
+    void setWeak(long double value);
+    void setCollapse(long double value);
+    void setTwoD(long double value);
+    void setThreeDInfluence(long double value);
+    void setOneDPermeation(long double value);
+    void setNurbMatterStrength(long double value);
+    void setNurbEnergyStrength(long double value);
+    void setAlpha(long double value);
+    void setBeta(long double value);
+    void setCarrollFactor(long double value);
+    void setMeanFieldApprox(long double value);
+    void setAsymCollapse(long double value);
+    void setPerspectiveTrans(long double value);
+    void setPerspectiveFocal(long double value);
+    void setSpinInteraction(long double value);
+    void setEMFieldStrength(long double value);
+    void setRenormFactor(long double value);
+    void setVacuumEnergy(long double value);
+    void setGodWaveFreq(long double value);
+    void setDebug(bool value);
+    void setCurrentVertices(uint64_t value);
+    void setNavigator(DimensionalNavigator* nav);
+    void setNCubeVertex(int vertexIndex, const std::vector<long double>& vertex);
+    void setVertexMomentum(int vertexIndex, const std::vector<long double>& momentum);
+    void setVertexSpin(int vertexIndex, long double spin);
+    void setVertexWaveAmplitude(int vertexIndex, long double amplitude);
+    void setProjectedVertex(int vertexIndex, const glm::vec3& vertex);
+    void setNCubeVertices(const std::vector<std::vector<long double>>& vertices);
+    void setVertexMomenta(const std::vector<std::vector<long double>>& momenta);
+    void setVertexSpins(const std::vector<long double>& spins);
+    void setVertexWaveAmplitudes(const std::vector<long double>& amplitudes);
+    void setProjectedVertices(const std::vector<glm::vec3>& vertices);
+    void setTotalCharge(long double value);
+    void setMaterialDensity(long double density);
+
+    long double getInfluence() const { return influence_.load(); }
+    long double getWeak() const { return weak_.load(); }
+    long double getCollapse() const { return collapse_.load(); }
+    long double getTwoD() const { return twoD_.load(); }
+    long double getThreeDInfluence() const { return threeDInfluence_.load(); }
+    long double getOneDPermeation() const { return oneDPermeation_.load(); }
+    long double getNurbMatterStrength() const { return nurbMatterStrength_.load(); }
+    long double getNurbEnergyStrength() const { return nurbEnergyStrength_.load(); }
+    long double getAlpha() const { return alpha_.load(); }
+    long double getBeta() const { return beta_.load(); }
+    long double getCarrollFactor() const { return carrollFactor_.load(); }
+    long double getMeanFieldApprox() const { return meanFieldApprox_.load(); }
+    long double getAsymCollapse() const { return asymCollapse_.load(); }
+    long double getPerspectiveTrans() const { return perspectiveTrans_.load(); }
+    long double getPerspectiveFocal() const { return perspectiveFocal_.load(); }
+    long double getSpinInteraction() const { return spinInteraction_.load(); }
+    long double getEMFieldStrength() const { return emFieldStrength_.load(); }
+    long double getRenormFactor() const { return renormFactor_.load(); }
+    long double getVacuumEnergy() const { return vacuumEnergy_.load(); }
+    long double getGodWaveFreq() const { return GodWaveFreq_.load(); }
     int getCurrentDimension() const { return currentDimension_.load(); }
-    double getInfluence() const { return influence_.load(); }
-    double getAlpha() const { return alpha_.load(); }
-    bool getDebug() const { return debug_.load(); }
-    int getMode() const { return mode_.load(); }
     int getMaxDimensions() const { return maxDimensions_; }
-    double getWavePhase() const { return wavePhase_.load(); }
+    int getMode() const { return mode_.load(); }
+    bool getDebug() const { return debug_.load(); }
+    bool getNeedsUpdate() const { return needsUpdate_.load(); }
+    long double getTotalCharge() const { return totalCharge_.load(); }
+    uint64_t getMaxVertices() const { return maxVertices_; }
+    uint64_t getCurrentVertices() const { return currentVertices_.load(); }
+    long double getOmega() const { return omega_; }
+    long double getInvMaxDim() const { return invMaxDim_; }
+    std::span<const long double> getCachedCos() const { return cachedCos_; }
+    std::span<const long double> getNurbMatterControlPoints() const { return nurbMatterControlPoints_; }
+    std::span<const long double> getNurbEnergyControlPoints() const { return nurbEnergyControlPoints_; }
+    std::span<const long double> getNurbKnots() const { return nurbKnots_; }
+    std::span<const long double> getNurbWeights() const { return nurbWeights_; }
+    const DimensionData& getDimensionData() const { return dimensionData_; }
+    DimensionalNavigator* getNavigator() const { return navigator_; }
     float getSimulationTime() const { return simulationTime_.load(); }
-    const std::vector<DimensionInteraction>& getInteractions() const {
-        if (needsUpdate_.load()) {
-            updateInteractions();
-            needsUpdate_.store(false);
-        }
-        return interactions_;
-    }
-    const std::vector<std::vector<double>>& getNCubeVertices() const { return nCubeVertices_; }
-    const std::vector<glm::vec3>& getProjectedVertices() const { return projectedVerts_; }
-    double getAvgProjScale() const { return avgProjScale_.load(); }
-    const std::vector<Ball>& getBalls() const { return balls_; }
+    std::span<const std::vector<long double>> getNCubeVertices() const { return nCubeVertices_; }
+    std::span<const std::vector<long double>> getVertexMomenta() const { return vertexMomenta_; }
+    std::span<const long double> getVertexSpins() const { return vertexSpins_; }
+    std::span<const long double> getVertexWaveAmplitudes() const { return vertexWaveAmplitudes_; }
+    std::span<const DimensionInteraction> getInteractions() const { return interactions_; }
+    std::span<const glm::vec3> getProjectedVertices() const { return projectedVerts_; }
+    const std::vector<long double>& getNCubeVertex(int vertexIndex) const;
+    const std::vector<long double>& getVertexMomentum(int vertexIndex) const;
+    long double getVertexSpin(int vertexIndex) const;
+    long double getVertexWaveAmplitude(int vertexIndex) const;
+    const glm::vec3& getProjectedVertex(int vertexIndex) const;
 
-    void updateProjectedVertices(const std::vector<glm::vec3>& newVerts) {
-        projectedVerts_ = newVerts;
-    }
+    void evolveTimeStep(long double dt);
+    void updateMomentum();
+    void advanceCycle();
+    std::vector<DimensionData> computeBatch(int startDim, int endDim);
+    void exportToCSV(const std::string& filename, const std::vector<DimensionData>& data) const;
+    DimensionData updateCache();
+    long double computeNurbMatter(int vertexIndex) const;
+    long double computeNurbEnergy(int vertexIndex) const;
+    std::vector<long double> computeVectorPotential(int vertexIndex) const;
+    long double computeInteraction(int vertexIndex, long double distance) const;
+    long double computeSpinEnergy(int vertexIndex) const;
+    long double computeEMField(int vertexIndex) const;
+    long double computeGodWave(int vertexIndex) const;
+    long double computeGodWaveAmplitude(int vertexIndex, long double time) const;
+    long double safeExp(long double x) const;
+    long double safe_div(long double a, long double b) const;
+    void validateVertexIndex(int vertexIndex, const std::source_location& loc = std::source_location::current()) const;
 
-    void advanceCycle() {
-        wavePhase_.fetch_add(0.1);
-        needsUpdate_.store(true);
-    }
-
-    EnergyResult compute() const {
-        EnergyResult result;
-        result.observable = influence_.load() * std::cos(wavePhase_.load());
-        result.potential = influence_.load() * std::sin(wavePhase_.load());
-        result.nurbMatter = influence_.load() * 0.27;
-        result.nurbEnergy = influence_.load() * 0.68;
-        return result;
-    }
-
-    void initializeCalculator(AMOURANTH* amouranth) {
-        if (!amouranth) return;
-        navigator_ = amouranth;
-        initializeWithRetry();
-    }
-
-    DimensionData updateCache() {
-        DimensionData data;
-        data.dimension = currentDimension_.load();
-        auto result = compute();
-        data.observable = result.observable;
-        data.potential = result.potential;
-        data.nurbMatter = result.nurbMatter;
-        data.nurbEnergy = result.nurbEnergy;
-        return data;
-    }
-
-    std::vector<DimensionData> computeBatch(int startDim = 1, int endDim = -1) {
-        if (endDim == -1) endDim = maxDimensions_;
-        startDim = std::clamp(startDim, 1, maxDimensions_);
-        endDim = std::clamp(endDim, startDim, maxDimensions_);
-        std::vector<DimensionData> results;
-        results.reserve(endDim - startDim + 1);
-        for (int dim = startDim; dim <= endDim; ++dim) {
-            setCurrentDimension(dim);
-            results.push_back(updateCache());
-        }
-        return results;
-    }
-
-    double computeInteraction(int vertexIndex, double distance) const {
-        return influence_.load() * std::cos(wavePhase_.load() + vertexIndex * 0.1) / (distance + 1e-6);
-    }
-    double computePermeation(int vertexIndex) const {
-        return influence_.load() * std::sin(wavePhase_.load() + vertexIndex * 0.1);
-    }
-    double computenurbEnergy(double distance) const {
-        return influence_.load() * 0.68 / (distance + 1e-6);
-    }
-
-    void initializeBalls(float baseMass = 1.2f, float baseRadius = 0.12f, size_t numBalls = 30000) {
-        balls_.clear();
-        simulationTime_.store(0.0f);
-        balls_.reserve(numBalls);
-        auto result = compute();
-        float massScale = static_cast<float>(result.nurbMatter);
-        Xorshift rng(12345);
-        for (size_t i = 0; i < numBalls; ++i) {
-            glm::vec3 pos(rng.nextFloat(-5.0f, 5.0f), rng.nextFloat(-5.0f, 5.0f), rng.nextFloat(-2.0f, 2.0f));
-            glm::vec3 vel(rng.nextFloat(-1.0f, 1.0f), rng.nextFloat(-1.0f, 1.0f), rng.nextFloat(-1.0f, 1.0f));
-            float startTime = i * 0.1f;
-            balls_.emplace_back(pos, vel, baseMass * massScale, baseRadius, startTime);
-        }
-    }
-
-    void updateBalls(float deltaTime) {
-        simulationTime_.fetch_add(deltaTime);
-        auto interactions = getInteractions();
-        auto result = compute();
-
-        // Compute forces in parallel
-        std::vector<glm::vec3> forces(balls_.size(), glm::vec3(0.0f));
-#pragma omp parallel for
-        for (size_t i = 0; i < balls_.size(); ++i) {
-            if (simulationTime_.load() < balls_[i].startTime) continue;
-            double interactionStrength = (i < interactions.size()) ? interactions[i].strength : 0.0;
-            forces[i] = glm::vec3(
-                static_cast<float>(result.observable),
-                static_cast<float>(result.potential),
-                static_cast<float>(result.nurbEnergy)
-            ) * static_cast<float>(interactionStrength);
-            balls_[i].acceleration = forces[i] / balls_[i].mass;
-        }
-
-        // Apply boundary conditions in parallel
-        const glm::vec3 boundsMin(-5.0f, -5.0f, -2.0f);
-        const glm::vec3 boundsMax(5.0f, 5.0f, 2.0f);
-#pragma omp parallel for
-        for (size_t i = 0; i < balls_.size(); ++i) {
-            if (simulationTime_.load() < balls_[i].startTime) continue;
-            auto& pos = balls_[i].position;
-            auto& vel = balls_[i].velocity;
-            if (pos.x < boundsMin.x) { pos.x = boundsMin.x; vel.x = -vel.x; }
-            if (pos.x > boundsMax.x) { pos.x = boundsMax.x; vel.x = -vel.x; }
-            if (pos.y < boundsMin.y) { pos.y = boundsMin.y; vel.y = -vel.y; }
-            if (pos.y > boundsMax.y) { pos.y = boundsMax.y; vel.y = -vel.y; }
-            if (pos.z < boundsMin.z) { pos.z = boundsMin.z; vel.z = -vel.z; }
-            if (pos.z > boundsMax.z) { pos.z = boundsMax.z; vel.z = -vel.z; }
-        }
-
-        // Spatial grid for collision detection
-        const int gridSize = 10;
-        const float cellSize = 10.0f / gridSize;
-        std::vector<std::vector<size_t>> grid(gridSize * gridSize * gridSize);
-        for (size_t i = 0; i < balls_.size(); ++i) {
-            if (simulationTime_.load() < balls_[i].startTime) continue;
-            glm::vec3 pos = balls_[i].position;
-            int x = static_cast<int>((pos.x + 5.0f) / cellSize);
-            int y = static_cast<int>((pos.y + 5.0f) / cellSize);
-            int z = static_cast<int>((pos.z + 2.0f) / cellSize * 0.5f);
-            x = std::clamp(x, 0, gridSize - 1);
-            y = std::clamp(y, 0, gridSize - 1);
-            z = std::clamp(z, 0, gridSize - 1);
-            int cellIdx = z * gridSize * gridSize + y * gridSize + x;
-            grid[cellIdx].push_back(i);
-        }
-
-        // Handle collisions in parallel with per-thread storage
-        std::vector<std::vector<std::pair<size_t, size_t>>> threadCollisions(omp_get_max_threads());
-#pragma omp parallel for
-        for (size_t i = 0; i < balls_.size(); ++i) {
-            if (simulationTime_.load() < balls_[i].startTime) continue;
-            glm::vec3 pos = balls_[i].position;
-            int x = static_cast<int>((pos.x + 5.0f) / cellSize);
-            int y = static_cast<int>((pos.y + 5.0f) / cellSize);
-            int z = static_cast<int>((pos.z + 2.0f) / cellSize * 0.5f);
-            x = std::clamp(x, 0, gridSize - 1);
-            y = std::clamp(y, 0, gridSize - 1);
-            z = std::clamp(z, 0, gridSize - 1);
-
-            int threadId = omp_get_thread_num();
-            for (int dz = -1; dz <= 1; ++dz) {
-                for (int dy = -1; dy <= 1; ++dy) {
-                    for (int dx = -1; dx <= 1; ++dx) {
-                        int nx = x + dx, ny = y + dy, nz = z + dz;
-                        if (nx < 0 || nx >= gridSize || ny < 0 || ny >= gridSize || nz < 0 || nz >= gridSize) continue;
-                        int cellIdx = nz * gridSize * gridSize + ny * gridSize + nx;
-                        for (size_t j : grid[cellIdx]) {
-                            if (j <= i || simulationTime_.load() < balls_[j].startTime) continue;
-                            glm::vec3 delta = balls_[j].position - balls_[i].position;
-                            float distance = glm::length(delta);
-                            float minDistance = balls_[i].radius + balls_[j].radius;
-                            if (distance < minDistance && distance > 0.0f) {
-                                threadCollisions[threadId].emplace_back(i, j);
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // Process collisions sequentially to avoid race conditions
-        for (const auto& collisions : threadCollisions) {
-            for (const auto& [i, j] : collisions) {
-                glm::vec3 delta = balls_[j].position - balls_[i].position;
-                float distance = glm::length(delta);
-                float minDistance = balls_[i].radius + balls_[j].radius;
-                if (distance < minDistance && distance > 0.0f) {
-                    glm::vec3 normal = delta / distance;
-                    glm::vec3 relVelocity = balls_[j].velocity - balls_[i].velocity;
-                    float impulse = -2.0f * glm::dot(relVelocity, normal) / (1.0f / balls_[i].mass + 1.0f / balls_[j].mass);
-                    balls_[i].velocity += (impulse / balls_[i].mass) * normal;
-                    balls_[j].velocity -= (impulse / balls_[j].mass) * normal;
-                    float overlap = minDistance - distance;
-                    balls_[i].position -= normal * (overlap * 0.5f);
-                    balls_[j].position += normal * (overlap * 0.5f);
-                }
-            }
-        }
-
-        // Update positions in parallel
-#pragma omp parallel for
-        for (size_t i = 0; i < balls_.size(); ++i) {
-            if (simulationTime_.load() < balls_[i].startTime) continue;
-            balls_[i].velocity += balls_[i].acceleration * deltaTime;
-            balls_[i].position += balls_[i].velocity * deltaTime;
-        }
-    }
+    // Methods implemented in universal_equation_physical.cpp
+    long double computeVertexVolume(int vertexIndex) const;
+    long double computeVertexMass(int vertexIndex) const;
+    long double computeVertexDensity(int vertexIndex) const;
+    std::vector<long double> computeCenterOfMass() const;
+    long double computeTotalSystemVolume() const;
+    long double computeGravitationalPotential(int vertexIndex1, int vertexIndex2 = -1) const;
+    std::vector<long double> computeGravitationalAcceleration(int vertexIndex) const;
+    std::vector<long double> computeClassicalEMField(int vertexIndex) const;
+    void updateOrbitalVelocity(long double dt);
+    void updateOrbitalPositions(long double dt);
+    long double computeSystemEnergy() const;
+    long double computePythagoreanScaling(int vertexIndex) const;
+    long double computeCircleArea(long double radius) const;
+    long double computeSphereVolume(long double radius) const;
+    long double computeKineticEnergy(int vertexIndex) const;
+    long double computeGravitationalForceMagnitude(int vertexIndex1, int vertexIndex2) const;
+    long double computeCoulombForceMagnitude(int vertexIndex1, int vertexIndex2) const;
+    long double computePressure(int vertexIndex) const;
+    long double computeBuoyantForce(int vertexIndex) const;
+    long double computeCentripetalAcceleration(int vertexIndex, long double radius) const;
+    bool computeSphereCollision(int vertexIndex1, int vertexIndex2) const;
+    void resolveSphereCollision(int vertexIndex1, int vertexIndex2);
+    bool computeAABBCollision2D(int vertexIndex1, int vertexIndex2) const;
+    long double computeEffectiveMass(int vertexIndex1, int vertexIndex2) const;
+    std::vector<long double> computeTorque(int vertexIndex, const std::vector<long double>& pivot) const;
+    std::vector<long double> computeDragForce(int vertexIndex) const;
+    std::vector<long double> computeSpringForce(int vertexIndex1, int vertexIndex2, long double springConstant, long double restLength) const;
 
 private:
-    int maxDimensions_;
+    std::atomic<long double> influence_;
+    std::atomic<long double> weak_;
+    std::atomic<long double> collapse_;
+    std::atomic<long double> twoD_;
+    std::atomic<long double> threeDInfluence_;
+    std::atomic<long double> oneDPermeation_;
+    std::atomic<long double> nurbMatterStrength_;
+    std::atomic<long double> nurbEnergyStrength_;
+    std::atomic<long double> alpha_;
+    std::atomic<long double> beta_;
+    std::atomic<long double> carrollFactor_;
+    std::atomic<long double> meanFieldApprox_;
+    std::atomic<long double> asymCollapse_;
+    std::atomic<long double> perspectiveTrans_;
+    std::atomic<long double> perspectiveFocal_;
+    std::atomic<long double> spinInteraction_;
+    std::atomic<long double> emFieldStrength_;
+    std::atomic<long double> renormFactor_;
+    std::atomic<long double> vacuumEnergy_;
+    std::atomic<long double> GodWaveFreq_;
     std::atomic<int> currentDimension_;
     std::atomic<int> mode_;
-    std::atomic<double> influence_;
-    std::atomic<double> alpha_;
     std::atomic<bool> debug_;
-    std::atomic<double> wavePhase_;
+    std::atomic<bool> needsUpdate_;
+    std::atomic<long double> totalCharge_;
+    std::atomic<long double> avgProjScale_;
+    std::atomic<uint64_t> currentVertices_;
     std::atomic<float> simulationTime_;
+    std::atomic<long double> materialDensity_;
+    const uint64_t maxVertices_;
+    const int maxDimensions_;
+    const long double omega_;
+    const long double invMaxDim_;
+    mutable std::vector<std::vector<long double>> nCubeVertices_;
+    mutable std::vector<std::vector<long double>> vertexMomenta_;
+    mutable std::vector<long double> vertexSpins_;
+    mutable std::vector<long double> vertexWaveAmplitudes_;
     mutable std::vector<DimensionInteraction> interactions_;
-    std::vector<std::vector<double>> nCubeVertices_;
     mutable std::vector<glm::vec3> projectedVerts_;
-    mutable std::atomic<double> avgProjScale_;
-    mutable std::vector<Ball> balls_;
-    mutable std::atomic<bool> needsUpdate_; // Made mutable for const methods
-    AMOURANTH* navigator_;
-
-    void initializeNCube() {
-        if (debug_.load()) {
-            std::osyncstream(std::cout) << std::format("[DEBUG] Before nCubeVertices_.clear(): size={}, capacity={}\n",
-                                                       nCubeVertices_.size(), nCubeVertices_.capacity());
-        }
-        nCubeVertices_.clear();
-        if (debug_.load()) {
-            std::osyncstream(std::cout) << std::format("[DEBUG] After nCubeVertices_.clear(): size={}, capacity={}\n",
-                                                       nCubeVertices_.size(), nCubeVertices_.capacity());
-        }
-        uint64_t maxVertices = 1ULL << maxDimensions_;
-        nCubeVertices_.reserve(maxVertices);
-        for (uint64_t i = 0; i < maxVertices; ++i) {
-            std::vector<double> vertex(maxDimensions_);
-            for (int d = 0; d < maxDimensions_; ++d) {
-                vertex[d] = ((i >> d) & 1) ? 1.0 : -1.0;
-            }
-            nCubeVertices_.push_back(vertex);
-        }
-        projectedVerts_.resize(maxVertices, glm::vec3(0.0f));
-        avgProjScale_.store(1.0);
-        if (debug_.load()) {
-            std::osyncstream(std::cout) << std::format("[DEBUG] nCubeVertices_ initialized: size={}, capacity={}\n",
-                                                       nCubeVertices_.size(), nCubeVertices_.capacity());
-        }
-    }
-
-    void updateInteractions() const {
-        interactions_.clear();
-        interactions_.reserve(nCubeVertices_.size());
-        for (size_t i = 0; i < nCubeVertices_.size(); ++i) {
-            double distance = 0.0;
-            for (const auto& v : nCubeVertices_[i]) {
-                distance += v * v;
-            }
-            distance = std::sqrt(distance);
-            double strength = influence_.load() * std::cos(wavePhase_.load() + i * 0.1) / (distance + 1e-6);
-            interactions_.emplace_back(currentDimension_.load(), strength, wavePhase_.load() + i * 0.1);
-        }
-    }
-
-    void initializeWithRetry() {
-        initializeNCube();
-        updateInteractions();
-    }
+    std::vector<long double> cachedCos_;
+    std::vector<long double> nurbMatterControlPoints_;
+    std::vector<long double> nurbEnergyControlPoints_;
+    std::vector<long double> nurbKnots_;
+    std::vector<long double> nurbWeights_;
+    DimensionData dimensionData_;
+    DimensionalNavigator* navigator_;
+    const Logging::Logger& logger_;
 };
 
 #endif // UE_INIT_HPP

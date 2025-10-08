@@ -1,10 +1,10 @@
+#ifndef VULKAN_INIT_HPP
+#define VULKAN_INIT_HPP
+
 // AMOURANTH RTX Engine, October 2025 - Vulkan core initialization.
 // Initializes physical device, logical device, queues, command pool, and synchronization objects.
 // Dependencies: Vulkan 1.3+, GLM, C++20 standard library.
 // Zachary Geurts 2025
-
-#ifndef VULKAN_INIT_HPP
-#define VULKAN_INIT_HPP
 
 #include "Vulkan_init_swapchain.hpp"
 #include "Vulkan_init_pipeline.hpp"
@@ -14,6 +14,8 @@
 #include <span>
 #include <vector>
 #include <string>
+#include <chrono>
+#include "engine/logging.hpp"
 
 // Forward declaration of AMOURANTH
 class AMOURANTH;
@@ -59,7 +61,7 @@ class VulkanRenderer {
 public:
     VulkanRenderer(VkInstance instance, VkSurfaceKHR surface,
                   std::span<const glm::vec3> vertices, std::span<const uint32_t> indices,
-                  int width, int height);
+                  int width, int height, const Logging::Logger& logger);
     ~VulkanRenderer();
 
     void beginFrame();
@@ -84,8 +86,10 @@ private:
     VkSurfaceKHR surface_;
     VulkanSwapchainManager swapchainManager_;
     VulkanPipelineManager pipelineManager_;
+    const Logging::Logger& logger_; // Added logger reference
     uint32_t currentFrame_ = 0;
     uint32_t currentImageIndex_ = 0;
+    std::chrono::steady_clock::time_point lastFrameTime_; // Added for deltaTime calculation
 };
 
 #endif // VULKAN_INIT_HPP

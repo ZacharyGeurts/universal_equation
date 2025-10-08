@@ -281,12 +281,13 @@ Application::Application(const char* title, int width, int height)
       indices_({0, 1, 2}),
       sdl_(std::make_unique<SDL3Initializer>(std::string(title), width, height)),
       renderer_(std::make_unique<VulkanRenderer>(
-          sdl_->getInstance(), sdl_->getSurface(), vertices_, indices_, width, height)),
+          sdl_->getInstance(), sdl_->getSurface(), vertices_, indices_, width, height, logger_)),
       logger_(),
       navigator_(std::make_unique<DimensionalNavigator>(title, width, height, *renderer_, logger_)),
       amouranth_(navigator_.get(), logger_, renderer_->getContext().device,
                  renderer_->getContext().vertexBufferMemory, renderer_->getContext().pipeline),
-      inputHandler_(nullptr) {
+      inputHandler_(nullptr),
+      lastFrameTime_(std::chrono::steady_clock::now()) {
     try {
         renderer_->initializeVulkan(vertices_, indices_, width, height);
         initializeInput();
@@ -299,9 +300,7 @@ Application::Application(const char* title, int width, int height)
 
 Application::~Application() {
     logger_.log(Logging::LogLevel::Info, "Cleaning up Application", std::source_location::current());
-    // Explicit destruction order
     inputHandler_.reset();
-    // amouranth_ is not a unique_ptr, so it will be destroyed automatically
     navigator_.reset();
     renderer_.reset();
     sdl_.reset();
@@ -312,8 +311,13 @@ void Application::initializeInput() {
 }
 
 void Application::run() {
-    float deltaTime = 0.016f; // Assume 60 FPS
     while (!sdl_->shouldQuit()) {
+        auto currentTime = std::chrono::steady_clock::now();
+        float deltaTime = std::chrono::duration<float>(currentTime - lastFrameTime_).count();
+        lastFrameTime_ = currentTime;
+
+        logger_.log(Logging::LogLevel::Debug, "Main loop: deltaTime={:.6f}s", std::source_location::current(), deltaTime);
+
         sdl_->pollEvents();
         inputHandler_->handleInput(*this);
         amouranth_.update(deltaTime);

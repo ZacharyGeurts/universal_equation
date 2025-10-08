@@ -4,10 +4,7 @@
 // Zachary Geurts 2025
 
 #include "engine/Vulkan_init.hpp"
-#include "engine/Vulkan_init_buffers.hpp"
-#include "engine/Vulkan_init_swapchain.hpp"
-#include "engine/Vulkan_init_pipeline.hpp"
-#include "engine/core.hpp" // For AMOURANTH definition
+#include "engine/core.hpp"
 #include "engine/logging.hpp"
 #include <stdexcept>
 #include <cstring>
@@ -16,41 +13,39 @@
 
 VulkanRenderer::VulkanRenderer(VkInstance instance, VkSurfaceKHR surface,
                               std::span<const glm::vec3> vertices, std::span<const uint32_t> indices,
-                              int width, int height) 
-    : instance_(instance), surface_(surface), swapchainManager_(context_, surface_), pipelineManager_(context_) {
-    Logging::Logger logger;
-    logger.log(Logging::LogLevel::Info, "Constructing VulkanRenderer with instance={:p}, surface={:p}, width={}, height={}",
-               std::source_location::current(), static_cast<void*>(instance), static_cast<void*>(surface), width, height);
+                              int width, int height, const Logging::Logger& logger)
+    : instance_(instance), surface_(surface), swapchainManager_(context_, surface_),
+      pipelineManager_(context_), logger_(logger), lastFrameTime_(std::chrono::steady_clock::now()) {
+    logger_.log(Logging::LogLevel::Info, "Constructing VulkanRenderer with instance={:p}, surface={:p}, width={}, height={}",
+                std::source_location::current(), static_cast<void*>(instance), static_cast<void*>(surface), width, height);
     initializeVulkan(vertices, indices, width, height);
 }
 
 VulkanRenderer::~VulkanRenderer() {
-    Logging::Logger logger;
-    logger.log(Logging::LogLevel::Info, "Destroying VulkanRenderer", std::source_location::current());
+    logger_.log(Logging::LogLevel::Info, "Destroying VulkanRenderer", std::source_location::current());
     cleanupVulkan();
 }
 
 void VulkanRenderer::initializeVulkan(std::span<const glm::vec3> vertices, std::span<const uint32_t> indices,
                                      int width, int height) {
-    Logging::Logger logger;
-    logger.log(Logging::LogLevel::Info, "Initializing Vulkan renderer", std::source_location::current());
+    logger_.log(Logging::LogLevel::Info, "Initializing Vulkan renderer", std::source_location::current());
 
     // Select physical device
-    logger.log(Logging::LogLevel::Debug, "Selecting physical device", std::source_location::current());
+    logger_.log(Logging::LogLevel::Debug, "Selecting physical device", std::source_location::current());
     uint32_t deviceCount = 0;
     vkEnumeratePhysicalDevices(instance_, &deviceCount, nullptr);
     if (deviceCount == 0) {
         std::string error = "No Vulkan-capable devices found";
-        logger.log(Logging::LogLevel::Error, "{}", std::source_location::current(), error);
+        logger_.log(Logging::LogLevel::Error, "{}", std::source_location::current(), error);
         throw std::runtime_error(error);
     }
     std::vector<VkPhysicalDevice> devices(deviceCount);
     vkEnumeratePhysicalDevices(instance_, &deviceCount, devices.data());
     context_.physicalDevice = devices[0]; // Simplified selection
-    logger.log(Logging::LogLevel::Info, "Selected physical device", std::source_location::current());
+    logger_.log(Logging::LogLevel::Info, "Selected physical device", std::source_location::current());
 
     // Queue families
-    logger.log(Logging::LogLevel::Debug, "Querying queue families", std::source_location::current());
+    logger_.log(Logging::LogLevel::Debug, "Querying queue families", std::source_location::current());
     uint32_t queueFamilyCount = 0;
     vkGetPhysicalDeviceQueueFamilyProperties(context_.physicalDevice, &queueFamilyCount, nullptr);
     std::vector<VkQueueFamilyProperties> queueFamilies(queueFamilyCount);
@@ -71,12 +66,12 @@ void VulkanRenderer::initializeVulkan(std::span<const glm::vec3> vertices, std::
     }
     if (!foundGraphics || !foundPresent) {
         std::string error = "Failed to find suitable queue families";
-        logger.log(Logging::LogLevel::Error, "{}", std::source_location::current(), error);
+        logger_.log(Logging::LogLevel::Error, "{}", std::source_location::current(), error);
         throw std::runtime_error(error);
     }
 
     // Check device extension support
-    logger.log(Logging::LogLevel::Debug, "Checking device extensions", std::source_location::current());
+    logger_.log(Logging::LogLevel::Debug, "Checking device extensions", std::source_location::current());
     uint32_t extCount = 0;
     vkEnumerateDeviceExtensionProperties(context_.physicalDevice, nullptr, &extCount, nullptr);
     std::vector<VkExtensionProperties> availableExtensions(extCount);
@@ -85,18 +80,18 @@ void VulkanRenderer::initializeVulkan(std::span<const glm::vec3> vertices, std::
     for (const auto& ext : availableExtensions) {
         if (std::strcmp(ext.extensionName, VK_KHR_SWAPCHAIN_EXTENSION_NAME) == 0) {
             hasSwapchain = true;
-            logger.log(Logging::LogLevel::Info, "VK_KHR_swapchain extension found", std::source_location::current());
+            logger_.log(Logging::LogLevel::Info, "VK_KHR_swapchain extension found", std::source_location::current());
             break;
         }
     }
     if (!hasSwapchain) {
         std::string error = "Physical device does not support VK_KHR_swapchain";
-        logger.log(Logging::LogLevel::Error, "{}", std::source_location::current(), error);
+        logger_.log(Logging::LogLevel::Error, "{}", std::source_location::current(), error);
         throw std::runtime_error(error);
     }
 
     // Create logical device
-    logger.log(Logging::LogLevel::Debug, "Creating logical device", std::source_location::current());
+    logger_.log(Logging::LogLevel::Debug, "Creating logical device", std::source_location::current());
     std::vector<VkDeviceQueueCreateInfo> queueCreateInfos;
     float queuePriority = 1.0f;
     std::vector<uint32_t> uniqueFamilies = {context_.graphicsFamily};
@@ -115,7 +110,7 @@ void VulkanRenderer::initializeVulkan(std::span<const glm::vec3> vertices, std::
         queueCreateInfos.push_back(queueCreateInfo);
     }
     VkPhysicalDeviceFeatures deviceFeatures = {};
-    const char* deviceExtensions[] = { VK_KHR_SWAPCHAIN_EXTENSION_NAME };
+    const char* deviceExtensions[] = {VK_KHR_SWAPCHAIN_EXTENSION_NAME};
     VkDeviceCreateInfo deviceCreateInfo = {
         .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
         .pNext = nullptr,
@@ -130,10 +125,10 @@ void VulkanRenderer::initializeVulkan(std::span<const glm::vec3> vertices, std::
     };
     if (vkCreateDevice(context_.physicalDevice, &deviceCreateInfo, nullptr, &context_.device) != VK_SUCCESS) {
         std::string error = "Failed to create logical device";
-        logger.log(Logging::LogLevel::Error, "{}", std::source_location::current(), error);
+        logger_.log(Logging::LogLevel::Error, "{}", std::source_location::current(), error);
         throw std::runtime_error(error);
     }
-    logger.log(Logging::LogLevel::Info, "Logical device created", std::source_location::current());
+    logger_.log(Logging::LogLevel::Info, "Logical device created", std::source_location::current());
 
     vkGetDeviceQueue(context_.device, context_.graphicsFamily, 0, &context_.graphicsQueue);
     vkGetDeviceQueue(context_.device, context_.presentFamily, 0, &context_.presentQueue);
@@ -157,10 +152,10 @@ void VulkanRenderer::initializeVulkan(std::span<const glm::vec3> vertices, std::
     };
     if (vkCreateCommandPool(context_.device, &commandPoolInfo, nullptr, &context_.commandPool) != VK_SUCCESS) {
         std::string error = "Failed to create command pool";
-        logger.log(Logging::LogLevel::Error, "{}", std::source_location::current(), error);
+        logger_.log(Logging::LogLevel::Error, "{}", std::source_location::current(), error);
         throw std::runtime_error(error);
     }
-    logger.log(Logging::LogLevel::Info, "Command pool created", std::source_location::current());
+    logger_.log(Logging::LogLevel::Info, "Command pool created", std::source_location::current());
 
     // Create command buffers
     context_.commandBuffers.resize(context_.swapchainFramebuffers.size());
@@ -173,10 +168,10 @@ void VulkanRenderer::initializeVulkan(std::span<const glm::vec3> vertices, std::
     };
     if (vkAllocateCommandBuffers(context_.device, &commandBufferAllocInfo, context_.commandBuffers.data()) != VK_SUCCESS) {
         std::string error = "Failed to allocate command buffers";
-        logger.log(Logging::LogLevel::Error, "{}", std::source_location::current(), error);
+        logger_.log(Logging::LogLevel::Error, "{}", std::source_location::current(), error);
         throw std::runtime_error(error);
     }
-    logger.log(Logging::LogLevel::Info, "Allocated {} command buffers", std::source_location::current(), context_.commandBuffers.size());
+    logger_.log(Logging::LogLevel::Info, "Allocated {} command buffers", std::source_location::current(), context_.commandBuffers.size());
 
     // Create semaphores and fences
     context_.imageAvailableSemaphores.resize(context_.swapchainImages.size());
@@ -197,16 +192,15 @@ void VulkanRenderer::initializeVulkan(std::span<const glm::vec3> vertices, std::
             vkCreateSemaphore(context_.device, &semaphoreInfo, nullptr, &context_.renderFinishedSemaphores[i]) != VK_SUCCESS ||
             vkCreateFence(context_.device, &fenceInfo, nullptr, &context_.inFlightFences[i]) != VK_SUCCESS) {
             std::string error = "Failed to create synchronization objects";
-            logger.log(Logging::LogLevel::Error, "{}", std::source_location::current(), error);
+            logger_.log(Logging::LogLevel::Error, "{}", std::source_location::current(), error);
             throw std::runtime_error(error);
         }
     }
-    logger.log(Logging::LogLevel::Info, "Created synchronization objects", std::source_location::current());
+    logger_.log(Logging::LogLevel::Info, "Created synchronization objects", std::source_location::current());
 }
 
 void VulkanRenderer::beginFrame() {
-    Logging::Logger logger;
-    logger.log(Logging::LogLevel::Debug, "Beginning frame {}", std::source_location::current(), currentFrame_);
+    logger_.log(Logging::LogLevel::Debug, "Beginning frame {}", std::source_location::current(), currentFrame_);
 
     vkWaitForFences(context_.device, 1, &context_.inFlightFences[currentFrame_], VK_TRUE, UINT64_MAX);
     vkResetFences(context_.device, 1, &context_.inFlightFences[currentFrame_]);
@@ -214,13 +208,13 @@ void VulkanRenderer::beginFrame() {
     VkResult result = vkAcquireNextImageKHR(context_.device, context_.swapchain, UINT64_MAX,
                                             context_.imageAvailableSemaphores[currentFrame_], VK_NULL_HANDLE, &currentImageIndex_);
     if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
-        logger.log(Logging::LogLevel::Warning, "Swapchain out of date, resizing", std::source_location::current());
+        logger_.log(Logging::LogLevel::Warning, "Swapchain out of date, resizing", std::source_location::current());
         swapchainManager_.handleResize(context_.swapchainExtent.width, context_.swapchainExtent.height);
         return;
     }
     if (result != VK_SUCCESS) {
         std::string error = std::format("Failed to acquire swapchain image: VkResult={}", static_cast<int>(result));
-        logger.log(Logging::LogLevel::Error, "{}", std::source_location::current(), error);
+        logger_.log(Logging::LogLevel::Error, "{}", std::source_location::current(), error);
         throw std::runtime_error(error);
     }
 
@@ -233,32 +227,17 @@ void VulkanRenderer::beginFrame() {
     };
     if (vkBeginCommandBuffer(context_.commandBuffers[currentFrame_], &beginInfo) != VK_SUCCESS) {
         std::string error = "Failed to begin command buffer";
-        logger.log(Logging::LogLevel::Error, "{}", std::source_location::current(), error);
+        logger_.log(Logging::LogLevel::Error, "{}", std::source_location::current(), error);
         throw std::runtime_error(error);
     }
-
-    VkClearValue clearColor = {{{0.0f, 0.0f, 0.0f, 1.0f}}};
-    VkRenderPassBeginInfo renderPassInfo = {
-        .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
-        .pNext = nullptr,
-        .renderPass = context_.renderPass,
-        .framebuffer = context_.swapchainFramebuffers[currentImageIndex_],
-        .renderArea = {{0, 0}, context_.swapchainExtent},
-        .clearValueCount = 1,
-        .pClearValues = &clearColor,
-    };
-    vkCmdBeginRenderPass(context_.commandBuffers[currentFrame_], &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
-    logger.log(Logging::LogLevel::Debug, "Render pass begun for frame {}, image index {}", std::source_location::current(), currentFrame_, currentImageIndex_);
 }
 
 void VulkanRenderer::endFrame() {
-    Logging::Logger logger;
-    logger.log(Logging::LogLevel::Debug, "Ending frame {}", std::source_location::current(), currentFrame_);
+    logger_.log(Logging::LogLevel::Debug, "Ending frame {}", std::source_location::current(), currentFrame_);
 
-    vkCmdEndRenderPass(context_.commandBuffers[currentFrame_]);
     if (vkEndCommandBuffer(context_.commandBuffers[currentFrame_]) != VK_SUCCESS) {
         std::string error = "Failed to record command buffer";
-        logger.log(Logging::LogLevel::Error, "{}", std::source_location::current(), error);
+        logger_.log(Logging::LogLevel::Error, "{}", std::source_location::current(), error);
         throw std::runtime_error(error);
     }
 
@@ -276,7 +255,7 @@ void VulkanRenderer::endFrame() {
     };
     if (vkQueueSubmit(context_.graphicsQueue, 1, &submitInfo, context_.inFlightFences[currentFrame_]) != VK_SUCCESS) {
         std::string error = "Failed to submit draw command buffer";
-        logger.log(Logging::LogLevel::Error, "{}", std::source_location::current(), error);
+        logger_.log(Logging::LogLevel::Error, "{}", std::source_location::current(), error);
         throw std::runtime_error(error);
     }
 
@@ -292,20 +271,23 @@ void VulkanRenderer::endFrame() {
     };
     VkResult result = vkQueuePresentKHR(context_.presentQueue, &presentInfo);
     if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
-        logger.log(Logging::LogLevel::Warning, "Swapchain out of date or suboptimal during present", std::source_location::current());
+        logger_.log(Logging::LogLevel::Warning, "Swapchain out of date or suboptimal during present", std::source_location::current());
         swapchainManager_.handleResize(context_.swapchainExtent.width, context_.swapchainExtent.height);
     } else if (result != VK_SUCCESS) {
         std::string error = std::format("Failed to present queue: VkResult={}", static_cast<int>(result));
-        logger.log(Logging::LogLevel::Error, "{}", std::source_location::current(), error);
+        logger_.log(Logging::LogLevel::Error, "{}", std::source_location::current(), error);
         throw std::runtime_error(error);
     }
-    logger.log(Logging::LogLevel::Debug, "Frame {} presented with image index {}", std::source_location::current(), currentFrame_, currentImageIndex_);
+    logger_.log(Logging::LogLevel::Debug, "Frame {} presented with image index {}", std::source_location::current(), currentFrame_, currentImageIndex_);
     currentFrame_ = (currentFrame_ + 1) % context_.swapchainFramebuffers.size();
 }
 
 void VulkanRenderer::renderFrame(AMOURANTH* amouranth) {
-    Logging::Logger logger;
-    logger.log(Logging::LogLevel::Debug, "Rendering frame with AMOURANTH", std::source_location::current());
+    auto currentTime = std::chrono::steady_clock::now();
+    float deltaTime = std::chrono::duration<float>(currentTime - lastFrameTime_).count();
+    lastFrameTime_ = currentTime;
+
+    logger_.log(Logging::LogLevel::Debug, "Rendering frame with AMOURANTH, deltaTime={:.6f}", std::source_location::current(), deltaTime);
     beginFrame();
     amouranth->render(
         currentImageIndex_,
@@ -313,14 +295,16 @@ void VulkanRenderer::renderFrame(AMOURANTH* amouranth) {
         context_.commandBuffers[currentFrame_],
         context_.indexBuffer,
         context_.pipelineLayout,
-        context_.descriptorSet
+        context_.descriptorSet,
+        context_.renderPass,
+        context_.swapchainFramebuffers[currentImageIndex_],
+        deltaTime
     );
     endFrame();
 }
 
 void VulkanRenderer::handleResize(int width, int height) {
-    Logging::Logger logger;
-    logger.log(Logging::LogLevel::Info, "Handling resize to width={}, height={}", std::source_location::current(), width, height);
+    logger_.log(Logging::LogLevel::Info, "Handling resize to width={}, height={}", std::source_location::current(), width, height);
     if (context_.device != VK_NULL_HANDLE) {
         vkDeviceWaitIdle(context_.device);
     }
@@ -328,8 +312,7 @@ void VulkanRenderer::handleResize(int width, int height) {
 }
 
 void VulkanRenderer::cleanupVulkan() {
-    Logging::Logger logger;
-    logger.log(Logging::LogLevel::Info, "Cleaning up Vulkan resources", std::source_location::current());
+    logger_.log(Logging::LogLevel::Info, "Cleaning up Vulkan resources", std::source_location::current());
 
     if (context_.device != VK_NULL_HANDLE) {
         vkDeviceWaitIdle(context_.device);
@@ -356,5 +339,5 @@ void VulkanRenderer::cleanupVulkan() {
         vkDestroyDevice(context_.device, nullptr);
         context_.device = VK_NULL_HANDLE;
     }
-    logger.log(Logging::LogLevel::Info, "Vulkan resources cleaned up", std::source_location::current());
+    logger_.log(Logging::LogLevel::Info, "Vulkan resources cleaned up", std::source_location::current());
 }

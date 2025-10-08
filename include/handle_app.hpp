@@ -15,6 +15,7 @@
 #include <memory>
 #include <vector>
 #include <glm/glm.hpp>
+#include <chrono>
 
 class HandleInput;
 
@@ -25,8 +26,9 @@ public:
 
     void run();
     void render();
-    void handleResize(int width, int height); // Added declaration
+    void handleResize(int width, int height);
     void setRenderMode(int mode) { mode_ = mode; }
+    int getRenderMode() const { return mode_; }
 
 private:
     void initializeInput();
@@ -43,6 +45,7 @@ private:
     std::unique_ptr<DimensionalNavigator> navigator_;
     AMOURANTH amouranth_;
     std::unique_ptr<HandleInput> inputHandler_;
+    std::chrono::steady_clock::time_point lastFrameTime_; // Added for dynamic deltaTime
 };
 
 class HandleInput {

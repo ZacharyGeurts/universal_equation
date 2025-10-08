@@ -5,7 +5,8 @@
 // Thread-safety note: Uses std::latch for parallel updates and std::atomic for scalar members to avoid mutexes.
 // Copyright Zachary Geurts 2025 (powered by Grok with Science B*! precision)
 
-#include "universal_equation.hpp"
+//#include "ue_init.hpp"
+#include "engine/core.hpp"
 #include <cmath>
 #include <numbers>
 #include <stdexcept>
@@ -446,6 +447,10 @@ long double UniversalEquation::computeSystemEnergy() const {
         logger_.log(Logging::LogLevel::Warning, "Invalid total system energy, returning 0: energy={}", 
                     std::source_location::current(), energy);
         return 0.0L;
+    }
+    if (anyClamped) {
+        logger_.log(Logging::LogLevel::Warning, "Some kinetic energy components were invalid and skipped in computeSystemEnergy", 
+                    std::source_location::current());
     }
     logger_.log(Logging::LogLevel::Info, "Total system energy computed: energy={}", 
                 std::source_location::current(), energy);

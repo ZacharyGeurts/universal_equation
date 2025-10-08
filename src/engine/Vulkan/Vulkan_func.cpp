@@ -8,7 +8,6 @@
 // Zachary Geurts 2025
 
 #include "engine/Vulkan/Vulkan_func.hpp"
-#include "engine/core.hpp"
 #include "engine/Vulkan/Vulkan_func_pipe.hpp"
 #include "engine/Vulkan/Vulkan_func_swapchain.hpp"
 #include "engine/logging.hpp"
