@@ -89,8 +89,8 @@ UniversalEquation::UniversalEquation(
     dimensionData_(),
     navigator_(nullptr),
     logger_(logger) {
-    logger_.log(Logging::LogLevel::Info, "Constructing UniversalEquation: maxVertices={}, maxDimensions={}, mode={}",
-                std::source_location::current(), getMaxVertices(), getMaxDimensions(), getMode());
+    logger_.log(Logging::LogLevel::Info, "Constructing UniversalEquation: maxVertices={}, maxDimensions={}, mode={}, GodWaveFreq={}",
+                std::source_location::current(), getMaxVertices(), getMaxDimensions(), getMode(), getGodWaveFreq());
     if (getMaxVertices() > 1'000'000) {
         logger_.log(Logging::LogLevel::Warning, "High vertex count ({}) may cause memory issues",
                     std::source_location::current(), getMaxVertices());
@@ -137,9 +137,9 @@ UniversalEquation::UniversalEquation(
     uint64_t numVertices
 ) : UniversalEquation(
         logger, maxDimensions, mode, influence, weak, 5.0L, 1.5L, 5.0L, 1.0L, 0.5L, 1.0L, 0.01L, 0.5L, 0.1L,
-        0.5L, 0.5L, 2.0L, 4.0L, 1.0L, 1.0e6L, 1.0L, 0.5L, 1.0L, debug, numVertices) {
-    logger_.log(Logging::LogLevel::Debug, "Initialized UniversalEquation with simplified constructor",
-                std::source_location::current());
+        0.5L, 0.5L, 2.0L, 4.0L, 1.0L, 1.0e6L, 1.0L, 0.5L, 2.0L, debug, numVertices) {
+    logger_.log(Logging::LogLevel::Debug, "Initialized UniversalEquation with simplified constructor, GodWaveFreq={}",
+                std::source_location::current(), getGodWaveFreq());
 }
 
 UniversalEquation::UniversalEquation(const UniversalEquation& other)
@@ -202,6 +202,7 @@ UniversalEquation::UniversalEquation(const UniversalEquation& other)
             vertexMomenta_.emplace_back(momentum);
         }
         initializeWithRetry();
+        validateProjectedVertices();
         logger_.log(Logging::LogLevel::Debug, "Copy constructor completed: vertices={}",
                     std::source_location::current(), nCubeVertices_.size());
     } catch (const std::exception& e) {
@@ -266,6 +267,7 @@ UniversalEquation& UniversalEquation::operator=(const UniversalEquation& other) 
                 vertexMomenta_.emplace_back(momentum);
             }
             initializeWithRetry();
+            validateProjectedVertices();
             logger_.log(Logging::LogLevel::Debug, "Copy assignment completed: vertices={}",
                         std::source_location::current(), nCubeVertices_.size());
         } catch (const std::exception& e) {
@@ -353,6 +355,37 @@ void UniversalEquation::initializeNCube() {
     init_latch.wait();
 }
 
+void UniversalEquation::validateProjectedVertices() const {
+    if (projectedVerts_.empty()) {
+        logger_.log(Logging::LogLevel::Warning, "projectedVerts_ is empty, initializing with default values",
+                    std::source_location::current());
+        projectedVerts_.resize(nCubeVertices_.size(), glm::vec3(0.0f, 0.0f, 0.0f));
+    }
+    if (projectedVerts_.size() != nCubeVertices_.size()) {
+        logger_.log(Logging::LogLevel::Error, "projectedVerts_ size mismatch: projectedVerts_.size()={}, nCubeVertices_.size()={}",
+                    std::source_location::current(), projectedVerts_.size(), nCubeVertices_.size());
+        throw std::runtime_error("projectedVerts_ size does not match nCubeVertices_");
+    }
+    if (!projectedVerts_.empty() && reinterpret_cast<std::uintptr_t>(projectedVerts_.data()) % alignof(glm::vec3) != 0) {
+        logger_.log(Logging::LogLevel::Error, "projectedVerts_ is misaligned: address={}, alignment={}",
+                    std::source_location::current(), reinterpret_cast<std::uintptr_t>(projectedVerts_.data()), alignof(glm::vec3));
+        throw std::runtime_error("Misaligned projectedVerts_");
+    }
+}
+
+long double UniversalEquation::computeKineticEnergy(int vertexIndex) const {
+    validateVertexIndex(vertexIndex);
+    long double kineticEnergy = 0.0L;
+    const auto& momentum = vertexMomenta_[vertexIndex];
+    for (size_t j = 0; j < static_cast<size_t>(getCurrentDimension()); ++j) {
+        kineticEnergy += momentum[j] * momentum[j]; // Sum of squared momentum components
+    }
+    kineticEnergy *= 0.5L * materialDensity_; // KE = (1/2) * mass * v^2, assuming density as mass proxy
+    logger_.log(Logging::LogLevel::Debug, "Computed kinetic energy for vertex {}: result={}",
+                std::source_location::current(), vertexIndex, kineticEnergy);
+    return kineticEnergy;
+}
+
 void UniversalEquation::updateInteractions() const {
     logger_.log(Logging::LogLevel::Info, "Starting interaction update: vertices={}, dimension={}",
                 std::source_location::current(), nCubeVertices_.size(), getCurrentDimension());
@@ -370,10 +403,10 @@ void UniversalEquation::updateInteractions() const {
     std::vector<std::vector<DimensionInteraction>> localInteractions(omp_get_max_threads());
     std::vector<std::vector<glm::vec3>> localProjected(omp_get_max_threads());
     for (int t = 0; t < omp_get_max_threads(); ++t) {
-        localInteractions[t].reserve((numVertices - 1) / omp_get_max_threads() + 1);
-        localProjected[t].reserve((numVertices - 1) / omp_get_max_threads() + 1);
+        localInteractions[t].reserve(numVertices / omp_get_max_threads() + 1);
+        localProjected[t].reserve(numVertices / omp_get_max_threads() + 1);
         logger_.log(Logging::LogLevel::Debug, "Thread {}: reserved {} elements for localInteractions and localProjected",
-                    std::source_location::current(), t, (numVertices - 1) / omp_get_max_threads() + 1);
+                    std::source_location::current(), t, numVertices / omp_get_max_threads() + 1);
     }
 
     std::vector<long double> referenceVertex(d, 0.0L);
@@ -395,24 +428,15 @@ void UniversalEquation::updateInteractions() const {
         logger_.log(Logging::LogLevel::Warning, "Clamped depthRef to 0.001: original={}",
                     std::source_location::current(), referenceVertex[depthIdx] + trans);
     }
-    long double scaleRef = safe_div(focal, depthRef);
-    glm::vec3 projRefVec(0.0f);
-    size_t projDim = std::min<size_t>(3, d);
-    for (size_t k = 0; k < projDim; ++k) {
-        projRefVec[k] = static_cast<float>(referenceVertex[k] * scaleRef);
-    }
-    projectedVerts_.push_back(projRefVec);
-    logger_.log(Logging::LogLevel::Debug, "Added reference projection: projectedVerts_.size()={}",
-                std::source_location::current(), projectedVerts_.size());
 
     std::latch latch(omp_get_max_threads());
     #pragma omp parallel
     {
         int thread_id = omp_get_thread_num();
-        logger_.log(Logging::LogLevel::Debug, "Thread {}: processing vertices 1 to {}",
-                    std::source_location::current(), thread_id, numVertices - 1);
+        logger_.log(Logging::LogLevel::Debug, "Thread {}: processing vertices 0 to {}",
+                    std::source_location::current(), thread_id, numVertices);
         #pragma omp for schedule(dynamic)
-        for (uint64_t i = 1; i < numVertices; ++i) {
+        for (uint64_t i = 0; i < numVertices; ++i) {
             if (i >= nCubeVertices_.size()) {
                 logger_.log(Logging::LogLevel::Warning, "Thread {}: skipping vertex {} (exceeds nCubeVertices_.size()={})",
                             std::source_location::current(), thread_id, i, nCubeVertices_.size());
@@ -437,6 +461,7 @@ void UniversalEquation::updateInteractions() const {
             auto vecPot = computeVectorPotential(static_cast<int>(i));
             long double GodWaveAmp = computeGodWave(static_cast<int>(i));
             glm::vec3 projIVec(0.0f);
+            size_t projDim = std::min<size_t>(3, d);
             for (size_t k = 0; k < projDim; ++k) {
                 projIVec[k] = static_cast<float>(v[k] * scaleI);
             }
@@ -447,27 +472,27 @@ void UniversalEquation::updateInteractions() const {
     }
     latch.wait();
 
+    // Pre-resize global vectors to avoid reallocation during insertion
     size_t totalInteractions = 0;
     size_t totalProjected = 0;
     for (int t = 0; t < omp_get_max_threads(); ++t) {
         totalInteractions += localInteractions[t].size();
         totalProjected += localProjected[t].size();
+    }
+    interactions_.reserve(totalInteractions);
+    projectedVerts_.reserve(totalProjected);
+    for (int t = 0; t < omp_get_max_threads(); ++t) {
         interactions_.insert(interactions_.end(), localInteractions[t].begin(), localInteractions[t].end());
         projectedVerts_.insert(projectedVerts_.end(), localProjected[t].begin(), localProjected[t].end());
     }
     logger_.log(Logging::LogLevel::Info, "Interactions updated: interactions_.size()={}, projectedVerts_.size()={}",
                 std::source_location::current(), interactions_.size(), projectedVerts_.size());
-    if (totalInteractions != interactions_.size() || totalProjected != projectedVerts_.size()) {
+    if (totalInteractions != totalProjected || totalInteractions != interactions_.size() || totalProjected != projectedVerts_.size()) {
         logger_.log(Logging::LogLevel::Error, "Mismatch in merged sizes: expected interactions={}, projected={}, actual interactions_.size()={}, projectedVerts_.size()={}",
                     std::source_location::current(), totalInteractions, totalProjected, interactions_.size(), projectedVerts_.size());
         throw std::runtime_error("Mismatch in merged vector sizes");
     }
-
-    if (!projectedVerts_.empty() && reinterpret_cast<std::uintptr_t>(projectedVerts_.data()) % alignof(glm::vec3) != 0) {
-        logger_.log(Logging::LogLevel::Error, "projectedVerts_ is misaligned: address={}, alignment={}",
-                    std::source_location::current(), reinterpret_cast<std::uintptr_t>(projectedVerts_.data()), alignof(glm::vec3));
-        throw std::runtime_error("Misaligned projectedVerts_");
-    }
+    validateProjectedVertices();
 }
 
 UniversalEquation::EnergyResult UniversalEquation::compute() {
@@ -497,7 +522,15 @@ UniversalEquation::EnergyResult UniversalEquation::compute() {
         for (uint64_t i = 0; i < getMaxVertices(); ++i) {
             if (i >= nCubeVertices_.size()) continue;
             validateVertexIndex(static_cast<int>(i));
-            potentials[i] = computeGravitationalPotential(static_cast<int>(i), -1);
+
+            // Compute total gravitational potential for vertex i by summing over all other vertices
+            long double totalPotential = 0.0L;
+            for (size_t j = 0; j < nCubeVertices_.size(); ++j) {
+                if (i == j) continue; // Skip self-interaction
+                totalPotential += computeGravitationalPotential(static_cast<int>(i), static_cast<int>(j));
+            }
+            potentials[i] = totalPotential;
+
             nurbMatters[i] = computeNurbMatter(static_cast<int>(i));
             nurbEnergies[i] = computeNurbEnergy(static_cast<int>(i));
             spinEnergies[i] = computeSpinEnergy(static_cast<int>(i));
@@ -546,6 +579,7 @@ void UniversalEquation::initializeWithRetry() {
                 cachedCos_[i] = std::cos(getOmega() * i);
             }
             updateInteractions();
+            validateProjectedVertices();
             logger_.log(Logging::LogLevel::Info, "Initialization completed successfully",
                         std::source_location::current());
             retry_latch.count_down();
@@ -589,9 +623,9 @@ void UniversalEquation::initializeCalculator(AMOURANTH* amouranth) {
         }
         needsUpdate_.store(true);
         initializeWithRetry();
+        validateProjectedVertices();
     } catch (const std::exception& e) {
-        logger_.log(Logging::LogLevel::Error, "initializeCalculator failed: {}",
-                    std::source_location::current(), e.what());
+        logger_.log(Logging::LogLevel::Error, "initializeCalculator failed: {}", std::source_location::current(), e.what());
         throw;
     }
 }
@@ -912,6 +946,7 @@ void UniversalEquation::setProjectedVertices(const std::vector<glm::vec3>& verti
     projectedVerts_ = vertices;
     needsUpdate_.store(true);
     logger_.log(Logging::LogLevel::Debug, "Set projectedVertices: size={}", std::source_location::current(), vertices.size());
+    validateProjectedVertices();
 }
 
 void UniversalEquation::setTotalCharge(long double value) {

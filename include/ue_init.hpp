@@ -238,7 +238,7 @@ public:
     long double computeVertexDensity(int vertexIndex) const;
     std::vector<long double> computeCenterOfMass() const;
     long double computeTotalSystemVolume() const;
-    long double computeGravitationalPotential(int vertexIndex1, int vertexIndex2 = -1) const;
+    long double computeGravitationalPotential(int vertexIndex1, int vertexIndex2 = 1) const;
     std::vector<long double> computeGravitationalAcceleration(int vertexIndex) const;
     std::vector<long double> computeClassicalEMField(int vertexIndex) const;
     void updateOrbitalVelocity(long double dt);
