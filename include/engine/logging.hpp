@@ -23,6 +23,7 @@
 #include <memory>
 #include <omp.h>
 #include <chrono>
+#include <cstdint> // Added for uint64_t
 
 namespace Logging {
 
@@ -126,9 +127,31 @@ public:
 
         std::string formatted;
         try {
-            formatted = std::vformat(message, std::make_format_args(args...));
+            // Validate arguments to prevent uninitialized value issues
+            bool argsValid = true;
+            (
+                [&] {
+                    // Check for invalid sizes (e.g., UINT64_MAX)
+                    if constexpr (std::is_same_v<std::decay_t<Args>, uint64_t>) {
+                        if (args == UINT64_MAX) {
+                            argsValid = false;
+                            formatted = std::string(message) + " [Invalid argument: UINT64_MAX detected]";
+                        }
+                    }
+                }(),
+                ...
+            );
+
+            if (argsValid) {
+                formatted = std::vformat(message, std::make_format_args(args...));
+            }
         } catch (const std::format_error& e) {
             formatted = std::string(message) + " [Format error: " + e.what() + "]";
+        }
+
+        // Ensure formatted message is not empty
+        if (formatted.empty()) {
+            formatted = "Empty log message";
         }
 
         // Enqueue message using lock-free circular buffer
@@ -271,6 +294,20 @@ struct formatter<VkResult, char> {
             default: name = std::format("Unknown VkResult({})", static_cast<int>(result)); break;
         }
         return format_to(ctx.out(), "{}", name);
+    }
+};
+
+// Formatter for uint64_t to catch invalid sizes
+template<>
+struct formatter<uint64_t, char> {
+    constexpr auto parse(format_parse_context& ctx) { return ctx.begin(); }
+
+    template<typename FormatContext>
+    auto format(uint64_t value, FormatContext& ctx) const {
+        if (value == UINT64_MAX) {
+            return format_to(ctx.out(), "INVALID_SIZE");
+        }
+        return format_to(ctx.out(), "{}", value);
     }
 };
 } // namespace std
