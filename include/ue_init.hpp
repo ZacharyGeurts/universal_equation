@@ -231,6 +231,7 @@ public:
     long double safeExp(long double x) const;
     long double safe_div(long double a, long double b) const;
     void validateVertexIndex(int vertexIndex, const std::source_location& loc = std::source_location::current()) const;
+	void validateProjectedVertices() const;
 
     // Methods implemented in universal_equation_physical.cpp
     long double computeVertexVolume(int vertexIndex) const;
@@ -238,7 +239,7 @@ public:
     long double computeVertexDensity(int vertexIndex) const;
     std::vector<long double> computeCenterOfMass() const;
     long double computeTotalSystemVolume() const;
-    long double computeGravitationalPotential(int vertexIndex1, int vertexIndex2 = 1) const;
+    long double computeGravitationalPotential(int vertexIndex1, int vertexIndex2 = -1) const;
     std::vector<long double> computeGravitationalAcceleration(int vertexIndex) const;
     std::vector<long double> computeClassicalEMField(int vertexIndex) const;
     void updateOrbitalVelocity(long double dt);

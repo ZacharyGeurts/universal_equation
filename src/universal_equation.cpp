@@ -396,7 +396,7 @@ void UniversalEquation::updateInteractions() const {
 
     size_t d = static_cast<size_t>(getCurrentDimension());
     uint64_t numVertices = std::min(static_cast<uint64_t>(nCubeVertices_.size()), getMaxVertices());
-    numVertices = std::min(numVertices, static_cast<uint64_t>(1024));
+    numVertices = static_cast<uint64_t>(nCubeVertices_.size());
     logger_.log(Logging::LogLevel::Debug, "Processing {} vertices (maxVertices_={}, capped at 1024)",
                 std::source_location::current(), numVertices, getMaxVertices());
 
