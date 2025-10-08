@@ -1,0 +1,43 @@
+#version 450
+#extension GL_EXT_scalar_block_layout : enable
+
+layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
+
+layout(set = 0, binding = 0, scalar) buffer RandomBuffer {
+    double data[];
+} randomBuffer;
+
+layout(push_constant) uniform PushConstants {
+    uint count;
+    uint seed;
+    double nurbEnergy;
+    double godWaveEnergy;
+    double spinEnergy;
+    double momentumEnergy;
+    double fieldEnergy;
+    double godWaveFreq;
+} pc;
+
+uint xorshift32(uint state) {
+    state ^= state << 13;
+    state ^= state >> 17;
+    state ^= state << 5;
+    return state;
+}
+
+void main() {
+    uint idx = gl_GlobalInvocationID.x;
+    if (idx >= pc.count) return;
+
+    // XORShift RNG seeded by push constant
+    uint state = pc.seed + idx;
+    state = xorshift32(state);
+    double baseRandom = double(state) / double(0xFFFFFFFFu);
+
+    // Apply physics-driven modulation
+    double physicsFactor = pc.godWaveFreq * (pc.nurbEnergy + pc.godWaveEnergy + pc.spinEnergy * pc.spinEnergy + pc.momentumEnergy * pc.fieldEnergy);
+    double randomValue = baseRandom * physicsFactor;
+    randomValue = fract(randomValue); // Normalize to [0, 1)
+
+    randomBuffer.data[idx] = randomValue;
+}
