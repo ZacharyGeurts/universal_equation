@@ -1,13 +1,21 @@
+// engine/Vulkan/Vulkan_func_pipe.hpp
+// AMOURANTH RTX Engine, October 2025 - Vulkan pipeline utilities for render pass and pipeline creation.
+// Supports Windows/Linux; no mutexes; voxel geometry rendering.
+// Dependencies: Vulkan 1.3+, GLM, C++20 standard library.
+// Usage: Manages graphics pipeline, render pass, descriptor sets, and samplers for VulkanRenderer.
+// Thread-safety: Uses Logging::Logger for thread-safe logging; no mutexes required.
+// Zachary Geurts 2025
+
 #ifndef VULKAN_FUNC_PIPE_HPP
 #define VULKAN_FUNC_PIPE_HPP
-// AMOURANTH RTX September 2025
-// Zachary Geurts 2025
+
 #include <vulkan/vulkan.h>
 #include <vector>
 #include <string>
 #include <glm/glm.hpp>
 #include "engine/logging.hpp" // For Logging::Logger
-#include "engine/Vulkan/Vulkan_func.hpp" // for PushConstants
+#include "engine/Vulkan/Vulkan_func.hpp" // For PushConstants
+#include "engine/Vulkan/Vulkan_func_swapchain.hpp" // For vkResultToString, vkFormatToString
 
 namespace VulkanInitializer {
 

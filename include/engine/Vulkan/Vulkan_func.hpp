@@ -1,10 +1,13 @@
-#ifndef VULKAN_FUNC_HPP
-#define VULKAN_FUNC_HPP
+// engine/Vulkan/Vulkan_func.hpp
 // AMOURANTH RTX Engine, October 2025 - Vulkan core utilities for initialization and buffer management.
 // Supports Windows/Linux (X11/Wayland); no mutexes; compatible with voxel geometry rendering.
 // Dependencies: Vulkan 1.3+, GLM, C++20 standard library.
 // Usage: Core Vulkan initialization for VulkanRenderer; integrates with Vulkan_func_pipe.hpp and Vulkan_func_swapchain.hpp.
+// Thread-safety: Uses Logging::Logger for thread-safe logging; no mutexes required.
 // Zachary Geurts 2025
+
+#ifndef VULKAN_FUNC_HPP
+#define VULKAN_FUNC_HPP
 
 #include <vulkan/vulkan.h>
 #include <vector>
@@ -13,6 +16,7 @@
 #include <optional>
 #include <array>
 #include <glm/glm.hpp>
+#include <format>
 #include "engine/logging.hpp" // For Logging::Logger
 
 struct PushConstants {
@@ -159,8 +163,6 @@ void createLogicalDevice(
     VkPhysicalDevice physicalDevice, VkDevice& device, VkQueue& graphicsQueue,
     VkQueue& presentQueue, uint32_t graphicsFamily, uint32_t presentFamily, const Logging::Logger& logger);
 
-VkSurfaceFormatKHR selectSurfaceFormat(VkPhysicalDevice physicalDevice, VkSurfaceKHR surface, const Logging::Logger& logger);
-
 void createCommandPool(VkDevice device, VkCommandPool& commandPool, uint32_t graphicsFamily, const Logging::Logger& logger);
 
 void createCommandBuffers(
@@ -189,6 +191,9 @@ void createIndexBuffer(
     VkDevice device, VkPhysicalDevice physicalDevice, VkCommandPool commandPool, VkQueue graphicsQueue,
     VkBuffer& indexBuffer, VkDeviceMemory& indexBufferMemory, VkBuffer& stagingBuffer,
     VkDeviceMemory& stagingBufferMemory, std::span<const uint32_t> indices, const Logging::Logger& logger);
+
+// Declaration only; implementation in Vulkan_func_swapchain.cpp
+VkSurfaceFormatKHR selectSurfaceFormat(VkPhysicalDevice physicalDevice, VkSurfaceKHR surface, const Logging::Logger& logger);
 
 } // namespace VulkanInitializer
 

@@ -50,7 +50,7 @@ inline std::string vkFormatToString(VkFormat format) {
     }
 }
 
-// Selects a suitable surface format for the swapchain
+// Declaration only; implementation in Vulkan_func_swapchain.cpp
 VkSurfaceFormatKHR selectSurfaceFormat(VkPhysicalDevice physicalDevice, VkSurfaceKHR surface, const Logging::Logger& logger);
 
 // Creates the Vulkan swapchain and associated images/image views
@@ -79,7 +79,10 @@ public:
         }
         if (physicalDevice == VK_NULL_HANDLE || device == VK_NULL_HANDLE || surface == VK_NULL_HANDLE) {
             logger_.log(Logging::LogLevel::Error, "Invalid Vulkan handles: physicalDevice={}, device={}, surface={}",
-                        std::source_location::current(), physicalDevice, device, surface);
+                        std::source_location::current(),
+                        physicalDevice == VK_NULL_HANDLE ? "null" : "non-null",
+                        device == VK_NULL_HANDLE ? "null" : "non-null",
+                        surface == VK_NULL_HANDLE ? "null" : "non-null");
             throw std::invalid_argument("Vulkan handles cannot be null");
         }
         logger_.log(Logging::LogLevel::Debug, "SwapchainManager initialized with width={}, height={}",
@@ -89,7 +92,8 @@ public:
     // Setters
     void setSwapchain(VkSwapchainKHR swapchain) {
         swapchain_ = swapchain;
-        logger_.log(Logging::LogLevel::Debug, "Set swapchain: {}", std::source_location::current(), swapchain);
+        logger_.log(Logging::LogLevel::Debug, "Set swapchain: {}", std::source_location::current(),
+                    swapchain == VK_NULL_HANDLE ? "null" : "non-null");
     }
 
     void setSwapchainImages(const std::vector<VkImage>& images) {

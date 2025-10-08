@@ -1,3 +1,4 @@
+// engine/Vulkan/Vulkan_func_pipe.cpp
 // AMOURANTH RTX Engine, October 2025 - Vulkan pipeline utilities implementation.
 // Supports Windows/Linux; no mutexes; voxel geometry via glm::vec3 vertices.
 // Dependencies: Vulkan 1.3+, GLM, C++20 standard library.
@@ -6,46 +7,13 @@
 // Zachary Geurts 2025
 
 #include "engine/Vulkan/Vulkan_func_pipe.hpp"
+#include "engine/Vulkan/Vulkan_func_swapchain.hpp" // For vkResultToString, vkFormatToString
 #include "engine/logging.hpp" // For Logging::Logger
 #include <stdexcept>
 #include <fstream>
 #include <format>
 #include <glm/glm.hpp>
 #include <syncstream>
-#include <string>
-
-// Helper function to convert VkResult to string for logging
-std::string vkResultToString(VkResult result) {
-    switch (result) {
-        case VK_SUCCESS: return "VK_SUCCESS";
-        case VK_ERROR_OUT_OF_HOST_MEMORY: return "VK_ERROR_OUT_OF_HOST_MEMORY";
-        case VK_ERROR_OUT_OF_DEVICE_MEMORY: return "VK_ERROR_OUT_OF_DEVICE_MEMORY";
-        case VK_ERROR_INITIALIZATION_FAILED: return "VK_ERROR_INITIALIZATION_FAILED";
-        case VK_ERROR_DEVICE_LOST: return "VK_ERROR_DEVICE_LOST";
-        case VK_ERROR_EXTENSION_NOT_PRESENT: return "VK_ERROR_EXTENSION_NOT_PRESENT";
-        case VK_ERROR_FEATURE_NOT_PRESENT: return "VK_ERROR_FEATURE_NOT_PRESENT";
-        case VK_ERROR_INCOMPATIBLE_DRIVER: return "VK_ERROR_INCOMPATIBLE_DRIVER";
-        case VK_ERROR_LAYER_NOT_PRESENT: return "VK_ERROR_LAYER_NOT_PRESENT";
-        default: return std::to_string(static_cast<int>(result));
-    }
-}
-
-// Helper function to convert VkFormat to string for logging
-std::string vkFormatToString(VkFormat format) {
-    switch (format) {
-        case VK_FORMAT_UNDEFINED: return "VK_FORMAT_UNDEFINED";
-        case VK_FORMAT_R8G8B8A8_SRGB: return "VK_FORMAT_R8G8B8A8_SRGB";
-        case VK_FORMAT_R8G8B8A8_UNORM: return "VK_FORMAT_R8G8B8A8_UNORM";
-        case VK_FORMAT_B8G8R8A8_SRGB: return "VK_FORMAT_B8G8R8A8_SRGB";
-        case VK_FORMAT_B8G8R8A8_UNORM: return "VK_FORMAT_B8G8R8A8_UNORM";
-        case VK_FORMAT_R32G32B32_SFLOAT: return "VK_FORMAT_R32G32B32_SFLOAT";
-        case VK_FORMAT_R32G32B32A32_SFLOAT: return "VK_FORMAT_R32G32B32A32_SFLOAT";
-        case VK_FORMAT_D32_SFLOAT: return "VK_FORMAT_D32_SFLOAT";
-        case VK_FORMAT_S8_UINT: return "VK_FORMAT_S8_UINT";
-        case VK_FORMAT_D24_UNORM_S8_UINT: return "VK_FORMAT_D24_UNORM_S8_UINT";
-        default: return std::to_string(static_cast<int>(format));
-    }
-}
 
 namespace VulkanInitializer {
 
@@ -81,8 +49,8 @@ VkShaderModule createShaderModule(VkDevice device, const std::string& filename, 
     VkShaderModule shaderModule;
     VkResult result = vkCreateShaderModule(device, &createInfo, nullptr, &shaderModule);
     if (result != VK_SUCCESS) {
-        logger.log(Logging::LogLevel::Error, "Failed to create shader module from {}: {}", std::source_location::current(), filename, vkResultToString(result));
-        throw std::runtime_error(std::format("Failed to create shader module from {}: {}", filename, vkResultToString(result)));
+        logger.log(Logging::LogLevel::Error, "Failed to create shader module from {}: {}", std::source_location::current(), filename, VulkanInitializer::vkResultToString(result));
+        throw std::runtime_error(std::format("Failed to create shader module from {}: {}", filename, VulkanInitializer::vkResultToString(result)));
     }
 
     logger.log(Logging::LogLevel::Info, "Shader module created successfully for: {}", std::source_location::current(), filename);
@@ -90,7 +58,7 @@ VkShaderModule createShaderModule(VkDevice device, const std::string& filename, 
 }
 
 void createRenderPass(VkDevice device, VkRenderPass& renderPass, VkFormat format, const Logging::Logger& logger) {
-    logger.log(Logging::LogLevel::Info, "Creating render pass with format: {}", std::source_location::current(), vkFormatToString(format));
+    logger.log(Logging::LogLevel::Info, "Creating render pass with format: {}", std::source_location::current(), VulkanInitializer::vkFormatToString(format));
 
     VkAttachmentDescription colorAttachment{
         .flags = 0,
@@ -146,8 +114,8 @@ void createRenderPass(VkDevice device, VkRenderPass& renderPass, VkFormat format
 
     VkResult result = vkCreateRenderPass(device, &renderPassInfo, nullptr, &renderPass);
     if (result != VK_SUCCESS) {
-        logger.log(Logging::LogLevel::Error, "Failed to create render pass: {}", std::source_location::current(), vkResultToString(result));
-        throw std::runtime_error(std::format("Failed to create render pass: {}", vkResultToString(result)));
+        logger.log(Logging::LogLevel::Error, "Failed to create render pass: {}", std::source_location::current(), VulkanInitializer::vkResultToString(result));
+        throw std::runtime_error(std::format("Failed to create render pass: {}", VulkanInitializer::vkResultToString(result)));
     }
 
     logger.log(Logging::LogLevel::Info, "Render pass created successfully", std::source_location::current());
@@ -174,8 +142,8 @@ void createDescriptorSetLayout(VkDevice device, VkDescriptorSetLayout& descripto
 
     VkResult result = vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &descriptorSetLayout);
     if (result != VK_SUCCESS) {
-        logger.log(Logging::LogLevel::Error, "Failed to create descriptor set layout: {}", std::source_location::current(), vkResultToString(result));
-        throw std::runtime_error(std::format("Failed to create descriptor set layout: {}", vkResultToString(result)));
+        logger.log(Logging::LogLevel::Error, "Failed to create descriptor set layout: {}", std::source_location::current(), VulkanInitializer::vkResultToString(result));
+        throw std::runtime_error(std::format("Failed to create descriptor set layout: {}", VulkanInitializer::vkResultToString(result)));
     }
 
     logger.log(Logging::LogLevel::Info, "Descriptor set layout created successfully", std::source_location::current());
@@ -202,8 +170,8 @@ void createDescriptorPoolAndSet(VkDevice device, VkDescriptorSetLayout descripto
 
     VkResult result = vkCreateDescriptorPool(device, &poolInfo, nullptr, &descriptorPool);
     if (result != VK_SUCCESS) {
-        logger.log(Logging::LogLevel::Error, "Failed to create descriptor pool: {}", std::source_location::current(), vkResultToString(result));
-        throw std::runtime_error(std::format("Failed to create descriptor pool: {}", vkResultToString(result)));
+        logger.log(Logging::LogLevel::Error, "Failed to create descriptor pool: {}", std::source_location::current(), VulkanInitializer::vkResultToString(result));
+        throw std::runtime_error(std::format("Failed to create descriptor pool: {}", VulkanInitializer::vkResultToString(result)));
     }
     logger.log(Logging::LogLevel::Debug, "Created descriptor pool", std::source_location::current());
 
@@ -217,8 +185,8 @@ void createDescriptorPoolAndSet(VkDevice device, VkDescriptorSetLayout descripto
 
     result = vkAllocateDescriptorSets(device, &allocInfo, &descriptorSet);
     if (result != VK_SUCCESS) {
-        logger.log(Logging::LogLevel::Error, "Failed to allocate descriptor set: {}", std::source_location::current(), vkResultToString(result));
-        throw std::runtime_error(std::format("Failed to allocate descriptor set: {}", vkResultToString(result)));
+        logger.log(Logging::LogLevel::Error, "Failed to allocate descriptor set: {}", std::source_location::current(), VulkanInitializer::vkResultToString(result));
+        throw std::runtime_error(std::format("Failed to allocate descriptor set: {}", VulkanInitializer::vkResultToString(result)));
     }
     logger.log(Logging::LogLevel::Debug, "Allocated descriptor set", std::source_location::current());
 
@@ -275,8 +243,8 @@ void createSampler(VkDevice device, VkPhysicalDevice physicalDevice, VkSampler& 
 
     VkResult result = vkCreateSampler(device, &samplerInfo, nullptr, &sampler);
     if (result != VK_SUCCESS) {
-        logger.log(Logging::LogLevel::Error, "Failed to create sampler: {}", std::source_location::current(), vkResultToString(result));
-        throw std::runtime_error(std::format("Failed to create sampler: {}", vkResultToString(result)));
+        logger.log(Logging::LogLevel::Error, "Failed to create sampler: {}", std::source_location::current(), VulkanInitializer::vkResultToString(result));
+        throw std::runtime_error(std::format("Failed to create sampler: {}", VulkanInitializer::vkResultToString(result)));
     }
 
     logger.log(Logging::LogLevel::Info, "Sampler created successfully", std::source_location::current());
@@ -451,8 +419,8 @@ void createGraphicsPipeline(VkDevice device, VkRenderPass renderPass, VkPipeline
 
     VkResult result = vkCreatePipelineLayout(device, &pipelineLayoutInfo, nullptr, &pipelineLayout);
     if (result != VK_SUCCESS) {
-        logger.log(Logging::LogLevel::Error, "Failed to create pipeline layout: {}", std::source_location::current(), vkResultToString(result));
-        throw std::runtime_error(std::format("Failed to create pipeline layout: {}", vkResultToString(result)));
+        logger.log(Logging::LogLevel::Error, "Failed to create pipeline layout: {}", std::source_location::current(), VulkanInitializer::vkResultToString(result));
+        throw std::runtime_error(std::format("Failed to create pipeline layout: {}", VulkanInitializer::vkResultToString(result)));
     }
     logger.log(Logging::LogLevel::Debug, "Created pipeline layout", std::source_location::current());
 
@@ -480,8 +448,8 @@ void createGraphicsPipeline(VkDevice device, VkRenderPass renderPass, VkPipeline
 
     result = vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &pipeline);
     if (result != VK_SUCCESS) {
-        logger.log(Logging::LogLevel::Error, "Failed to create graphics pipeline: {}", std::source_location::current(), vkResultToString(result));
-        throw std::runtime_error(std::format("Failed to create graphics pipeline: {}", vkResultToString(result)));
+        logger.log(Logging::LogLevel::Error, "Failed to create graphics pipeline: {}", std::source_location::current(), VulkanInitializer::vkResultToString(result));
+        throw std::runtime_error(std::format("Failed to create graphics pipeline: {}", VulkanInitializer::vkResultToString(result)));
     }
 
     logger.log(Logging::LogLevel::Info, "Graphics pipeline created successfully", std::source_location::current());

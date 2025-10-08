@@ -1,3 +1,4 @@
+// engine/Vulkan/Vulkan_func_swapchain.cpp
 // AMOURANTH RTX Engine, October 2025 - Vulkan swapchain utilities implementation.
 // Supports Windows/Linux; no mutexes; voxel geometry rendering.
 // Dependencies: Vulkan 1.3+, C++20 standard library.
@@ -10,37 +11,6 @@
 #include <vector>
 
 namespace VulkanInitializer {
-
-std::string vkResultToString(VkResult result) {
-    switch (result) {
-        case VK_SUCCESS: return "VK_SUCCESS";
-        case VK_ERROR_OUT_OF_HOST_MEMORY: return "VK_ERROR_OUT_OF_HOST_MEMORY";
-        case VK_ERROR_OUT_OF_DEVICE_MEMORY: return "VK_ERROR_OUT_OF_DEVICE_MEMORY";
-        case VK_ERROR_INITIALIZATION_FAILED: return "VK_ERROR_INITIALIZATION_FAILED";
-        case VK_ERROR_DEVICE_LOST: return "VK_ERROR_DEVICE_LOST";
-        case VK_ERROR_EXTENSION_NOT_PRESENT: return "VK_ERROR_EXTENSION_NOT_PRESENT";
-        case VK_ERROR_FEATURE_NOT_PRESENT: return "VK_ERROR_FEATURE_NOT_PRESENT";
-        case VK_ERROR_INCOMPATIBLE_DRIVER: return "VK_ERROR_INCOMPATIBLE_DRIVER";
-        case VK_ERROR_LAYER_NOT_PRESENT: return "VK_ERROR_LAYER_NOT_PRESENT";
-        default: return std::to_string(static_cast<int>(result));
-    }
-}
-
-std::string vkFormatToString(VkFormat format) {
-    switch (format) {
-        case VK_FORMAT_UNDEFINED: return "VK_FORMAT_UNDEFINED";
-        case VK_FORMAT_R8G8B8A8_SRGB: return "VK_FORMAT_R8G8B8A8_SRGB";
-        case VK_FORMAT_R8G8B8A8_UNORM: return "VK_FORMAT_R8G8B8A8_UNORM";
-        case VK_FORMAT_B8G8R8A8_SRGB: return "VK_FORMAT_B8G8R8A8_SRGB";
-        case VK_FORMAT_B8G8R8A8_UNORM: return "VK_FORMAT_B8G8R8A8_UNORM";
-        case VK_FORMAT_R32G32B32_SFLOAT: return "VK_FORMAT_R32G32B32_SFLOAT";
-        case VK_FORMAT_R32G32B32A32_SFLOAT: return "VK_FORMAT_R32G32B32A32_SFLOAT";
-        case VK_FORMAT_D32_SFLOAT: return "VK_FORMAT_D32_SFLOAT";
-        case VK_FORMAT_S8_UINT: return "VK_FORMAT_S8_UINT";
-        case VK_FORMAT_D24_UNORM_S8_UINT: return "VK_FORMAT_D24_UNORM_S8_UINT";
-        default: return std::to_string(static_cast<int>(format));
-    }
-}
 
 VkSurfaceFormatKHR selectSurfaceFormat(VkPhysicalDevice physicalDevice, VkSurfaceKHR surface, const Logging::Logger& logger) {
     logger.log(Logging::LogLevel::Info, "Selecting surface format", std::source_location::current());

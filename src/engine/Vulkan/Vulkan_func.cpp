@@ -673,34 +673,6 @@ void createLogicalDevice(VkPhysicalDevice physicalDevice, VkDevice& device, VkQu
     logger.log(Logging::LogLevel::Info, "Logical device created successfully", std::source_location::current());
 }
 
-VkSurfaceFormatKHR selectSurfaceFormat(VkPhysicalDevice physicalDevice, VkSurfaceKHR surface, const Logging::Logger& logger) {
-    logger.log(Logging::LogLevel::Info, "Selecting surface format", std::source_location::current());
-
-    uint32_t formatCount = 0;
-    VkResult result = vkGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice, surface, &formatCount, nullptr);
-    if (result != VK_SUCCESS || formatCount == 0) {
-        logger.log(Logging::LogLevel::Error, "Failed to query surface formats: {}", std::source_location::current(), result);
-        throw std::runtime_error(std::format("Failed to query surface formats: {}", static_cast<int>(result)));
-    }
-
-    std::vector<VkSurfaceFormatKHR> formats(formatCount);
-    result = vkGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice, surface, &formatCount, formats.data());
-    if (result != VK_SUCCESS) {
-        logger.log(Logging::LogLevel::Error, "Failed to retrieve surface formats: {}", std::source_location::current(), result);
-        throw std::runtime_error(std::format("Failed to retrieve surface formats: {}", static_cast<int>(result)));
-    }
-
-    for (const auto& format : formats) {
-        if (format.format == VK_FORMAT_B8G8R8A8_SRGB && format.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
-            logger.log(Logging::LogLevel::Debug, "Selected surface format: {}", std::source_location::current(), format.format);
-            return format;
-        }
-    }
-
-    logger.log(Logging::LogLevel::Debug, "Falling back to first available surface format", std::source_location::current());
-    return formats[0];
-}
-
 void createCommandPool(VkDevice device, VkCommandPool& commandPool, uint32_t graphicsFamily, const Logging::Logger& logger) {
     logger.log(Logging::LogLevel::Info, "Creating command pool for graphicsFamily={}", std::source_location::current(), graphicsFamily);
 
