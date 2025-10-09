@@ -23,13 +23,7 @@
 
 // Define VK_CHECK for consistent error handling
 #ifndef VK_CHECK
-#define VK_CHECK(result, msg) do { \
-    if ((result) != VK_SUCCESS) { \
-        Logging::Logger::get().log(Logging::LogLevel::Error, "Vulkan", "{} (VkResult: {})", \
-            std::source_location::current(), (msg), static_cast<int>(result)); \
-        throw std::runtime_error((msg)); \
-    } \
-} while (0)
+#define VK_CHECK(result, msg) do { if ((result) != VK_SUCCESS) { Logging::Logger::get().log(Logging::LogLevel::Error, "Vulkan", "{} (VkResult: {})", std::source_location::current(), (msg), static_cast<int>(result)); throw std::runtime_error((msg)); } } while (0)
 #endif
 
 namespace VulkanInitializer {
@@ -50,23 +44,19 @@ void initializeVulkan(
     VkSampler& sampler, VkShaderModule& vertShaderModule, VkShaderModule& fragShaderModule,
     std::span<const glm::vec3> vertices, std::span<const uint32_t> indices, int width, int height,
     const Logging::Logger& logger) {
-    Logging::Logger::get().log(Logging::LogLevel::Info, "Vulkan", "Initializing Vulkan resources with width={}, height={}",
-                               std::source_location::current(), width, height);
+    logger.log(Logging::LogLevel::Info, "Vulkan", "Initializing Vulkan resources with width={}, height={}", std::source_location::current(), width, height);
 
     createPhysicalDevice(instance, physicalDevice, graphicsFamily, presentFamily, surface, true, logger);
 
-    createLogicalDevice(physicalDevice, device, graphicsQueue, presentQueue, graphicsFamily, presentFamily);
+    createLogicalDevice(physicalDevice, device, graphicsQueue, presentQueue, graphicsFamily, presentFamily, logger);
     if (device == VK_NULL_HANDLE) {
-        Logging::Logger::get().log(Logging::LogLevel::Error, "Vulkan", "Failed to create logical device",
-                                   std::source_location::current());
+        logger.log(Logging::LogLevel::Error, "Vulkan", "Failed to create logical device", std::source_location::current());
         throw std::runtime_error("Failed to create logical device");
     }
-    Logging::Logger::get().log(Logging::LogLevel::Debug, "Vulkan", "Logical device created successfully: {}",
-                               std::source_location::current(), device);
+    logger.log(Logging::LogLevel::Debug, "Vulkan", "Logical device created successfully", std::source_location::current());
 
     VkSurfaceFormatKHR surfaceFormat = selectSurfaceFormat(physicalDevice, surface, logger);
-    Logging::Logger::get().log(Logging::LogLevel::Debug, "Vulkan", "Selected surface format: {}",
-                               std::source_location::current(), surfaceFormat.format);
+    logger.log(Logging::LogLevel::Debug, "Vulkan", "Selected surface format: {}", std::source_location::current(), surfaceFormat.format);
 
     createSwapchain(physicalDevice, device, surface, swapchain, swapchainImages, swapchainImageViews,
                     surfaceFormat.format, graphicsFamily, presentFamily, width, height, logger);
@@ -75,42 +65,31 @@ void initializeVulkan(
 
     createDescriptorSetLayout(device, descriptorSetLayout, logger);
     descriptorSetLayout2 = descriptorSetLayout;
-    Logging::Logger::get().log(Logging::LogLevel::Debug, "Vulkan", "Descriptor set layout copied to descriptorSetLayout2: {}",
-                               std::source_location::current(), descriptorSetLayout2);
+    logger.log(Logging::LogLevel::Debug, "Vulkan", "Descriptor set layout copied to descriptorSetLayout2", std::source_location::current());
 
     createGraphicsPipeline(device, renderPass, pipeline, pipelineLayout, descriptorSetLayout, width, height,
                           vertShaderModule, fragShaderModule, logger);
 
     createFramebuffers(device, renderPass, swapchainImageViews, swapchainFramebuffers, width, height, logger);
 
-    createCommandPool(device, commandPool, graphicsFamily);
-    Logging::Logger::get().log(Logging::LogLevel::Debug, "Vulkan", "Command pool created: {}",
-                               std::source_location::current(), commandPool);
-
-    createCommandBuffers(device, commandPool, commandBuffers, swapchainFramebuffers);
-    Logging::Logger::get().log(Logging::LogLevel::Debug, "Vulkan", "Created {} command buffers",
-                               std::source_location::current(), commandBuffers.size());
+    createCommandPool(device, commandPool, graphicsFamily, logger);
+    createCommandBuffers(device, commandPool, commandBuffers, swapchainFramebuffers, logger);
+    logger.log(Logging::LogLevel::Debug, "Vulkan", "Created {} command buffers", std::source_location::current(), commandBuffers.size());
 
     createSyncObjects(device, imageAvailableSemaphores, renderFinishedSemaphores, inFlightFences,
-                      static_cast<uint32_t>(swapchainImages.size()));
-    Logging::Logger::get().log(Logging::LogLevel::Debug, "Vulkan", "Created sync objects for {} frames",
-                               std::source_location::current(), swapchainImages.size());
+                      static_cast<uint32_t>(swapchainImages.size()), logger);
+    logger.log(Logging::LogLevel::Debug, "Vulkan", "Created sync objects for {} frames", std::source_location::current(), swapchainImages.size());
 
     createVertexBuffer(device, physicalDevice, commandPool, graphicsQueue,
-                       vertexBuffer, vertexBufferMemory, sphereStagingBuffer, sphereStagingBufferMemory, vertices);
-    Logging::Logger::get().log(Logging::LogLevel::Debug, "Vulkan", "Vertex buffer created: {}",
-                               std::source_location::current(), vertexBuffer);
+                       vertexBuffer, vertexBufferMemory, sphereStagingBuffer, sphereStagingBufferMemory, vertices, logger);
 
     createIndexBuffer(device, physicalDevice, commandPool, graphicsQueue,
-                      indexBuffer, indexBufferMemory, indexStagingBuffer, indexStagingBufferMemory, indices);
-    Logging::Logger::get().log(Logging::LogLevel::Debug, "Vulkan", "Index buffer created: {}",
-                               std::source_location::current(), indexBuffer);
+                      indexBuffer, indexBufferMemory, indexStagingBuffer, indexStagingBufferMemory, indices, logger);
 
     createSampler(device, physicalDevice, sampler, logger);
     createDescriptorPoolAndSet(device, descriptorSetLayout, descriptorPool, descriptorSet, sampler, logger);
 
-    Logging::Logger::get().log(Logging::LogLevel::Info, "Vulkan", "Vulkan initialization completed successfully",
-                               std::source_location::current());
+    logger.log(Logging::LogLevel::Info, "Vulkan", "Vulkan initialization completed successfully", std::source_location::current());
 }
 
 void initializeQuadBuffers(
@@ -119,23 +98,17 @@ void initializeQuadBuffers(
     VkBuffer& quadIndexBuffer, VkDeviceMemory& quadIndexBufferMemory,
     VkBuffer& quadStagingBuffer, VkDeviceMemory& quadStagingBufferMemory,
     VkBuffer& quadIndexStagingBuffer, VkDeviceMemory& quadIndexStagingBufferMemory,
-    std::span<const glm::vec3> quadVertices, std::span<const uint32_t> quadIndices,
-    const Logging::Logger& logger) {
-    Logging::Logger::get().log(Logging::LogLevel::Info, "Vulkan", "Initializing quad buffers",
-                               std::source_location::current());
+    std::span<const glm::vec3> quadVertices, std::span<const uint32_t> quadIndices) {
+    Logging::Logger::get().log(Logging::LogLevel::Info, "Vulkan", "Initializing quad buffers", std::source_location::current());
 
     createVertexBuffer(device, physicalDevice, commandPool, graphicsQueue,
-                       quadVertexBuffer, quadVertexBufferMemory, quadStagingBuffer, quadStagingBufferMemory, quadVertices);
-    Logging::Logger::get().log(Logging::LogLevel::Debug, "Vulkan", "Quad vertex buffer created: {}",
-                               std::source_location::current(), quadVertexBuffer);
-
+                       quadVertexBuffer, quadVertexBufferMemory, quadStagingBuffer, quadStagingBufferMemory, quadVertices,
+                       Logging::Logger::get());
     createIndexBuffer(device, physicalDevice, commandPool, graphicsQueue,
-                      quadIndexBuffer, quadIndexBufferMemory, quadIndexStagingBuffer, quadIndexStagingBufferMemory, quadIndices);
-    Logging::Logger::get().log(Logging::LogLevel::Debug, "Vulkan", "Quad index buffer created: {}",
-                               std::source_location::current(), quadIndexBuffer);
+                      quadIndexBuffer, quadIndexBufferMemory, quadIndexStagingBuffer, quadIndexStagingBufferMemory, quadIndices,
+                      Logging::Logger::get());
 
-    Logging::Logger::get().log(Logging::LogLevel::Info, "Vulkan", "Quad buffers initialized successfully",
-                               std::source_location::current());
+    Logging::Logger::get().log(Logging::LogLevel::Info, "Vulkan", "Quad buffers initialized successfully", std::source_location::current());
 }
 
 void initializeVoxelBuffers(
@@ -144,23 +117,17 @@ void initializeVoxelBuffers(
     VkBuffer& voxelIndexBuffer, VkDeviceMemory& voxelIndexBufferMemory,
     VkBuffer& voxelStagingBuffer, VkDeviceMemory& voxelStagingBufferMemory,
     VkBuffer& voxelIndexStagingBuffer, VkDeviceMemory& voxelIndexStagingBufferMemory,
-    std::span<const glm::vec3> voxelVertices, std::span<const uint32_t> voxelIndices,
-    const Logging::Logger& logger) {
-    Logging::Logger::get().log(Logging::LogLevel::Info, "Vulkan", "Initializing voxel buffers",
-                               std::source_location::current());
+    std::span<const glm::vec3> voxelVertices, std::span<const uint32_t> voxelIndices) {
+    Logging::Logger::get().log(Logging::LogLevel::Info, "Vulkan", "Initializing voxel buffers", std::source_location::current());
 
     createVertexBuffer(device, physicalDevice, commandPool, graphicsQueue,
-                       voxelVertexBuffer, voxelVertexBufferMemory, voxelStagingBuffer, voxelStagingBufferMemory, voxelVertices);
-    Logging::Logger::get().log(Logging::LogLevel::Debug, "Vulkan", "Voxel vertex buffer created: {}",
-                               std::source_location::current(), voxelVertexBuffer);
-
+                       voxelVertexBuffer, voxelVertexBufferMemory, voxelStagingBuffer, voxelStagingBufferMemory, voxelVertices,
+                       Logging::Logger::get());
     createIndexBuffer(device, physicalDevice, commandPool, graphicsQueue,
-                      voxelIndexBuffer, voxelIndexBufferMemory, voxelIndexStagingBuffer, voxelIndexStagingBufferMemory, voxelIndices);
-    Logging::Logger::get().log(Logging::LogLevel::Debug, "Vulkan", "Voxel index buffer created: {}",
-                               std::source_location::current(), voxelIndexBuffer);
+                      voxelIndexBuffer, voxelIndexBufferMemory, voxelIndexStagingBuffer, voxelIndexStagingBufferMemory, voxelIndices,
+                      Logging::Logger::get());
 
-    Logging::Logger::get().log(Logging::LogLevel::Info, "Vulkan", "Voxel buffers initialized successfully",
-                               std::source_location::current());
+    Logging::Logger::get().log(Logging::LogLevel::Info, "Vulkan", "Voxel buffers initialized successfully", std::source_location::current());
 }
 
 void cleanupVulkan(
@@ -173,19 +140,17 @@ void cleanupVulkan(
     VkDescriptorSetLayout& descriptorSetLayout, VkDescriptorPool& descriptorPool, VkDescriptorSet& descriptorSet,
     VkSampler& sampler, VkBuffer& sphereStagingBuffer, VkDeviceMemory& sphereStagingBufferMemory,
     VkBuffer& indexStagingBuffer, VkDeviceMemory& indexStagingBufferMemory,
-    VkShaderModule& vertShaderModule, VkShaderModule& fragShaderModule) {
-    Logging::Logger::get().log(Logging::LogLevel::Info, "Vulkan", "Cleaning up Vulkan resources",
-                               std::source_location::current());
+    VkShaderModule& vertShaderModule, VkShaderModule& fragShaderModule,
+    const Logging::Logger& logger) {
+    logger.log(Logging::LogLevel::Info, "Vulkan", "Cleaning up Vulkan resources", std::source_location::current());
 
     if (device == VK_NULL_HANDLE) {
-        Logging::Logger::get().log(Logging::LogLevel::Warning, "Vulkan", "Device is null, skipping cleanup",
-                                   std::source_location::current());
+        logger.log(Logging::LogLevel::Warning, "Vulkan", "Device is null, skipping cleanup", std::source_location::current());
         return;
     }
 
     VK_CHECK(vkDeviceWaitIdle(device), "Failed to wait for device idle");
-    Logging::Logger::get().log(Logging::LogLevel::Debug, "Vulkan", "Device idle, proceeding with cleanup",
-                               std::source_location::current());
+    logger.log(Logging::LogLevel::Debug, "Vulkan", "Device idle, proceeding with cleanup", std::source_location::current());
 
     // Parallel cleanup using OpenMP tasks for thread-safe resource destruction
     #pragma omp parallel
@@ -196,8 +161,7 @@ void cleanupVulkan(
                 #pragma omp task
                 if (inFlightFences[i] != VK_NULL_HANDLE) {
                     vkDestroyFence(device, inFlightFences[i], nullptr);
-                    Logging::Logger::get().log(Logging::LogLevel::Debug, "Vulkan", "Destroyed fence {}", 
-                                               std::source_location::current(), i);
+                    logger.log(Logging::LogLevel::Debug, "Vulkan", "Destroyed fence {}", std::source_location::current(), i);
                     inFlightFences[i] = VK_NULL_HANDLE;
                 }
             }
@@ -205,8 +169,7 @@ void cleanupVulkan(
                 #pragma omp task
                 if (imageAvailableSemaphores[i] != VK_NULL_HANDLE) {
                     vkDestroySemaphore(device, imageAvailableSemaphores[i], nullptr);
-                    Logging::Logger::get().log(Logging::LogLevel::Debug, "Vulkan", "Destroyed image available semaphore {}", 
-                                               std::source_location::current(), i);
+                    logger.log(Logging::LogLevel::Debug, "Vulkan", "Destroyed image available semaphore {}", std::source_location::current(), i);
                     imageAvailableSemaphores[i] = VK_NULL_HANDLE;
                 }
             }
@@ -214,8 +177,7 @@ void cleanupVulkan(
                 #pragma omp task
                 if (renderFinishedSemaphores[i] != VK_NULL_HANDLE) {
                     vkDestroySemaphore(device, renderFinishedSemaphores[i], nullptr);
-                    Logging::Logger::get().log(Logging::LogLevel::Debug, "Vulkan", "Destroyed render finished semaphore {}", 
-                                               std::source_location::current(), i);
+                    logger.log(Logging::LogLevel::Debug, "Vulkan", "Destroyed render finished semaphore {}", std::source_location::current(), i);
                     renderFinishedSemaphores[i] = VK_NULL_HANDLE;
                 }
             }
@@ -223,8 +185,7 @@ void cleanupVulkan(
                 #pragma omp task
                 if (swapchainFramebuffers[i] != VK_NULL_HANDLE) {
                     vkDestroyFramebuffer(device, swapchainFramebuffers[i], nullptr);
-                    Logging::Logger::get().log(Logging::LogLevel::Debug, "Vulkan", "Destroyed framebuffer {}", 
-                                               std::source_location::current(), i);
+                    logger.log(Logging::LogLevel::Debug, "Vulkan", "Destroyed framebuffer {}", std::source_location::current(), i);
                     swapchainFramebuffers[i] = VK_NULL_HANDLE;
                 }
             }
@@ -232,8 +193,7 @@ void cleanupVulkan(
                 #pragma omp task
                 if (swapchainImageViews[i] != VK_NULL_HANDLE) {
                     vkDestroyImageView(device, swapchainImageViews[i], nullptr);
-                    Logging::Logger::get().log(Logging::LogLevel::Debug, "Vulkan", "Destroyed image view {}", 
-                                               std::source_location::current(), i);
+                    logger.log(Logging::LogLevel::Debug, "Vulkan", "Destroyed image view {}", std::source_location::current(), i);
                     swapchainImageViews[i] = VK_NULL_HANDLE;
                 }
             }
@@ -249,157 +209,132 @@ void cleanupVulkan(
 
     if (commandPool != VK_NULL_HANDLE) {
         vkDestroyCommandPool(device, commandPool, nullptr);
-        Logging::Logger::get().log(Logging::LogLevel::Debug, "Vulkan", "Destroyed command pool: {}",
-                                   std::source_location::current(), commandPool);
+        logger.log(Logging::LogLevel::Debug, "Vulkan", "Destroyed command pool", std::source_location::current());
         commandPool = VK_NULL_HANDLE;
     }
 
     if (pipeline != VK_NULL_HANDLE) {
         vkDestroyPipeline(device, pipeline, nullptr);
-        Logging::Logger::get().log(Logging::LogLevel::Debug, "Vulkan", "Destroyed pipeline: {}",
-                                   std::source_location::current(), pipeline);
+        logger.log(Logging::LogLevel::Debug, "Vulkan", "Destroyed pipeline", std::source_location::current());
         pipeline = VK_NULL_HANDLE;
     }
 
     if (pipelineLayout != VK_NULL_HANDLE) {
         vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
-        Logging::Logger::get().log(Logging::LogLevel::Debug, "Vulkan", "Destroyed pipeline layout: {}",
-                                   std::source_location::current(), pipelineLayout);
+        logger.log(Logging::LogLevel::Debug, "Vulkan", "Destroyed pipeline layout", std::source_location::current());
         pipelineLayout = VK_NULL_HANDLE;
     }
 
     if (renderPass != VK_NULL_HANDLE) {
         vkDestroyRenderPass(device, renderPass, nullptr);
-        Logging::Logger::get().log(Logging::LogLevel::Debug, "Vulkan", "Destroyed render pass: {}",
-                                   std::source_location::current(), renderPass);
+        logger.log(Logging::LogLevel::Debug, "Vulkan", "Destroyed render pass", std::source_location::current());
         renderPass = VK_NULL_HANDLE;
     }
 
     if (swapchain != VK_NULL_HANDLE) {
         vkDestroySwapchainKHR(device, swapchain, nullptr);
-        Logging::Logger::get().log(Logging::LogLevel::Debug, "Vulkan", "Destroyed swapchain: {}",
-                                   std::source_location::current(), swapchain);
+        logger.log(Logging::LogLevel::Debug, "Vulkan", "Destroyed swapchain", std::source_location::current());
         swapchain = VK_NULL_HANDLE;
     }
 
     if (descriptorSetLayout != VK_NULL_HANDLE) {
         vkDestroyDescriptorSetLayout(device, descriptorSetLayout, nullptr);
-        Logging::Logger::get().log(Logging::LogLevel::Debug, "Vulkan", "Destroyed descriptor set layout: {}",
-                                   std::source_location::current(), descriptorSetLayout);
+        logger.log(Logging::LogLevel::Debug, "Vulkan", "Destroyed descriptor set layout", std::source_location::current());
         descriptorSetLayout = VK_NULL_HANDLE;
     }
 
     if (descriptorPool != VK_NULL_HANDLE) {
         vkDestroyDescriptorPool(device, descriptorPool, nullptr);
-        Logging::Logger::get().log(Logging::LogLevel::Debug, "Vulkan", "Destroyed descriptor pool: {}",
-                                   std::source_location::current(), descriptorPool);
+        logger.log(Logging::LogLevel::Debug, "Vulkan", "Destroyed descriptor pool", std::source_location::current());
         descriptorPool = VK_NULL_HANDLE;
     }
     descriptorSet = VK_NULL_HANDLE;
-    Logging::Logger::get().log(Logging::LogLevel::Debug, "Vulkan", "Descriptor set cleared: {}",
-                               std::source_location::current(), descriptorSet);
 
     if (sampler != VK_NULL_HANDLE) {
         vkDestroySampler(device, sampler, nullptr);
-        Logging::Logger::get().log(Logging::LogLevel::Debug, "Vulkan", "Destroyed sampler: {}",
-                                   std::source_location::current(), sampler);
+        logger.log(Logging::LogLevel::Debug, "Vulkan", "Destroyed sampler", std::source_location::current());
         sampler = VK_NULL_HANDLE;
     }
 
     if (vertexBuffer != VK_NULL_HANDLE) {
         vkDestroyBuffer(device, vertexBuffer, nullptr);
-        Logging::Logger::get().log(Logging::LogLevel::Debug, "Vulkan", "Destroyed vertex buffer: {}",
-                                   std::source_location::current(), vertexBuffer);
+        logger.log(Logging::LogLevel::Debug, "Vulkan", "Destroyed vertex buffer", std::source_location::current());
         vertexBuffer = VK_NULL_HANDLE;
     }
 
     if (vertexBufferMemory != VK_NULL_HANDLE) {
         vkFreeMemory(device, vertexBufferMemory, nullptr);
-        Logging::Logger::get().log(Logging::LogLevel::Debug, "Vulkan", "Freed vertex buffer memory: {}",
-                                   std::source_location::current(), vertexBufferMemory);
+        logger.log(Logging::LogLevel::Debug, "Vulkan", "Freed vertex buffer memory", std::source_location::current());
         vertexBufferMemory = VK_NULL_HANDLE;
     }
 
     if (indexBuffer != VK_NULL_HANDLE) {
         vkDestroyBuffer(device, indexBuffer, nullptr);
-        Logging::Logger::get().log(Logging::LogLevel::Debug, "Vulkan", "Destroyed index buffer: {}",
-                                   std::source_location::current(), indexBuffer);
+        logger.log(Logging::LogLevel::Debug, "Vulkan", "Destroyed index buffer", std::source_location::current());
         indexBuffer = VK_NULL_HANDLE;
     }
 
     if (indexBufferMemory != VK_NULL_HANDLE) {
         vkFreeMemory(device, indexBufferMemory, nullptr);
-        Logging::Logger::get().log(Logging::LogLevel::Debug, "Vulkan", "Freed index buffer memory: {}",
-                                   std::source_location::current(), indexBufferMemory);
+        logger.log(Logging::LogLevel::Debug, "Vulkan", "Freed index buffer memory", std::source_location::current());
         indexBufferMemory = VK_NULL_HANDLE;
     }
 
     if (sphereStagingBuffer != VK_NULL_HANDLE) {
         vkDestroyBuffer(device, sphereStagingBuffer, nullptr);
-        Logging::Logger::get().log(Logging::LogLevel::Debug, "Vulkan", "Destroyed sphere staging buffer: {}",
-                                   std::source_location::current(), sphereStagingBuffer);
+        logger.log(Logging::LogLevel::Debug, "Vulkan", "Destroyed sphere staging buffer", std::source_location::current());
         sphereStagingBuffer = VK_NULL_HANDLE;
     }
 
     if (sphereStagingBufferMemory != VK_NULL_HANDLE) {
         vkFreeMemory(device, sphereStagingBufferMemory, nullptr);
-        Logging::Logger::get().log(Logging::LogLevel::Debug, "Vulkan", "Freed sphere staging buffer memory: {}",
-                                   std::source_location::current(), sphereStagingBufferMemory);
+        logger.log(Logging::LogLevel::Debug, "Vulkan", "Freed sphere staging buffer memory", std::source_location::current());
         sphereStagingBufferMemory = VK_NULL_HANDLE;
     }
 
     if (indexStagingBuffer != VK_NULL_HANDLE) {
         vkDestroyBuffer(device, indexStagingBuffer, nullptr);
-        Logging::Logger::get().log(Logging::LogLevel::Debug, "Vulkan", "Destroyed index staging buffer: {}",
-                                   std::source_location::current(), indexStagingBuffer);
+        logger.log(Logging::LogLevel::Debug, "Vulkan", "Destroyed index staging buffer", std::source_location::current());
         indexStagingBuffer = VK_NULL_HANDLE;
     }
 
     if (indexStagingBufferMemory != VK_NULL_HANDLE) {
         vkFreeMemory(device, indexStagingBufferMemory, nullptr);
-        Logging::Logger::get().log(Logging::LogLevel::Debug, "Vulkan", "Freed index staging buffer memory: {}",
-                                   std::source_location::current(), indexStagingBufferMemory);
+        logger.log(Logging::LogLevel::Debug, "Vulkan", "Freed index staging buffer memory", std::source_location::current());
         indexStagingBufferMemory = VK_NULL_HANDLE;
     }
 
     if (vertShaderModule != VK_NULL_HANDLE) {
         vkDestroyShaderModule(device, vertShaderModule, nullptr);
-        Logging::Logger::get().log(Logging::LogLevel::Debug, "Vulkan", "Destroyed vertex shader module: {}",
-                                   std::source_location::current(), vertShaderModule);
+        logger.log(Logging::LogLevel::Debug, "Vulkan", "Destroyed vertex shader module", std::source_location::current());
         vertShaderModule = VK_NULL_HANDLE;
     }
 
     if (fragShaderModule != VK_NULL_HANDLE) {
         vkDestroyShaderModule(device, fragShaderModule, nullptr);
-        Logging::Logger::get().log(Logging::LogLevel::Debug, "Vulkan", "Destroyed fragment shader module: {}",
-                                   std::source_location::current(), fragShaderModule);
+        logger.log(Logging::LogLevel::Debug, "Vulkan", "Destroyed fragment shader module", std::source_location::current());
         fragShaderModule = VK_NULL_HANDLE;
     }
 
     vkDestroyDevice(device, nullptr);
-    Logging::Logger::get().log(Logging::LogLevel::Debug, "Vulkan", "Destroyed device: {}",
-                               std::source_location::current(), device);
+    logger.log(Logging::LogLevel::Debug, "Vulkan", "Destroyed device", std::source_location::current());
     device = VK_NULL_HANDLE;
 
-    Logging::Logger::get().log(Logging::LogLevel::Info, "Vulkan", "Vulkan cleanup completed successfully",
-                               std::source_location::current());
+    logger.log(Logging::LogLevel::Info, "Vulkan", "Vulkan cleanup completed successfully", std::source_location::current());
 }
 
 void createPhysicalDevice(VkInstance instance, VkPhysicalDevice& physicalDevice, uint32_t& graphicsFamily,
                          uint32_t& presentFamily, VkSurfaceKHR surface, bool preferNvidia, const Logging::Logger& logger) {
-    Logging::Logger::get().log(Logging::LogLevel::Info, "Vulkan", "Creating physical device with preferNvidia={}",
-                               std::source_location::current(), preferNvidia);
+    logger.log(Logging::LogLevel::Info, "Vulkan", "Creating physical device with preferNvidia={}", std::source_location::current(), preferNvidia);
 
     uint32_t deviceCount = 0;
     VkResult result = vkEnumeratePhysicalDevices(instance, &deviceCount, nullptr);
     VK_CHECK(result, "Failed to enumerate physical devices");
     if (deviceCount == 0) {
-        Logging::Logger::get().log(Logging::LogLevel::Error, "Vulkan", "No Vulkan-compatible devices found",
-                                   std::source_location::current());
+        logger.log(Logging::LogLevel::Error, "Vulkan", "No Vulkan-compatible devices found", std::source_location::current());
         throw std::runtime_error("No Vulkan-compatible devices found");
     }
-    Logging::Logger::get().log(Logging::LogLevel::Debug, "Vulkan", "Found {} Vulkan devices",
-                               std::source_location::current(), deviceCount);
+    logger.log(Logging::LogLevel::Debug, "Vulkan", "Found {} Vulkan devices", std::source_location::current(), deviceCount);
 
     std::vector<VkPhysicalDevice> devices(deviceCount);
     VK_CHECK(vkEnumeratePhysicalDevices(instance, &deviceCount, devices.data()), "Failed to retrieve physical devices");
@@ -412,14 +347,12 @@ void createPhysicalDevice(VkInstance instance, VkPhysicalDevice& physicalDevice,
     for (const auto& ext : instanceExtensions) {
         if (strcmp(ext.extensionName, VK_KHR_SURFACE_EXTENSION_NAME) == 0) {
             hasSurfaceExtension = true;
-            Logging::Logger::get().log(Logging::LogLevel::Debug, "Vulkan", "VK_KHR_surface extension supported",
-                                       std::source_location::current());
+            logger.log(Logging::LogLevel::Debug, "Vulkan", "VK_KHR_surface extension supported", std::source_location::current());
             break;
         }
     }
     if (!hasSurfaceExtension) {
-        Logging::Logger::get().log(Logging::LogLevel::Error, "Vulkan", "VK_KHR_surface extension not supported",
-                                   std::source_location::current());
+        logger.log(Logging::LogLevel::Error, "Vulkan", "VK_KHR_surface extension not supported", std::source_location::current());
         throw std::runtime_error("VK_KHR_surface extension not supported");
     }
 
@@ -427,24 +360,20 @@ void createPhysicalDevice(VkInstance instance, VkPhysicalDevice& physicalDevice,
         VkPhysicalDeviceProperties props;
         vkGetPhysicalDeviceProperties(dev, &props);
         std::string deviceName = props.deviceName;
-        Logging::Logger::get().log(Logging::LogLevel::Debug, "Vulkan", "Evaluating device: {}",
-                                   std::source_location::current(), deviceName);
+        logger.log(Logging::LogLevel::Debug, "Vulkan", "Evaluating device: {}", std::source_location::current(), deviceName);
 
         int score = 0;
         if (props.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU) {
             score += 1000;
             if (preferNvidia && props.vendorID == 0x10DE) {
                 score += 500;
-                Logging::Logger::get().log(Logging::LogLevel::Debug, "Vulkan", "Device {} is NVIDIA; score increased",
-                                           std::source_location::current(), deviceName);
+                logger.log(Logging::LogLevel::Debug, "Vulkan", "Device {} is NVIDIA; score increased", std::source_location::current(), deviceName);
             }
         } else if (props.deviceType == VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU) {
             score += 100;
-            Logging::Logger::get().log(Logging::LogLevel::Debug, "Vulkan", "Device {} is integrated GPU",
-                                       std::source_location::current(), deviceName);
+            logger.log(Logging::LogLevel::Debug, "Vulkan", "Device {} is integrated GPU", std::source_location::current(), deviceName);
         } else {
-            Logging::Logger::get().log(Logging::LogLevel::Warning, "Vulkan", "Device {} is neither discrete nor integrated GPU",
-                                       std::source_location::current(), deviceName);
+            logger.log(Logging::LogLevel::Warning, "Vulkan", "Device {} is neither discrete nor integrated GPU", std::source_location::current(), deviceName);
             return {0, "Unsupported device type"};
         }
 
@@ -458,31 +387,26 @@ void createPhysicalDevice(VkInstance instance, VkPhysicalDevice& physicalDevice,
         for (uint32_t i = 0; i < queueFamilyCount; ++i) {
             if (queueFamilies[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) {
                 indices.graphicsFamily = i;
-                Logging::Logger::get().log(Logging::LogLevel::Debug, "Vulkan", "Found graphics queue family {}",
-                                           std::source_location::current(), i);
+                logger.log(Logging::LogLevel::Debug, "Vulkan", "Found graphics queue family {}", std::source_location::current(), i);
             }
             VkBool32 presentSupport = VK_FALSE;
             VkResult localResult = vkGetPhysicalDeviceSurfaceSupportKHR(dev, i, surface, &presentSupport);
             if (localResult != VK_SUCCESS) {
-                Logging::Logger::get().log(Logging::LogLevel::Warning, "Vulkan", "Device {} failed to query surface support: VkResult {}",
-                                           std::source_location::current(), deviceName, static_cast<int>(localResult));
+                logger.log(Logging::LogLevel::Warning, "Vulkan", "Device {} failed to query surface support: VkResult {}", std::source_location::current(), deviceName, static_cast<int>(localResult));
                 return {0, std::string("Failed to query surface support: ") + std::to_string(static_cast<int>(localResult))};
             }
             if (presentSupport) {
                 indices.presentFamily = i;
                 presentSupportFound = true;
-                Logging::Logger::get().log(Logging::LogLevel::Debug, "Vulkan", "Found present queue family {}",
-                                           std::source_location::current(), i);
+                logger.log(Logging::LogLevel::Debug, "Vulkan", "Found present queue family {}", std::source_location::current(), i);
             }
         }
         if (!indices.isComplete()) {
-            Logging::Logger::get().log(Logging::LogLevel::Warning, "Vulkan", "Device {} lacks required queue families",
-                                       std::source_location::current(), deviceName);
+            logger.log(Logging::LogLevel::Warning, "Vulkan", "Device {} lacks required queue families", std::source_location::current(), deviceName);
             return {0, "Lacks required queue families"};
         }
         if (!presentSupportFound) {
-            Logging::Logger::get().log(Logging::LogLevel::Warning, "Vulkan", "Device {} does not support presentation",
-                                       std::source_location::current(), deviceName);
+            logger.log(Logging::LogLevel::Warning, "Vulkan", "Device {} does not support presentation", std::source_location::current(), deviceName);
             return {0, "No presentation support"};
         }
 
@@ -500,8 +424,7 @@ void createPhysicalDevice(VkInstance instance, VkPhysicalDevice& physicalDevice,
             for (const auto& ext : requiredExts) {
                 missing += std::string(ext) + ", ";
             }
-            Logging::Logger::get().log(Logging::LogLevel::Warning, "Vulkan", "Device {} missing extensions: {}",
-                                       std::source_location::current(), deviceName, missing.substr(0, missing.size() - 2));
+            logger.log(Logging::LogLevel::Warning, "Vulkan", "Device {} missing extensions: {}", std::source_location::current(), deviceName, missing.substr(0, missing.size() - 2));
             return {0, "Missing extensions: " + missing.substr(0, missing.size() - 2)};
         }
 
@@ -522,13 +445,11 @@ void createPhysicalDevice(VkInstance instance, VkPhysicalDevice& physicalDevice,
 
         if (!features2.features.samplerAnisotropy || !maint4.maintenance4 || !rt.rayTracingPipeline ||
             !accel.accelerationStructure || !bufAddr.bufferDeviceAddress) {
-            Logging::Logger::get().log(Logging::LogLevel::Warning, "Vulkan", "Device {} lacks required features",
-                                       std::source_location::current(), deviceName);
+            logger.log(Logging::LogLevel::Warning, "Vulkan", "Device {} lacks required features", std::source_location::current(), deviceName);
             return {0, "Lacks required features"};
         }
 
-        Logging::Logger::get().log(Logging::LogLevel::Debug, "Vulkan", "Device {} is suitable with score: {}",
-                                   std::source_location::current(), deviceName, score);
+        logger.log(Logging::LogLevel::Debug, "Vulkan", "Device {} is suitable with score: {}", std::source_location::current(), deviceName, score);
         return {score, ""};
     };
 
@@ -556,8 +477,7 @@ void createPhysicalDevice(VkInstance instance, VkPhysicalDevice& physicalDevice,
                                 maxScore.store(score, std::memory_order_release);
                                 selectedDevice.store(dev, std::memory_order_release);
                                 selectedIndices = indices;
-                                Logging::Logger::get().log(Logging::LogLevel::Debug, "Vulkan", "Selected device with score: {}",
-                                                           std::source_location::current(), score);
+                                logger.log(Logging::LogLevel::Debug, "Vulkan", "Selected device with score: {}", std::source_location::current(), score);
                             }
                         }
                     }
@@ -568,14 +488,12 @@ void createPhysicalDevice(VkInstance instance, VkPhysicalDevice& physicalDevice,
                         {
                             fallbackDevices.emplace_back(dev, indices);
                             fallbackProps.push_back(props);
-                            Logging::Logger::get().log(Logging::LogLevel::Debug, "Vulkan", "Stored fallback device: {}",
-                                                       std::source_location::current(), props.deviceName);
+                            logger.log(Logging::LogLevel::Debug, "Vulkan", "Stored fallback device: {}", std::source_location::current(), props.deviceName);
                         }
                     } else {
                         VkPhysicalDeviceProperties props;
                         vkGetPhysicalDeviceProperties(dev, &props);
-                        Logging::Logger::get().log(Logging::LogLevel::Warning, "Vulkan", "Rejected device: {} (reason: {})",
-                                                   std::source_location::current(), props.deviceName, reason);
+                        logger.log(Logging::LogLevel::Warning, "Vulkan", "Rejected device: {} (reason: {})", std::source_location::current(), props.deviceName, reason);
                     }
                 }
             }
@@ -584,30 +502,25 @@ void createPhysicalDevice(VkInstance instance, VkPhysicalDevice& physicalDevice,
 
     physicalDevice = selectedDevice.load(std::memory_order_acquire);
     if (physicalDevice == VK_NULL_HANDLE && !fallbackDevices.empty()) {
-        Logging::Logger::get().log(Logging::LogLevel::Warning, "Vulkan", "No preferred device found; trying fallback devices",
-                                   std::source_location::current());
+        logger.log(Logging::LogLevel::Warning, "Vulkan", "No preferred device found; trying fallback devices", std::source_location::current());
         for (size_t i = 0; i < fallbackDevices.size(); ++i) {
             physicalDevice = fallbackDevices[i].first;
             selectedIndices = fallbackDevices[i].second;
-            Logging::Logger::get().log(Logging::LogLevel::Debug, "Vulkan", "Falling back to device: {}",
-                                       std::source_location::current(), fallbackProps[i].deviceName);
+            logger.log(Logging::LogLevel::Debug, "Vulkan", "Falling back to device: {}", std::source_location::current(), fallbackProps[i].deviceName);
             VkBool32 presentSupport = VK_FALSE;
             VkResult result = vkGetPhysicalDeviceSurfaceSupportKHR(physicalDevice, selectedIndices.presentFamily.value(), surface, &presentSupport);
             if (result == VK_SUCCESS && presentSupport) {
-                Logging::Logger::get().log(Logging::LogLevel::Debug, "Vulkan", "Fallback device supports surface; selected",
-                                           std::source_location::current());
+                logger.log(Logging::LogLevel::Debug, "Vulkan", "Fallback device supports surface; selected", std::source_location::current());
                 break;
             } else {
-                Logging::Logger::get().log(Logging::LogLevel::Warning, "Vulkan", "Fallback device failed surface support: VkResult {}",
-                                           std::source_location::current(), static_cast<int>(result));
+                logger.log(Logging::LogLevel::Warning, "Vulkan", "Fallback device failed surface support: VkResult {}", std::source_location::current(), static_cast<int>(result));
                 physicalDevice = VK_NULL_HANDLE;
             }
         }
     }
 
     if (physicalDevice == VK_NULL_HANDLE) {
-        Logging::Logger::get().log(Logging::LogLevel::Error, "Vulkan", "No suitable Vulkan device found",
-                                   std::source_location::current());
+        logger.log(Logging::LogLevel::Error, "Vulkan", "No suitable Vulkan device found", std::source_location::current());
         throw std::runtime_error("No suitable Vulkan device found");
     }
 
@@ -616,14 +529,13 @@ void createPhysicalDevice(VkInstance instance, VkPhysicalDevice& physicalDevice,
 
     VkPhysicalDeviceProperties props;
     vkGetPhysicalDeviceProperties(physicalDevice, &props);
-    Logging::Logger::get().log(Logging::LogLevel::Info, "Vulkan", "Selected device: {}",
-                               std::source_location::current(), props.deviceName);
+    logger.log(Logging::LogLevel::Info, "Vulkan", "Selected device: {}", std::source_location::current(), props.deviceName);
 }
 
 void createLogicalDevice(VkPhysicalDevice physicalDevice, VkDevice& device, VkQueue& graphicsQueue,
-                         VkQueue& presentQueue, uint32_t graphicsFamily, uint32_t presentFamily) {
-    Logging::Logger::get().log(Logging::LogLevel::Info, "Vulkan", "Creating logical device with graphicsFamily={}, presentFamily={}",
-                               std::source_location::current(), graphicsFamily, presentFamily);
+                         VkQueue& presentQueue, uint32_t graphicsFamily, uint32_t presentFamily,
+                         const Logging::Logger& logger) {
+    logger.log(Logging::LogLevel::Info, "Vulkan", "Creating logical device with graphicsFamily={}, presentFamily={}", std::source_location::current(), graphicsFamily, presentFamily);
 
     DeviceRequirements reqs;
     std::vector<VkDeviceQueueCreateInfo> queueCreateInfos;
@@ -720,18 +632,12 @@ void createLogicalDevice(VkPhysicalDevice physicalDevice, VkDevice& device, VkQu
     VK_CHECK(vkCreateDevice(physicalDevice, &createInfo, nullptr, &device), "Failed to create logical device");
 
     vkGetDeviceQueue(device, graphicsFamily, 0, &graphicsQueue);
-    Logging::Logger::get().log(Logging::LogLevel::Debug, "Vulkan", "Graphics queue retrieved: {}",
-                               std::source_location::current(), graphicsQueue);
     vkGetDeviceQueue(device, presentFamily, 0, &presentQueue);
-    Logging::Logger::get().log(Logging::LogLevel::Debug, "Vulkan", "Present queue retrieved: {}",
-                               std::source_location::current(), presentQueue);
-    Logging::Logger::get().log(Logging::LogLevel::Info, "Vulkan", "Logical device created successfully: {}",
-                               std::source_location::current(), device);
+    logger.log(Logging::LogLevel::Info, "Vulkan", "Logical device created successfully", std::source_location::current());
 }
 
-void createCommandPool(VkDevice device, VkCommandPool& commandPool, uint32_t graphicsFamily) {
-    Logging::Logger::get().log(Logging::LogLevel::Info, "Vulkan", "Creating command pool for graphicsFamily={}",
-                               std::source_location::current(), graphicsFamily);
+void createCommandPool(VkDevice device, VkCommandPool& commandPool, uint32_t graphicsFamily, const Logging::Logger& logger) {
+    logger.log(Logging::LogLevel::Info, "Vulkan", "Creating command pool for graphicsFamily={}", std::source_location::current(), graphicsFamily);
 
     VkCommandPoolCreateInfo poolInfo{
         .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
@@ -742,14 +648,12 @@ void createCommandPool(VkDevice device, VkCommandPool& commandPool, uint32_t gra
 
     VK_CHECK(vkCreateCommandPool(device, &poolInfo, nullptr, &commandPool), "Failed to create command pool");
 
-    Logging::Logger::get().log(Logging::LogLevel::Info, "Vulkan", "Command pool created successfully: {}",
-                               std::source_location::current(), commandPool);
+    logger.log(Logging::LogLevel::Info, "Vulkan", "Command pool created successfully", std::source_location::current());
 }
 
 void createCommandBuffers(VkDevice device, VkCommandPool commandPool, std::vector<VkCommandBuffer>& commandBuffers,
-                          std::vector<VkFramebuffer>& swapchainFramebuffers) {
-    Logging::Logger::get().log(Logging::LogLevel::Info, "Vulkan", "Creating command buffers for {} framebuffers",
-                               std::source_location::current(), swapchainFramebuffers.size());
+                          std::vector<VkFramebuffer>& swapchainFramebuffers, const Logging::Logger& logger) {
+    logger.log(Logging::LogLevel::Info, "Vulkan", "Creating command buffers for {} framebuffers", std::source_location::current(), swapchainFramebuffers.size());
 
     commandBuffers.resize(swapchainFramebuffers.size());
     VkCommandBufferAllocateInfo allocInfo{
@@ -762,19 +666,13 @@ void createCommandBuffers(VkDevice device, VkCommandPool commandPool, std::vecto
 
     VK_CHECK(vkAllocateCommandBuffers(device, &allocInfo, commandBuffers.data()), "Failed to allocate command buffers");
 
-    for (size_t i = 0; i < commandBuffers.size(); ++i) {
-        Logging::Logger::get().log(Logging::LogLevel::Debug, "Vulkan", "Allocated command buffer {}: {}",
-                                   std::source_location::current(), i, commandBuffers[i]);
-    }
-    Logging::Logger::get().log(Logging::LogLevel::Info, "Vulkan", "Command buffers created successfully",
-                               std::source_location::current());
+    logger.log(Logging::LogLevel::Info, "Vulkan", "Command buffers created successfully", std::source_location::current());
 }
 
 void createSyncObjects(VkDevice device, std::vector<VkSemaphore>& imageAvailableSemaphores,
                        std::vector<VkSemaphore>& renderFinishedSemaphores, std::vector<VkFence>& inFlightFences,
-                       uint32_t maxFramesInFlight) {
-    Logging::Logger::get().log(Logging::LogLevel::Info, "Vulkan", "Creating sync objects for {} frames",
-                               std::source_location::current(), maxFramesInFlight);
+                       uint32_t maxFramesInFlight, const Logging::Logger& logger) {
+    logger.log(Logging::LogLevel::Info, "Vulkan", "Creating sync objects for {} frames", std::source_location::current(), maxFramesInFlight);
 
     imageAvailableSemaphores.resize(maxFramesInFlight);
     renderFinishedSemaphores.resize(maxFramesInFlight);
@@ -801,31 +699,23 @@ void createSyncObjects(VkDevice device, std::vector<VkSemaphore>& imageAvailable
                 #pragma omp task
                 {
                     VK_CHECK(vkCreateSemaphore(device, &semaphoreInfo, nullptr, &imageAvailableSemaphores[i]), "Failed to create image available semaphore");
-                    Logging::Logger::get().log(Logging::LogLevel::Debug, "Vulkan", "Created image available semaphore {}: {}",
-                                               std::source_location::current(), i, imageAvailableSemaphores[i]);
                     VK_CHECK(vkCreateSemaphore(device, &semaphoreInfo, nullptr, &renderFinishedSemaphores[i]), "Failed to create render finished semaphore");
-                    Logging::Logger::get().log(Logging::LogLevel::Debug, "Vulkan", "Created render finished semaphore {}: {}",
-                                               std::source_location::current(), i, renderFinishedSemaphores[i]);
                     VK_CHECK(vkCreateFence(device, &fenceInfo, nullptr, &inFlightFences[i]), "Failed to create in-flight fence");
-                    Logging::Logger::get().log(Logging::LogLevel::Debug, "Vulkan", "Created in-flight fence {}: {}",
-                                               std::source_location::current(), i, inFlightFences[i]);
+                    logger.log(Logging::LogLevel::Debug, "Vulkan", "Created sync objects for frame {}", std::source_location::current(), i);
                 }
             }
         }
     }
 
-    Logging::Logger::get().log(Logging::LogLevel::Info, "Vulkan", "Sync objects created successfully",
-                               std::source_location::current());
+    logger.log(Logging::LogLevel::Info, "Vulkan", "Sync objects created successfully", std::source_location::current());
 }
 
 void createBuffer(VkDevice device, VkPhysicalDevice physicalDevice, VkDeviceSize size, VkBufferUsageFlags usage,
-                  VkMemoryPropertyFlags props, VkBuffer& buffer, VkDeviceMemory& memory) {
-    Logging::Logger::get().log(Logging::LogLevel::Info, "Vulkan", "Creating buffer with size={}",
-                               std::source_location::current(), size);
+                  VkMemoryPropertyFlags props, VkBuffer& buffer, VkDeviceMemory& memory, const Logging::Logger& logger) {
+    logger.log(Logging::LogLevel::Info, "Vulkan", "Creating buffer with size={}", std::source_location::current(), size);
 
     if (size == 0) {
-        Logging::Logger::get().log(Logging::LogLevel::Error, "Vulkan", "Cannot create buffer with zero size",
-                                   std::source_location::current());
+        logger.log(Logging::LogLevel::Error, "Vulkan", "Cannot create buffer with zero size", std::source_location::current());
         throw std::runtime_error("Cannot create buffer with zero size");
     }
 
@@ -841,13 +731,10 @@ void createBuffer(VkDevice device, VkPhysicalDevice physicalDevice, VkDeviceSize
     };
 
     VK_CHECK(vkCreateBuffer(device, &bufferInfo, nullptr, &buffer), "Failed to create buffer");
-    Logging::Logger::get().log(Logging::LogLevel::Debug, "Vulkan", "Created buffer: {}",
-                               std::source_location::current(), buffer);
 
     VkMemoryRequirements memRequirements;
     vkGetBufferMemoryRequirements(device, buffer, &memRequirements);
-    Logging::Logger::get().log(Logging::LogLevel::Debug, "Vulkan", "Buffer memory requirements: size={}, alignment={}",
-                               std::source_location::current(), memRequirements.size, memRequirements.alignment);
+    logger.log(Logging::LogLevel::Debug, "Vulkan", "Buffer memory requirements: size={}, alignment={}", std::source_location::current(), memRequirements.size, memRequirements.alignment);
 
     VkPhysicalDeviceMemoryProperties memProperties;
     vkGetPhysicalDeviceMemoryProperties(physicalDevice, &memProperties);
@@ -860,15 +747,13 @@ void createBuffer(VkDevice device, VkPhysicalDevice physicalDevice, VkDeviceSize
             uint32_t current = memoryTypeIndex.load(std::memory_order_relaxed);
             if (current == std::numeric_limits<uint32_t>::max()) {
                 memoryTypeIndex.compare_exchange_strong(current, i, std::memory_order_release, std::memory_order_relaxed);
-                Logging::Logger::get().log(Logging::LogLevel::Debug, "Vulkan", "Selected memory type index: {}",
-                                           std::source_location::current(), i);
+                logger.log(Logging::LogLevel::Debug, "Vulkan", "Selected memory type index: {}", std::source_location::current(), i);
             }
         }
     }
 
     if (memoryTypeIndex.load(std::memory_order_acquire) == std::numeric_limits<uint32_t>::max()) {
-        Logging::Logger::get().log(Logging::LogLevel::Error, "Vulkan", "Failed to find suitable memory type for buffer",
-                                   std::source_location::current());
+        logger.log(Logging::LogLevel::Error, "Vulkan", "Failed to find suitable memory type for buffer", std::source_location::current());
         throw std::runtime_error("Failed to find suitable memory type for buffer");
     }
 
@@ -887,19 +772,15 @@ void createBuffer(VkDevice device, VkPhysicalDevice physicalDevice, VkDeviceSize
     };
 
     VK_CHECK(vkAllocateMemory(device, &allocInfo, nullptr, &memory), "Failed to allocate buffer memory");
-    Logging::Logger::get().log(Logging::LogLevel::Debug, "Vulkan", "Allocated buffer memory: {}",
-                               std::source_location::current(), memory);
 
     VK_CHECK(vkBindBufferMemory(device, buffer, memory, 0), "Failed to bind buffer memory");
 
-    Logging::Logger::get().log(Logging::LogLevel::Info, "Vulkan", "Buffer created successfully: {}",
-                               std::source_location::current(), buffer);
+    logger.log(Logging::LogLevel::Info, "Vulkan", "Buffer created successfully", std::source_location::current());
 }
 
 void copyBuffer(VkDevice device, VkCommandPool commandPool, VkQueue graphicsQueue, VkBuffer src, VkBuffer dst,
-                VkDeviceSize size) {
-    Logging::Logger::get().log(Logging::LogLevel::Info, "Vulkan", "Copying buffer with size={} from src={} to dst={}",
-                               std::source_location::current(), size, src, dst);
+                VkDeviceSize size, const Logging::Logger& logger) {
+    logger.log(Logging::LogLevel::Info, "Vulkan", "Copying buffer with size={}", std::source_location::current(), size);
 
     VkCommandBufferAllocateInfo allocInfo{
         .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
@@ -911,8 +792,6 @@ void copyBuffer(VkDevice device, VkCommandPool commandPool, VkQueue graphicsQueu
 
     VkCommandBuffer commandBuffer;
     VK_CHECK(vkAllocateCommandBuffers(device, &allocInfo, &commandBuffer), "Failed to allocate command buffer for copy");
-    Logging::Logger::get().log(Logging::LogLevel::Debug, "Vulkan", "Allocated command buffer for copy: {}",
-                               std::source_location::current(), commandBuffer);
 
     VkCommandBufferBeginInfo beginInfo{
         .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
@@ -929,8 +808,7 @@ void copyBuffer(VkDevice device, VkCommandPool commandPool, VkQueue graphicsQueu
         .size = size
     };
     vkCmdCopyBuffer(commandBuffer, src, dst, 1, &copyRegion);
-    Logging::Logger::get().log(Logging::LogLevel::Debug, "Vulkan", "Recorded buffer copy command from {} to {}",
-                               std::source_location::current(), src, dst);
+    logger.log(Logging::LogLevel::Debug, "Vulkan", "Recorded buffer copy command", std::source_location::current());
 
     VK_CHECK(vkEndCommandBuffer(commandBuffer), "Failed to end command buffer");
 
@@ -951,96 +829,77 @@ void copyBuffer(VkDevice device, VkCommandPool commandPool, VkQueue graphicsQueu
     VK_CHECK(vkQueueWaitIdle(graphicsQueue), "Failed to wait for queue");
 
     vkFreeCommandBuffers(device, commandPool, 1, &commandBuffer);
-    Logging::Logger::get().log(Logging::LogLevel::Info, "Vulkan", "Buffer copy completed successfully from {} to {}",
-                               std::source_location::current(), src, dst);
+    logger.log(Logging::LogLevel::Info, "Vulkan", "Buffer copy completed successfully", std::source_location::current());
 }
 
 void createVertexBuffer(VkDevice device, VkPhysicalDevice physicalDevice, VkCommandPool commandPool, VkQueue graphicsQueue,
                         VkBuffer& vertexBuffer, VkDeviceMemory& vertexBufferMemory, VkBuffer& stagingBuffer,
-                        VkDeviceMemory& stagingBufferMemory, std::span<const glm::vec3> vertices) {
-    Logging::Logger::get().log(Logging::LogLevel::Info, "Vulkan", "Creating vertex buffer with {} vertices",
-                               std::source_location::current(), vertices.size());
+                        VkDeviceMemory& stagingBufferMemory, std::span<const glm::vec3> vertices, const Logging::Logger& logger) {
+    logger.log(Logging::LogLevel::Info, "Vulkan", "Creating vertex buffer with {} vertices", std::source_location::current(), vertices.size());
 
     if (vertices.empty()) {
-        Logging::Logger::get().log(Logging::LogLevel::Error, "Vulkan", "Cannot create vertex buffer: empty vertices span",
-                                   std::source_location::current());
+        logger.log(Logging::LogLevel::Error, "Vulkan", "Cannot create vertex buffer: empty vertices span", std::source_location::current());
         throw std::runtime_error("Cannot create vertex buffer: empty vertices span");
     }
 
     VkDeviceSize bufferSize = sizeof(glm::vec3) * vertices.size();
-    Logging::Logger::get().log(Logging::LogLevel::Debug, "Vulkan", "Vertex buffer size: {} bytes",
-                               std::source_location::current(), bufferSize);
+    logger.log(Logging::LogLevel::Debug, "Vulkan", "Vertex buffer size: {} bytes", std::source_location::current(), bufferSize);
 
     createBuffer(device, physicalDevice, bufferSize,
                  VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
                  VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                 stagingBuffer, stagingBufferMemory);
-    Logging::Logger::get().log(Logging::LogLevel::Debug, "Vulkan", "Created staging buffer: {}, memory: {}",
-                               std::source_location::current(), stagingBuffer, stagingBufferMemory);
+                 stagingBuffer, stagingBufferMemory, logger);
 
     void* data;
     VK_CHECK(vkMapMemory(device, stagingBufferMemory, 0, bufferSize, 0, &data), "Failed to map staging buffer memory");
     std::memcpy(data, vertices.data(), static_cast<size_t>(bufferSize));
     vkUnmapMemory(device, stagingBufferMemory);
-    Logging::Logger::get().log(Logging::LogLevel::Debug, "Vulkan", "Copied vertex data to staging buffer: {}",
-                               std::source_location::current(), stagingBuffer);
+    logger.log(Logging::LogLevel::Debug, "Vulkan", "Copied vertex data to staging buffer", std::source_location::current());
 
     createBuffer(device, physicalDevice, bufferSize,
                  VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT |
                  VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
                  VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR,
                  VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-                 vertexBuffer, vertexBufferMemory);
-    Logging::Logger::get().log(Logging::LogLevel::Debug, "Vulkan", "Created vertex buffer: {}, memory: {}",
-                               std::source_location::current(), vertexBuffer, vertexBufferMemory);
+                 vertexBuffer, vertexBufferMemory, logger);
 
-    copyBuffer(device, commandPool, graphicsQueue, stagingBuffer, vertexBuffer, bufferSize);
-    Logging::Logger::get().log(Logging::LogLevel::Info, "Vulkan", "Vertex buffer created successfully: {}",
-                               std::source_location::current(), vertexBuffer);
+    copyBuffer(device, commandPool, graphicsQueue, stagingBuffer, vertexBuffer, bufferSize, logger);
+    logger.log(Logging::LogLevel::Info, "Vulkan", "Vertex buffer created successfully", std::source_location::current());
 }
 
 void createIndexBuffer(VkDevice device, VkPhysicalDevice physicalDevice, VkCommandPool commandPool, VkQueue graphicsQueue,
                        VkBuffer& indexBuffer, VkDeviceMemory& indexBufferMemory, VkBuffer& indexBufferStaging,
-                       VkDeviceMemory& indexBufferStagingMemory, std::span<const uint32_t> indices) {
-    Logging::Logger::get().log(Logging::LogLevel::Info, "Vulkan", "Creating index buffer with {} indices",
-                               std::source_location::current(), indices.size());
+                       VkDeviceMemory& indexBufferStagingMemory, std::span<const uint32_t> indices, const Logging::Logger& logger) {
+    logger.log(Logging::LogLevel::Info, "Vulkan", "Creating index buffer with {} indices", std::source_location::current(), indices.size());
 
     if (indices.empty()) {
-        Logging::Logger::get().log(Logging::LogLevel::Error, "Vulkan", "Cannot create index buffer: empty indices span",
-                                   std::source_location::current());
+        logger.log(Logging::LogLevel::Error, "Vulkan", "Cannot create index buffer: empty indices span", std::source_location::current());
         throw std::runtime_error("Cannot create index buffer: empty indices span");
     }
 
     VkDeviceSize bufferSize = sizeof(uint32_t) * indices.size();
-    Logging::Logger::get().log(Logging::LogLevel::Debug, "Vulkan", "Index buffer size: {} bytes",
-                               std::source_location::current(), bufferSize);
+    logger.log(Logging::LogLevel::Debug, "Vulkan", "Index buffer size: {} bytes", std::source_location::current(), bufferSize);
 
     createBuffer(device, physicalDevice, bufferSize,
                  VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
                  VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                 indexBufferStaging, indexBufferStagingMemory);
-    Logging::Logger::get().log(Logging::LogLevel::Debug, "Vulkan", "Created index staging buffer: {}, memory: {}",
-                               std::source_location::current(), indexBufferStaging, indexBufferStagingMemory);
+                 indexBufferStaging, indexBufferStagingMemory, logger);
 
     void* data;
     VK_CHECK(vkMapMemory(device, indexBufferStagingMemory, 0, bufferSize, 0, &data), "Failed to map staging buffer memory");
     std::memcpy(data, indices.data(), static_cast<size_t>(bufferSize));
     vkUnmapMemory(device, indexBufferStagingMemory);
-    Logging::Logger::get().log(Logging::LogLevel::Debug, "Vulkan", "Copied index data to staging buffer: {}",
-                               std::source_location::current(), indexBufferStaging);
+    logger.log(Logging::LogLevel::Debug, "Vulkan", "Copied index data to staging buffer", std::source_location::current());
 
     createBuffer(device, physicalDevice, bufferSize,
                  VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT |
                  VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
                  VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR,
                  VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-                 indexBuffer, indexBufferMemory);
-    Logging::Logger::get().log(Logging::LogLevel::Debug, "Vulkan", "Created index buffer: {}, memory: {}",
-                               std::source_location::current(), indexBuffer, indexBufferMemory);
+                 indexBuffer, indexBufferMemory, logger);
 
-    copyBuffer(device, commandPool, graphicsQueue, indexBufferStaging, indexBuffer, bufferSize);
-    Logging::Logger::get().log(Logging::LogLevel::Info, "Vulkan", "Index buffer created successfully: {}",
-                               std::source_location::current(), indexBuffer);
+    copyBuffer(device, commandPool, graphicsQueue, indexBufferStaging, indexBuffer, bufferSize, logger);
+    logger.log(Logging::LogLevel::Info, "Vulkan", "Index buffer created successfully", std::source_location::current());
 }
 
 } // namespace VulkanInitializer

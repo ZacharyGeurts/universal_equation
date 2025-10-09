@@ -8,7 +8,7 @@
 
 #include "engine/Vulkan/Vulkan_func_pipe.hpp"
 #include "engine/Vulkan/Vulkan_func_swapchain.hpp" // For vkResultToString, vkFormatToString
-#include "engine/logging.hpp" // For Logging::Logger
+#include "engine/logging.hpp" // For LOG_*_CAT macros
 #include <stdexcept>
 #include <fstream>
 #include <glm/glm.hpp>
@@ -20,7 +20,7 @@
 
 namespace VulkanInitializer {
 
-VkShaderModule createShaderModule(VkDevice device, const std::string& filename, const Logging::Logger& logger) {
+VkShaderModule createShaderModule(VkDevice device, const std::string& filename) {
     LOG_INFO_CAT("Vulkan", "Creating shader module from file: {}", std::source_location::current(), filename);
 
     std::ifstream file(filename, std::ios::ate | std::ios::binary);
@@ -56,7 +56,7 @@ VkShaderModule createShaderModule(VkDevice device, const std::string& filename, 
     return shaderModule;
 }
 
-void createRenderPass(VkDevice device, VkRenderPass& renderPass, VkFormat format, const Logging::Logger& logger) {
+void createRenderPass(VkDevice device, VkRenderPass& renderPass, VkFormat format) {
     LOG_INFO_CAT("Vulkan", "Creating render pass with format: {}", std::source_location::current(), format);
 
     VkAttachmentDescription colorAttachment{
@@ -116,7 +116,7 @@ void createRenderPass(VkDevice device, VkRenderPass& renderPass, VkFormat format
     LOG_INFO_CAT("Vulkan", "Render pass created successfully", std::source_location::current());
 }
 
-void createDescriptorSetLayout(VkDevice device, VkDescriptorSetLayout& descriptorSetLayout, const Logging::Logger& logger) {
+void createDescriptorSetLayout(VkDevice device, VkDescriptorSetLayout& descriptorSetLayout) {
     LOG_INFO_CAT("Vulkan", "Creating descriptor set layout for sampler", std::source_location::current());
 
     VkDescriptorSetLayoutBinding samplerBinding{
@@ -141,8 +141,7 @@ void createDescriptorSetLayout(VkDevice device, VkDescriptorSetLayout& descripto
 }
 
 void createDescriptorPoolAndSet(VkDevice device, VkDescriptorSetLayout descriptorSetLayout,
-                               VkDescriptorPool& descriptorPool, VkDescriptorSet& descriptorSet, VkSampler sampler,
-                               const Logging::Logger& logger) {
+                               VkDescriptorPool& descriptorPool, VkDescriptorSet& descriptorSet, VkSampler sampler) {
     LOG_INFO_CAT("Vulkan", "Creating descriptor pool and set for sampler", std::source_location::current());
 
     VkDescriptorPoolSize poolSize{
@@ -196,7 +195,7 @@ void createDescriptorPoolAndSet(VkDevice device, VkDescriptorSetLayout descripto
     LOG_INFO_CAT("Vulkan", "Descriptor pool and set created successfully", std::source_location::current());
 }
 
-void createSampler(VkDevice device, VkPhysicalDevice physicalDevice, VkSampler& sampler, const Logging::Logger& logger) {
+void createSampler(VkDevice device, VkPhysicalDevice physicalDevice, VkSampler& sampler) {
     LOG_INFO_CAT("Vulkan", "Creating sampler", std::source_location::current());
 
     VkPhysicalDeviceProperties properties;
@@ -231,8 +230,7 @@ void createSampler(VkDevice device, VkPhysicalDevice physicalDevice, VkSampler& 
 
 void createGraphicsPipeline(VkDevice device, VkRenderPass renderPass, VkPipeline& pipeline,
                            VkPipelineLayout& pipelineLayout, VkDescriptorSetLayout& descriptorSetLayout,
-                           int width, int height, VkShaderModule& vertShaderModule, VkShaderModule& fragShaderModule,
-                           const Logging::Logger& logger) {
+                           int width, int height, VkShaderModule& vertShaderModule, VkShaderModule& fragShaderModule) {
     LOG_INFO_CAT("Vulkan", "Creating graphics pipeline with width={}, height={}", std::source_location::current(), width, height);
 
     VkPipelineShaderStageCreateInfo vertShaderStageInfo{

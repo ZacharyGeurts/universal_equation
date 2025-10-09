@@ -16,7 +16,7 @@
 
 namespace VulkanInitializer {
 
-VkSurfaceFormatKHR selectSurfaceFormat(VkPhysicalDevice physicalDevice, VkSurfaceKHR surface, const Logging::Logger& logger) {
+VkSurfaceFormatKHR selectSurfaceFormat(VkPhysicalDevice physicalDevice, VkSurfaceKHR surface) {
     LOG_INFO_CAT("Vulkan", "Selecting surface format", std::source_location::current());
 
     uint32_t formatCount;
@@ -43,11 +43,10 @@ VkSurfaceFormatKHR selectSurfaceFormat(VkPhysicalDevice physicalDevice, VkSurfac
 
 void createSwapchain(VkPhysicalDevice physicalDevice, VkDevice device, VkSurfaceKHR surface, VkSwapchainKHR& swapchain,
                      std::vector<VkImage>& swapchainImages, std::vector<VkImageView>& swapchainImageViews,
-                     VkFormat& swapchainFormat, uint32_t graphicsFamily, uint32_t presentFamily, int width, int height,
-                     const Logging::Logger& logger) {
+                     VkFormat& swapchainFormat, uint32_t graphicsFamily, uint32_t presentFamily, int width, int height) {
     LOG_INFO_CAT("Vulkan", "Creating swapchain with width={}, height={}", std::source_location::current(), width, height);
 
-    VkSurfaceFormatKHR surfaceFormat = selectSurfaceFormat(physicalDevice, surface, logger);
+    VkSurfaceFormatKHR surfaceFormat = selectSurfaceFormat(physicalDevice, surface);
     swapchainFormat = surfaceFormat.format;
 
     VkSurfaceCapabilitiesKHR capabilities;
@@ -119,8 +118,7 @@ void createSwapchain(VkPhysicalDevice physicalDevice, VkDevice device, VkSurface
 }
 
 void createFramebuffers(VkDevice device, VkRenderPass renderPass, std::vector<VkImageView>& swapchainImageViews,
-                        std::vector<VkFramebuffer>& swapchainFramebuffers, int width, int height,
-                        const Logging::Logger& logger) {
+                        std::vector<VkFramebuffer>& swapchainFramebuffers, int width, int height) {
     LOG_INFO_CAT("Vulkan", "Creating framebuffers", std::source_location::current());
 
     swapchainFramebuffers.resize(swapchainImageViews.size());
