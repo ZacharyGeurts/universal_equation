@@ -1,33 +1,21 @@
+// Vulkan_RTX.hpp
+// AMOURANTH RTX Engine © 2025 by Zachary Geurts gzac5314@gmail.com is licensed under CC BY-NC 4.0
+// Manages Vulkan ray-tracing resources using KHR extensions for AMD, NVIDIA, and Intel GPUs.
+// Dependencies: Vulkan 1.3+, VK_KHR_acceleration_structure, C++20 standard library.
+// Supported platforms: Windows, Linux.
+// Zachary Geurts 2025
+
 #ifndef VULKAN_RTX_HPP
 #define VULKAN_RTX_HPP
-
-// AMOURANTH RTX Engine © 2025 by Zachary Geurts gzac5314@gmail.com is licensed under CC BY-NC 4.0
 
 #define VK_NO_PROTOTYPES
 #include <vulkan/vulkan.h>
 #include <vector>
-#include <string>
 #include <stdexcept>
 #include <atomic>
-#include <mutex> // Added for mutex
+#include <mutex>
 #include <glm/glm.hpp>
 #include <dlfcn.h>
-#include "engine/logging.hpp"
-
-#define VK_CHECK(result, msg) do { \
-    if ((result) != VK_SUCCESS) { \
-        logger_.log(Logging::LogLevel::Error, "{} (Error code: {})", std::source_location::current(), (msg), (result)); \
-        throw VulkanRTXException(std::string(msg) + " (Error code: " + std::to_string(static_cast<int>(result)) + ")"); \
-    } \
-} while (0)
-
-// Define operator== for VkAccelerationStructureBuildRangeInfoKHR in global namespace
-inline bool operator==(const VkAccelerationStructureBuildRangeInfoKHR& lhs, const VkAccelerationStructureBuildRangeInfoKHR& rhs) {
-    return lhs.primitiveCount == rhs.primitiveCount &&
-           lhs.primitiveOffset == rhs.primitiveOffset &&
-           lhs.firstVertex == rhs.firstVertex &&
-           lhs.transformOffset == rhs.transformOffset;
-}
 
 class VulkanRTXException : public std::runtime_error {
 public:
@@ -101,7 +89,11 @@ class VulkanDescriptorSet {
 public:
     VulkanDescriptorSet(VkDevice device, VkDescriptorPool pool, VkDescriptorSet set, PFN_vkFreeDescriptorSets freeFunc)
         : device_(device), pool_(pool), set_(set), vkFreeDescriptorSets_(freeFunc) {}
-    ~VulkanDescriptorSet();
+    ~VulkanDescriptorSet() {
+        if (set_ != VK_NULL_HANDLE && vkFreeDescriptorSets_) {
+            vkFreeDescriptorSets_(device_, pool_, 1, &set_);
+        }
+    }
     VulkanDescriptorSet(const VulkanDescriptorSet&) = delete;
     VulkanDescriptorSet& operator=(const VulkanDescriptorSet&) = delete;
     VulkanDescriptorSet(VulkanDescriptorSet&& other) noexcept
@@ -109,7 +101,20 @@ public:
         other.set_ = VK_NULL_HANDLE;
         other.vkFreeDescriptorSets_ = nullptr;
     }
-    VulkanDescriptorSet& operator=(VulkanDescriptorSet&& other) noexcept;
+    VulkanDescriptorSet& operator=(VulkanDescriptorSet&& other) noexcept {
+        if (this != &other) {
+            if (set_ != VK_NULL_HANDLE && vkFreeDescriptorSets_) {
+                vkFreeDescriptorSets_(device_, pool_, 1, &set_);
+            }
+            device_ = other.device_;
+            pool_ = other.pool_;
+            set_ = other.set_;
+            vkFreeDescriptorSets_ = other.vkFreeDescriptorSets_;
+            other.set_ = VK_NULL_HANDLE;
+            other.vkFreeDescriptorSets_ = nullptr;
+        }
+        return *this;
+    }
     VkDescriptorSet get() const { return set_; }
 private:
     VkDevice device_;
@@ -126,18 +131,57 @@ public:
         VkStridedDeviceAddressRegionKHR hit{};
         VkStridedDeviceAddressRegionKHR callable{};
         VulkanRTX* parent;
+        VulkanResource<VkBuffer, PFN_vkDestroyBuffer> buffer;
+        VulkanResource<VkDeviceMemory, PFN_vkFreeMemory> memory;
 
         ShaderBindingTable(VkDevice device, VulkanRTX* parent_);
         ~ShaderBindingTable();
         ShaderBindingTable(ShaderBindingTable&& other) noexcept;
         ShaderBindingTable& operator=(ShaderBindingTable&& other) noexcept;
-
-        VulkanResource<VkBuffer, PFN_vkDestroyBuffer> buffer;
-        VulkanResource<VkDeviceMemory, PFN_vkFreeMemory> memory;
     };
 
-    VulkanRTX(VkDevice device, const std::vector<std::string>& shaderPaths, Logging::Logger logger = Logging::Logger());
+    VulkanRTX(VkDevice device, const std::vector<std::string>& shaderPaths);
     ~VulkanRTX() = default;
+
+    // Getters
+    VkDescriptorSetLayout getDescriptorSetLayout() const { return dsLayout_.get(); }
+    VkDescriptorPool getDescriptorPool() const { return dsPool_.get(); }
+    VkDescriptorSet getDescriptorSet() const { return ds_.get(); }
+    VkPipelineLayout getPipelineLayout() const { return rtPipelineLayout_.get(); }
+    VkPipeline getPipeline() const { return rtPipeline_.get(); }
+    VkBuffer getBLASBuffer() const { return blasBuffer_.get(); }
+    VkDeviceMemory getBLASMemory() const { return blasMemory_.get(); }
+    VkBuffer getTLASBuffer() const { return tlasBuffer_.get(); }
+    VkDeviceMemory getTLASMemory() const { return tlasMemory_.get(); }
+    VkAccelerationStructureKHR getBLAS() const { return blas_.get(); }
+    VkAccelerationStructureKHR getTLAS() const { return tlas_.get(); }
+    VkExtent2D getExtent() const { return extent_; }
+    const std::vector<VkAccelerationStructureBuildRangeInfoKHR>& getPrimitiveCounts() const { return primitiveCounts_; }
+    const std::vector<VkAccelerationStructureBuildRangeInfoKHR>& getPreviousPrimitiveCounts() const { return previousPrimitiveCounts_; }
+    const std::vector<DimensionData>& getPreviousDimensionCache() const { return previousDimensionCache_; }
+    bool getSupportsCompaction() const { return supportsCompaction_; }
+    ShaderFeatures getShaderFeatures() const { return shaderFeatures_; }
+    const ShaderBindingTable& getShaderBindingTable() const { return sbt_; }
+
+    // Setters
+    void setDescriptorSetLayout(VkDescriptorSetLayout layout) { dsLayout_ = VulkanResource<VkDescriptorSetLayout, PFN_vkDestroyDescriptorSetLayout>(device_, layout, vkDestroyDescriptorSetLayout); }
+    void setDescriptorPool(VkDescriptorPool pool) { dsPool_ = VulkanResource<VkDescriptorPool, PFN_vkDestroyDescriptorPool>(device_, pool, vkDestroyDescriptorPool); }
+    void setDescriptorSet(VkDescriptorSet set) { ds_ = VulkanDescriptorSet(device_, dsPool_.get(), set, vkFreeDescriptorSets); }
+    void setPipelineLayout(VkPipelineLayout layout) { rtPipelineLayout_ = VulkanResource<VkPipelineLayout, PFN_vkDestroyPipelineLayout>(device_, layout, vkDestroyPipelineLayout); }
+    void setPipeline(VkPipeline pipeline) { rtPipeline_ = VulkanResource<VkPipeline, PFN_vkDestroyPipeline>(device_, pipeline, vkDestroyPipeline); }
+    void setBLASBuffer(VkBuffer buffer) { blasBuffer_ = VulkanResource<VkBuffer, PFN_vkDestroyBuffer>(device_, buffer, vkDestroyBuffer); }
+    void setBLASMemory(VkDeviceMemory memory) { blasMemory_ = VulkanResource<VkDeviceMemory, PFN_vkFreeMemory>(device_, memory, vkFreeMemory); }
+    void setTLASBuffer(VkBuffer buffer) { tlasBuffer_ = VulkanResource<VkBuffer, PFN_vkDestroyBuffer>(device_, buffer, vkDestroyBuffer); }
+    void setTLASMemory(VkDeviceMemory memory) { tlasMemory_ = VulkanResource<VkDeviceMemory, PFN_vkFreeMemory>(device_, memory, vkFreeMemory); }
+    void setBLAS(VkAccelerationStructureKHR as) { blas_ = VulkanResource<VkAccelerationStructureKHR, PFN_vkDestroyAccelerationStructureKHR>(device_, as, vkDestroyASFunc); }
+    void setTLAS(VkAccelerationStructureKHR as) { tlas_ = VulkanResource<VkAccelerationStructureKHR, PFN_vkDestroyAccelerationStructureKHR>(device_, as, vkDestroyASFunc); }
+    void setExtent(VkExtent2D extent) { extent_ = extent; }
+    void setPrimitiveCounts(const std::vector<VkAccelerationStructureBuildRangeInfoKHR>& counts) { primitiveCounts_ = counts; }
+    void setPreviousPrimitiveCounts(const std::vector<VkAccelerationStructureBuildRangeInfoKHR>& counts) { previousPrimitiveCounts_ = counts; }
+    void setPreviousDimensionCache(const std::vector<DimensionData>& cache) { previousDimensionCache_ = cache; }
+    void setSupportsCompaction(bool supports) { supportsCompaction_ = supports; }
+    void setShaderFeatures(ShaderFeatures features) { shaderFeatures_ = features; }
+    void setShaderBindingTable(ShaderBindingTable sbt) { sbt_ = std::move(sbt); }
 
     void createDescriptorSetLayout();
     void createDescriptorPoolAndSet();
@@ -182,12 +226,11 @@ public:
 private:
     static std::atomic<bool> functionPtrInitialized_;
     static std::atomic<bool> shaderModuleInitialized_;
-    static std::mutex functionPtrMutex_; // Added static mutex
-    static std::mutex shaderModuleMutex_; // Added static mutex
+    static std::mutex functionPtrMutex_;
+    static std::mutex shaderModuleMutex_;
 
     VkDevice device_;
     std::vector<std::string> shaderPaths_;
-    Logging::Logger logger_;
     VulkanResource<VkDescriptorSetLayout, PFN_vkDestroyDescriptorSetLayout> dsLayout_;
     VulkanResource<VkDescriptorPool, PFN_vkDestroyDescriptorPool> dsPool_;
     VulkanDescriptorSet ds_;
@@ -265,28 +308,6 @@ private:
     PFN_vkCmdDispatch vkCmdDispatch;
     PFN_vkDestroyShaderModule vkDestroyShaderModule;
 };
-
-// Define VulkanDescriptorSet methods inline
-inline VulkanDescriptorSet::~VulkanDescriptorSet() {
-    if (set_ != VK_NULL_HANDLE && vkFreeDescriptorSets_) {
-        vkFreeDescriptorSets_(device_, pool_, 1, &set_);
-    }
-}
-
-inline VulkanDescriptorSet& VulkanDescriptorSet::operator=(VulkanDescriptorSet&& other) noexcept {
-    if (this != &other) {
-        if (set_ != VK_NULL_HANDLE && vkFreeDescriptorSets_) {
-            vkFreeDescriptorSets_(device_, pool_, 1, &set_);
-        }
-        device_ = other.device_;
-        pool_ = other.pool_;
-        set_ = other.set_;
-        vkFreeDescriptorSets_ = other.vkFreeDescriptorSets_;
-        other.set_ = VK_NULL_HANDLE;
-        other.vkFreeDescriptorSets_ = nullptr;
-    }
-    return *this;
-}
 
 } // namespace VulkanRTX
 

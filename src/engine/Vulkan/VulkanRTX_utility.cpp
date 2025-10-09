@@ -1,15 +1,15 @@
 // VulkanRTX_Utility.cpp
 // AMOURANTH RTX Engine © 2025 by Zachary Geurts gzac5314@gmail.com is licensed under CC BY-NC 4.0
+#include "engine/logging.hpp"
 #include "engine/Vulkan/Vulkan_RTX.hpp"
 #include <stdexcept>
-#include <format>
 #include <syncstream>
 #include <iostream>
 
-// Define color macros for logging
-#define GREEN "\033[32m"
-#define MAGENTA "\033[35m"
-#define RESET "\033[0m"
+// Define VK_CHECK if not already defined, converting VkResult to int for formatting
+#ifndef VK_CHECK
+#define VK_CHECK(result, msg) do { if ((result) != VK_SUCCESS) { LOG_ERROR_CAT("Vulkan", "{} (VkResult: {})", std::source_location::current(), (msg), static_cast<int>(result)); throw VulkanRTXException((msg)); } } while (0)
+#endif
 
 namespace VulkanRTX {
 
@@ -22,14 +22,14 @@ uint32_t VulkanRTX::findMemoryType(VkPhysicalDevice physicalDevice, uint32_t typ
             return i;
         }
     }
-    std::osyncstream(std::cerr) << MAGENTA << "[ERROR] Failed to find suitable memory type" << RESET << std::endl;
+    LOG_ERROR_CAT("Vulkan", "Failed to find suitable memory type", std::source_location::current());
     throw VulkanRTXException("Failed to find suitable memory type.");
 }
 
 void VulkanRTX::createBuffer(VkPhysicalDevice physicalDevice, VkDeviceSize size, VkBufferUsageFlags usage,
                              VkMemoryPropertyFlags props, VulkanResource<VkBuffer, PFN_vkDestroyBuffer>& buffer,
                              VulkanResource<VkDeviceMemory, PFN_vkFreeMemory>& memory) {
-    std::osyncstream(std::cout) << GREEN << "[INFO] Creating buffer of size " << size << RESET << std::endl;
+    LOG_INFO_CAT("Vulkan", "Creating buffer of size {}", std::source_location::current(), size);
 
     VkBufferCreateInfo bufferInfo = {
         .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
@@ -63,11 +63,11 @@ void VulkanRTX::createBuffer(VkPhysicalDevice physicalDevice, VkDeviceSize size,
     buffer = VulkanResource<VkBuffer, PFN_vkDestroyBuffer>(device_, tempBuffer, vkDestroyBuffer);
     memory = VulkanResource<VkDeviceMemory, PFN_vkFreeMemory>(device_, tempMemory, vkFreeMemory);
 
-    std::osyncstream(std::cout) << GREEN << "[INFO] Created buffer successfully" << RESET << std::endl;
+    LOG_INFO_CAT("Vulkan", "Created buffer successfully", std::source_location::current());
 }
 
 VkCommandBuffer VulkanRTX::allocateTransientCommandBuffer(VkCommandPool commandPool) {
-    std::osyncstream(std::cout) << GREEN << "[INFO] Allocating transient command buffer" << RESET << std::endl;
+    LOG_INFO_CAT("Vulkan", "Allocating transient command buffer", std::source_location::current());
 
     VkCommandBufferAllocateInfo allocInfo = {
         .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
@@ -83,7 +83,7 @@ VkCommandBuffer VulkanRTX::allocateTransientCommandBuffer(VkCommandPool commandP
 }
 
 void VulkanRTX::submitAndWaitTransient(VkCommandBuffer cmdBuffer, VkQueue queue, VkCommandPool commandPool) {
-    std::osyncstream(std::cout) << GREEN << "[INFO] Submitting and waiting for transient command buffer" << RESET << std::endl;
+    LOG_INFO_CAT("Vulkan", "Submitting and waiting for transient command buffer", std::source_location::current());
 
     VkSubmitInfo submitInfo = {
         .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
@@ -101,7 +101,7 @@ void VulkanRTX::submitAndWaitTransient(VkCommandBuffer cmdBuffer, VkQueue queue,
     VK_CHECK(vkQueueWaitIdle(queue), "Queue wait idle failed");
 
     vkFreeCommandBuffers(device_, commandPool, 1, &cmdBuffer);
-    std::osyncstream(std::cout) << GREEN << "[INFO] Transient command buffer submitted and freed" << RESET << std::endl;
+    LOG_INFO_CAT("Vulkan", "Transient command buffer submitted and freed", std::source_location::current());
 }
 
 } // namespace VulkanRTX

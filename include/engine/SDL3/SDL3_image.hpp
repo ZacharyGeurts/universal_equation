@@ -6,7 +6,6 @@
 #pragma once
 #include <SDL3/SDL.h>
 #include <string>
-#include "engine/logging.hpp"
 
 extern "C" {
 #include <SDL3_image/SDL_image.h>

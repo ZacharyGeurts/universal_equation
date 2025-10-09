@@ -1,29 +1,32 @@
 // AMOURANTH RTX Engine, October 2025 - SDL3 window creation and management.
-// Dependencies: SDL3, Vulkan 1.3+, C++20 standard library.
+// Dependencies: SDL3, Vulkan 1.3+, C++20 standard library, logging.hpp.
 // Supported platforms: Linux, Windows.
 // Zachary Geurts 2025
 
 #include "engine/SDL3/SDL3_window.hpp"
+#include "engine/logging.hpp"
 #include <SDL3/SDL_vulkan.h>
 #include <stdexcept>
-#include <string>
+#include <source_location>
 
 namespace SDL3Initializer {
 
-std::unique_ptr<SDL_Window, SDLWindowDeleter> createWindow(
+void SDLWindowDeleter::operator()(SDL_Window* w) const {
+    if (w) {
+        LOG_INFO_CAT("General", "Destroying SDL window", std::source_location::current());
+        SDL_DestroyWindow(w);
+    }
+}
+
+SDLWindowPtr createWindow(
     const char* title, 
     int w, 
     int h, 
-    Uint32 flags,
-    std::function<void(const std::string&)> logMessage) 
+    Uint32 flags) 
 {
-    Logging::Logger logger;
-    std::string logMsg = "Creating SDL window with title=" + std::string(title) + 
-                         ", width=" + std::to_string(w) + 
-                         ", height=" + std::to_string(h) + 
-                         ", flags=0x" + std::to_string(flags);
-    logMessage(logMsg);
-    
+    LOG_INFO_CAT("General", "Creating SDL window with title={}, width={}, height={}, flags=0x{:x}", 
+                 std::source_location::current(), title, w, h, flags);
+
     // Ensure Vulkan flag is set
     flags |= SDL_WINDOW_VULKAN;
     
@@ -31,34 +34,26 @@ std::unique_ptr<SDL_Window, SDLWindowDeleter> createWindow(
     SDL_SetHint(SDL_HINT_VIDEO_DRIVER, "wayland,x11");
     
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS) == 0) {
-        std::string error = "SDL_Init failed: " + std::string(SDL_GetError());
-        logMessage(error);
-        logger.log(Logging::LogLevel::Error, "{}", std::source_location::current(), error);
-        throw std::runtime_error(error);
+        LOG_ERROR_CAT("General", "SDL_Init failed: {}", std::source_location::current(), SDL_GetError());
+        throw std::runtime_error(std::string("SDL_Init failed: ") + SDL_GetError());
     }
 
-    auto window = std::unique_ptr<SDL_Window, SDLWindowDeleter>(
-        SDL_CreateWindow(title, w, h, flags)
-    );
+    SDLWindowPtr window(SDL_CreateWindow(title, w, h, flags));
     if (!window) {
-        std::string error = "SDL_CreateWindow failed: " + std::string(SDL_GetError());
-        logMessage(error);
-        logger.log(Logging::LogLevel::Error, "{}", std::source_location::current(), error);
-        throw std::runtime_error(error);
+        LOG_ERROR_CAT("General", "SDL_CreateWindow failed: {}", std::source_location::current(), SDL_GetError());
+        throw std::runtime_error(std::string("SDL_CreateWindow failed: ") + SDL_GetError());
     }
 
     // Log video driver and window flags
     const char* videoDriver = SDL_GetCurrentVideoDriver();
-    std::string driverLog = "SDL window created with video driver: " + 
-                            std::string(videoDriver ? videoDriver : "none") + 
-                            ", flags=0x" + std::to_string(SDL_GetWindowFlags(window.get()));
-    logMessage(driverLog);
-    logger.log(Logging::LogLevel::Info, "{}", std::source_location::current(), driverLog);
+    LOG_INFO_CAT("General", "SDL window created with video driver: {}, flags=0x{:x}", 
+                 std::source_location::current(), videoDriver ? videoDriver : "none", SDL_GetWindowFlags(window.get()));
 
     return window;
 }
 
-SDL_Window* getWindow(const std::unique_ptr<SDL_Window, SDLWindowDeleter>& window) {
+SDL_Window* getWindow(const SDLWindowPtr& window) {
+    LOG_DEBUG_CAT("General", "Retrieving SDL window", std::source_location::current());
     return window.get();
 }
 

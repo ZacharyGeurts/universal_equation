@@ -1,4 +1,4 @@
-// engine/Vulkan/Vulkan_func.hpp
+// Vulkan_func.hpp
 // AMOURANTH RTX Engine, October 2025 - Vulkan core utilities for initialization and buffer management.
 // Supports Windows/Linux (X11/Wayland); no mutexes; compatible with voxel geometry rendering.
 // Dependencies: Vulkan 1.3+, GLM, C++20 standard library.
@@ -16,7 +16,6 @@
 #include <optional>
 #include <array>
 #include <glm/glm.hpp>
-#include <format>
 #include "engine/logging.hpp" // For Logging::Logger
 
 struct PushConstants {

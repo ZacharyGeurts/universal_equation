@@ -9,15 +9,12 @@
 #include <SDL3/SDL.h>
 #include <vulkan/vulkan.h>
 #include <memory>
-#include <string>
-#include <functional>
-#include "engine/logging.hpp"
 
 // Platform-specific includes for window-related Vulkan surface creation
 #ifdef _WIN32
 #include <vulkan/vulkan_win32.h>
 #elif defined(__linux__)
-#include <X11/Xlib.h>
+#include <X11/Xlib.h> // Added before vulkan_xlib.h for Display, Window, VisualID
 #include <vulkan/vulkan_xlib.h>
 #include <vulkan/vulkan_wayland.h>
 #endif
@@ -25,27 +22,19 @@
 namespace SDL3Initializer {
 
 struct SDLWindowDeleter {
-    void operator()(SDL_Window* w) const {
-        Logging::Logger logger;
-        if (w) {
-            logger.log(Logging::LogLevel::Info, "Destroying SDL window", std::source_location::current());
-            SDL_DestroyWindow(w);
-        }
-    }
+    void operator()(SDL_Window* w) const;
 };
 
-std::unique_ptr<SDL_Window, SDLWindowDeleter> createWindow(
+using SDLWindowPtr = std::unique_ptr<SDL_Window, SDLWindowDeleter>;
+
+SDLWindowPtr createWindow(
     const char* title, 
     int w, 
     int h, 
-    Uint32 flags = SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE,
-    std::function<void(const std::string&)> logMessage = [](const std::string& msg) {
-        Logging::Logger logger;
-        logger.log(Logging::LogLevel::Info, "{}", std::source_location::current(), msg);
-    }
+    Uint32 flags = SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE
 );
 
-SDL_Window* getWindow(const std::unique_ptr<SDL_Window, SDLWindowDeleter>& window);
+SDL_Window* getWindow(const SDLWindowPtr& window);
 
 } // namespace SDL3Initializer
 

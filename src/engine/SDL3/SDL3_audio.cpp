@@ -5,26 +5,23 @@
 // Zachary Geurts 2025
 
 #include "engine/SDL3/SDL3_audio.hpp"
+#include "engine/logging.hpp"
 #include <SDL3/SDL.h>
 #include <stdexcept>
 #include <vector>
-#include <sstream>
 #include <source_location>
 
 namespace SDL3Audio {
 
-void initAudio(const AudioConfig& c, SDL_AudioDeviceID& audioDevice, SDL_AudioStream*& audioStream, const Logging::Logger& logger) {
-    std::stringstream ss;
-    ss << "Initializing audio with frequency: " << c.frequency << ", channels: " << c.channels << ", format: 0x" << std::hex << c.format;
-    logger.log(Logging::LogLevel::Info, ss.str(), std::source_location::current());
+void initAudio(const AudioConfig& c, SDL_AudioDeviceID& audioDevice, SDL_AudioStream*& audioStream) {
+    LOG_INFO_CAT("Audio", "Initializing audio with frequency: {}, channels: {}, format: {:#x}", 
+                 std::source_location::current(), c.frequency, c.channels, static_cast<uint16_t>(c.format));
 
     // Verify platform support
     std::string_view platform = SDL_GetPlatform();
     if (platform != "Linux" && platform != "Windows") {
-        std::stringstream error_ss;
-        error_ss << "Unsupported platform for audio: " << platform;
-        logger.log(Logging::LogLevel::Error, error_ss.str(), std::source_location::current());
-        throw std::runtime_error(error_ss.str());
+        LOG_ERROR_CAT("Audio", "Unsupported platform for audio: {}", std::source_location::current(), platform);
+        throw std::runtime_error(std::string("Unsupported platform for audio: ") + std::string(platform));
     }
 
     SDL_AudioSpec desired{};
@@ -32,68 +29,56 @@ void initAudio(const AudioConfig& c, SDL_AudioDeviceID& audioDevice, SDL_AudioSt
     desired.format = c.format;
     desired.channels = c.channels;
 
-    logger.log(Logging::LogLevel::Debug, "Opening audio device", std::source_location::current());
+    LOG_DEBUG_CAT("Audio", "Opening audio device", std::source_location::current());
     audioDevice = SDL_OpenAudioDevice(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &desired);
     if (audioDevice == 0) {
-        std::stringstream error_ss;
-        error_ss << "SDL_OpenAudioDevice failed: " << SDL_GetError();
-        logger.log(Logging::LogLevel::Error, error_ss.str(), std::source_location::current());
-        throw std::runtime_error(error_ss.str());
+        LOG_ERROR_CAT("Audio", "SDL_OpenAudioDevice failed: {}", std::source_location::current(), SDL_GetError());
+        throw std::runtime_error(std::string("SDL_OpenAudioDevice failed: ") + SDL_GetError());
     }
 
     SDL_AudioSpec obtained{};
     int obtainedSamples = 0;
     SDL_GetAudioDeviceFormat(audioDevice, &obtained, &obtainedSamples);
     const char* deviceName = SDL_GetAudioDeviceName(audioDevice);
-    std::stringstream device_ss;
-    device_ss << "Audio device opened: " << (deviceName ? deviceName : "Unknown device");
-    logger.log(Logging::LogLevel::Info, device_ss.str(), std::source_location::current());
+    LOG_INFO_CAT("Audio", "Audio device opened: {}", std::source_location::current(), 
+                 deviceName ? deviceName : "Unknown device");
 
-    std::stringstream status_ss;
-    status_ss << "Audio device status: " << (SDL_AudioDevicePaused(audioDevice) ? "Paused" : "Active");
-    logger.log(Logging::LogLevel::Info, status_ss.str(), std::source_location::current());
+    LOG_INFO_CAT("Audio", "Audio device status: {}", std::source_location::current(), 
+                 SDL_AudioDevicePaused(audioDevice) ? "Paused" : "Active");
 
-    std::stringstream format_ss;
-    format_ss << "Audio device format: frequency=" << obtained.freq << ", channels=" << static_cast<int>(obtained.channels) 
-              << ", format=0x" << std::hex << obtained.format << ", samples=" << obtainedSamples;
-    logger.log(Logging::LogLevel::Info, format_ss.str(), std::source_location::current());
+    LOG_INFO_CAT("Audio", "Audio device format: frequency={}, channels={}, format={:#x}, samples={}", 
+                 std::source_location::current(), obtained.freq, static_cast<int>(obtained.channels), 
+                 static_cast<uint16_t>(obtained.format), obtainedSamples);
 
     if (c.callback) {
-        std::stringstream callback_ss;
-        callback_ss << "Creating audio stream with desired format: frequency=" << desired.freq 
-                    << ", channels=" << static_cast<int>(desired.channels) << ", format=0x" << std::hex << desired.format;
-        logger.log(Logging::LogLevel::Debug, callback_ss.str(), std::source_location::current());
+        LOG_DEBUG_CAT("Audio", "Creating audio stream with desired format: frequency={}, channels={}, format={:#x}", 
+                      std::source_location::current(), desired.freq, static_cast<int>(desired.channels), 
+                      static_cast<uint16_t>(desired.format));
         
         audioStream = SDL_CreateAudioStream(&desired, &obtained);
         if (!audioStream) {
-            std::stringstream error_ss;
-            error_ss << "SDL_CreateAudioStream failed: " << SDL_GetError();
-            logger.log(Logging::LogLevel::Error, error_ss.str(), std::source_location::current());
+            LOG_ERROR_CAT("Audio", "SDL_CreateAudioStream failed: {}", std::source_location::current(), SDL_GetError());
             SDL_CloseAudioDevice(audioDevice);
             audioDevice = 0;
-            throw std::runtime_error(error_ss.str());
+            throw std::runtime_error(std::string("SDL_CreateAudioStream failed: ") + SDL_GetError());
         }
 
-        logger.log(Logging::LogLevel::Debug, "Pausing audio device before binding stream", std::source_location::current());
+        LOG_DEBUG_CAT("Audio", "Pausing audio device before binding stream", std::source_location::current());
         SDL_PauseAudioDevice(audioDevice);
 
-        std::stringstream bind_ss;
-        bind_ss << "Binding audio stream to device ID: " << audioDevice;
-        logger.log(Logging::LogLevel::Debug, bind_ss.str(), std::source_location::current());
+        LOG_DEBUG_CAT("Audio", "Binding audio stream to device ID: {}", std::source_location::current(), audioDevice);
         if (SDL_BindAudioStream(audioDevice, audioStream) == 0) {
-            std::stringstream error_ss;
-            error_ss << "SDL_BindAudioStream failed: " << SDL_GetError();
-            logger.log(Logging::LogLevel::Error, error_ss.str(), std::source_location::current());
+            LOG_ERROR_CAT("Audio", "SDL_BindAudioStream failed: {}", std::source_location::current(), SDL_GetError());
             if (audioStream) {
                 SDL_DestroyAudioStream(audioStream);
                 audioStream = nullptr;
             }
             SDL_CloseAudioDevice(audioDevice);
             audioDevice = 0;
-            throw std::runtime_error(error_ss.str());
+            throw std::runtime_error(std::string("SDL_BindAudioStream failed: ") + SDL_GetError());
         }
 
-        logger.log(Logging::LogLevel::Debug, "Setting audio stream callback", std::source_location::current());
+        LOG_DEBUG_CAT("Audio", "Setting audio stream callback", std::source_location::current());
         SDL_SetAudioStreamPutCallback(audioStream, [](void* userdata, SDL_AudioStream* s, int n, int) {
             auto* callback = static_cast<std::function<void(Uint8*, int)>*>(userdata);
             std::vector<Uint8> buf(n);
@@ -102,16 +87,12 @@ void initAudio(const AudioConfig& c, SDL_AudioDeviceID& audioDevice, SDL_AudioSt
         }, &const_cast<std::function<void(Uint8*, int)>&>(c.callback));
     }
 
-    std::stringstream resume_ss;
-    resume_ss << "Resuming audio device ID: " << audioDevice;
-    logger.log(Logging::LogLevel::Info, resume_ss.str(), std::source_location::current());
+    LOG_INFO_CAT("Audio", "Resuming audio device ID: {}", std::source_location::current(), audioDevice);
     SDL_ResumeAudioDevice(audioDevice);
 }
 
-SDL_AudioDeviceID getAudioDevice(const SDL_AudioDeviceID& audioDevice, const Logging::Logger& logger) {
-    std::stringstream ss;
-    ss << "Retrieving audio device ID: " << audioDevice;
-    logger.log(Logging::LogLevel::Debug, ss.str(), std::source_location::current());
+SDL_AudioDeviceID getAudioDevice(const SDL_AudioDeviceID& audioDevice) {
+    LOG_DEBUG_CAT("Audio", "Retrieving audio device ID: {}", std::source_location::current(), audioDevice);
     return audioDevice;
 }
 

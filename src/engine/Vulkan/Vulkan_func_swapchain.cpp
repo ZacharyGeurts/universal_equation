@@ -1,4 +1,4 @@
-// engine/Vulkan/Vulkan_func_swapchain.cpp
+// Vulkan_func_swapchain.cpp
 // AMOURANTH RTX Engine, October 2025 - Vulkan swapchain utilities implementation.
 // Supports Windows/Linux; no mutexes; voxel geometry rendering.
 // Dependencies: Vulkan 1.3+, C++20 standard library.
@@ -7,31 +7,27 @@
 #include "engine/Vulkan/Vulkan_func_swapchain.hpp"
 #include "engine/logging.hpp"
 #include <stdexcept>
-#include <format>
 #include <vector>
+
+// Define VK_CHECK for consistent error handling
+#ifndef VK_CHECK
+#define VK_CHECK(result, msg) do { if ((result) != VK_SUCCESS) { LOG_ERROR_CAT("Vulkan", "{} (VkResult: {})", std::source_location::current(), (msg), static_cast<int>(result)); throw std::runtime_error((msg)); } } while (0)
+#endif
 
 namespace VulkanInitializer {
 
 VkSurfaceFormatKHR selectSurfaceFormat(VkPhysicalDevice physicalDevice, VkSurfaceKHR surface, const Logging::Logger& logger) {
-    logger.log(Logging::LogLevel::Info, "Selecting surface format", std::source_location::current());
+    LOG_INFO_CAT("Vulkan", "Selecting surface format", std::source_location::current());
 
     uint32_t formatCount;
-    VkResult result = vkGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice, surface, &formatCount, nullptr);
-    if (result != VK_SUCCESS) {
-        logger.log(Logging::LogLevel::Error, "Failed to get surface format count: {}", std::source_location::current(), vkResultToString(result));
-        throw std::runtime_error(std::format("Failed to get surface format count: {}", vkResultToString(result)));
-    }
+    VK_CHECK(vkGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice, surface, &formatCount, nullptr), "Failed to get surface format count");
     if (formatCount == 0) {
-        logger.log(Logging::LogLevel::Error, "No surface formats available", std::source_location::current());
+        LOG_ERROR_CAT("Vulkan", "No surface formats available", std::source_location::current());
         throw std::runtime_error("No surface formats available");
     }
 
     std::vector<VkSurfaceFormatKHR> formats(formatCount);
-    result = vkGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice, surface, &formatCount, formats.data());
-    if (result != VK_SUCCESS) {
-        logger.log(Logging::LogLevel::Error, "Failed to get surface formats: {}", std::source_location::current(), vkResultToString(result));
-        throw std::runtime_error(std::format("Failed to get surface formats: {}", vkResultToString(result)));
-    }
+    VK_CHECK(vkGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice, surface, &formatCount, formats.data()), "Failed to get surface formats");
 
     VkSurfaceFormatKHR selectedFormat = formats[0];
     for (const auto& format : formats) {
@@ -41,7 +37,7 @@ VkSurfaceFormatKHR selectSurfaceFormat(VkPhysicalDevice physicalDevice, VkSurfac
         }
     }
 
-    logger.log(Logging::LogLevel::Info, "Selected surface format: {}", std::source_location::current(), vkFormatToString(selectedFormat.format));
+    LOG_INFO_CAT("Vulkan", "Selected surface format: {}", std::source_location::current(), static_cast<int>(selectedFormat.format));
     return selectedFormat;
 }
 
@@ -49,17 +45,13 @@ void createSwapchain(VkPhysicalDevice physicalDevice, VkDevice device, VkSurface
                      std::vector<VkImage>& swapchainImages, std::vector<VkImageView>& swapchainImageViews,
                      VkFormat& swapchainFormat, uint32_t graphicsFamily, uint32_t presentFamily, int width, int height,
                      const Logging::Logger& logger) {
-    logger.log(Logging::LogLevel::Info, "Creating swapchain with width={}, height={}", std::source_location::current(), width, height);
+    LOG_INFO_CAT("Vulkan", "Creating swapchain with width={}, height={}", std::source_location::current(), width, height);
 
     VkSurfaceFormatKHR surfaceFormat = selectSurfaceFormat(physicalDevice, surface, logger);
     swapchainFormat = surfaceFormat.format;
 
     VkSurfaceCapabilitiesKHR capabilities;
-    VkResult result = vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physicalDevice, surface, &capabilities);
-    if (result != VK_SUCCESS) {
-        logger.log(Logging::LogLevel::Error, "Failed to get surface capabilities: {}", std::source_location::current(), vkResultToString(result));
-        throw std::runtime_error(std::format("Failed to get surface capabilities: {}", vkResultToString(result)));
-    }
+    VK_CHECK(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physicalDevice, surface, &capabilities), "Failed to get surface capabilities");
 
     uint32_t imageCount = capabilities.minImageCount + 1;
     if (capabilities.maxImageCount > 0 && imageCount > capabilities.maxImageCount) {
@@ -94,24 +86,12 @@ void createSwapchain(VkPhysicalDevice physicalDevice, VkDevice device, VkSurface
         .oldSwapchain = VK_NULL_HANDLE
     };
 
-    result = vkCreateSwapchainKHR(device, &createInfo, nullptr, &swapchain);
-    if (result != VK_SUCCESS) {
-        logger.log(Logging::LogLevel::Error, "Failed to create swapchain: {}", std::source_location::current(), vkResultToString(result));
-        throw std::runtime_error(std::format("Failed to create swapchain: {}", vkResultToString(result)));
-    }
+    VK_CHECK(vkCreateSwapchainKHR(device, &createInfo, nullptr, &swapchain), "Failed to create swapchain");
 
     uint32_t swapchainImageCount;
-    result = vkGetSwapchainImagesKHR(device, swapchain, &swapchainImageCount, nullptr);
-    if (result != VK_SUCCESS) {
-        logger.log(Logging::LogLevel::Error, "Failed to get swapchain image count: {}", std::source_location::current(), vkResultToString(result));
-        throw std::runtime_error(std::format("Failed to get swapchain image count: {}", vkResultToString(result)));
-    }
+    VK_CHECK(vkGetSwapchainImagesKHR(device, swapchain, &swapchainImageCount, nullptr), "Failed to get swapchain image count");
     swapchainImages.resize(swapchainImageCount);
-    result = vkGetSwapchainImagesKHR(device, swapchain, &swapchainImageCount, swapchainImages.data());
-    if (result != VK_SUCCESS) {
-        logger.log(Logging::LogLevel::Error, "Failed to get swapchain images: {}", std::source_location::current(), vkResultToString(result));
-        throw std::runtime_error(std::format("Failed to get swapchain images: {}", vkResultToString(result)));
-    }
+    VK_CHECK(vkGetSwapchainImagesKHR(device, swapchain, &swapchainImageCount, swapchainImages.data()), "Failed to get swapchain images");
 
     swapchainImageViews.resize(swapchainImageCount);
     for (size_t i = 0; i < swapchainImageCount; ++i) {
@@ -132,20 +112,16 @@ void createSwapchain(VkPhysicalDevice physicalDevice, VkDevice device, VkSurface
             }
         };
 
-        result = vkCreateImageView(device, &viewInfo, nullptr, &swapchainImageViews[i]);
-        if (result != VK_SUCCESS) {
-            logger.log(Logging::LogLevel::Error, "Failed to create image view for swapchain image {}: {}", std::source_location::current(), i, vkResultToString(result));
-            throw std::runtime_error(std::format("Failed to create image view for swapchain image {}: {}", i, vkResultToString(result)));
-        }
+        VK_CHECK(vkCreateImageView(device, &viewInfo, nullptr, &swapchainImageViews[i]), "Failed to create image view for swapchain image " + std::to_string(i));
     }
 
-    logger.log(Logging::LogLevel::Info, "Swapchain created successfully with format: {}", std::source_location::current(), vkFormatToString(swapchainFormat));
+    LOG_INFO_CAT("Vulkan", "Swapchain created successfully with format: {}", std::source_location::current(), static_cast<int>(swapchainFormat));
 }
 
 void createFramebuffers(VkDevice device, VkRenderPass renderPass, std::vector<VkImageView>& swapchainImageViews,
                         std::vector<VkFramebuffer>& swapchainFramebuffers, int width, int height,
                         const Logging::Logger& logger) {
-    logger.log(Logging::LogLevel::Info, "Creating framebuffers", std::source_location::current());
+    LOG_INFO_CAT("Vulkan", "Creating framebuffers", std::source_location::current());
 
     swapchainFramebuffers.resize(swapchainImageViews.size());
     for (size_t i = 0; i < swapchainImageViews.size(); ++i) {
@@ -161,14 +137,10 @@ void createFramebuffers(VkDevice device, VkRenderPass renderPass, std::vector<Vk
             .layers = 1
         };
 
-        VkResult result = vkCreateFramebuffer(device, &createInfo, nullptr, &swapchainFramebuffers[i]);
-        if (result != VK_SUCCESS) {
-            logger.log(Logging::LogLevel::Error, "Failed to create framebuffer {}: {}", std::source_location::current(), i, vkResultToString(result));
-            throw std::runtime_error(std::format("Failed to create framebuffer {}: {}", i, vkResultToString(result)));
-        }
+        VK_CHECK(vkCreateFramebuffer(device, &createInfo, nullptr, &swapchainFramebuffers[i]), "Failed to create framebuffer " + std::to_string(i));
     }
 
-    logger.log(Logging::LogLevel::Info, "Framebuffers created successfully", std::source_location::current());
+    LOG_INFO_CAT("Vulkan", "Framebuffers created successfully", std::source_location::current());
 }
 
 } // namespace VulkanInitializer

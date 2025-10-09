@@ -1,3 +1,4 @@
+// engine/logging.hpp
 // AMOURANTH RTX Engine, October 2025 - Enhanced thread-safe, asynchronous logging.
 // Thread-safe, asynchronous logging with ANSI-colored output, source location, and delta time.
 // Supports C++20 std::format, std::jthread, OpenMP, and lock-free queue with std::atomic.
@@ -17,6 +18,7 @@
 #include <iostream>
 #include <fstream>
 #include <vulkan/vulkan.h>
+#include <SDL3/SDL.h>
 #include <array>
 #include <atomic>
 #include <thread>
@@ -54,11 +56,14 @@ inline constexpr std::string_view CYAN = "\033[1;36m";    // Bold cyan for debug
 inline constexpr std::string_view GREEN = "\033[1;32m";   // Bold green for info
 inline constexpr std::string_view YELLOW = "\033[1;33m";  // Bold yellow for warnings
 inline constexpr std::string_view MAGENTA = "\033[1;35m"; // Bold magenta for errors
-inline constexpr std::string_view BLUE = "\033[1;34m";    // Bold blue for Vulkan category
-inline constexpr std::string_view RED = "\033[1;31m";     // Bold red for critical errors
+inline constexpr std::string_view BLUE = "\033[1;34m";    // Bold blue for Vulkan
+inline constexpr std::string_view RED = "\033[1;31m";     // Bold red for critical
 inline constexpr std::string_view WHITE = "\033[1;37m";   // Bold white for general
 inline constexpr std::string_view PURPLE = "\033[1;35m";  // Bold purple for simulation
-inline constexpr std::string_view ORANGE = "\033[38;5;208m"; // Orange for custom
+inline constexpr std::string_view ORANGE = "\033[38;5;208m"; // Orange for renderer
+inline constexpr std::string_view TEAL = "\033[38;5;51m"; // Teal for audio
+inline constexpr std::string_view YELLOW_GREEN = "\033[38;5;154m"; // Yellow-green for image
+inline constexpr std::string_view BRIGHT_MAGENTA = "\033[38;5;201m"; // Bright magenta for input
 
 // Log message structure
 struct LogMessage {
@@ -129,20 +134,17 @@ public:
     }
 
     // Overload for Vulkan types
-    void log(LogLevel level, std::string_view category, VkResult result,
-             const std::source_location& location = std::source_location::current()) const {
-        if (static_cast<int>(level) < static_cast<int>(level_.load(std::memory_order_relaxed))) {
-            return;
-        }
-        std::string formatted = std::format("VkResult: {}", result);
-        enqueueMessage(level, "VkResult", category, formatted, location);
-    }
-
     template<typename T>
-    requires (std::same_as<T, VkBuffer> || std::same_as<T, VkCommandBuffer> ||
-              std::same_as<T, VkPipelineLayout> || std::same_as<T, VkDescriptorSet> ||
-              std::same_as<T, VkRenderPass> || std::same_as<T, VkFramebuffer> ||
-              std::same_as<T, VkImage> || std::same_as<T, VkDeviceMemory>)
+    requires (
+        std::same_as<T, VkBuffer> || std::same_as<T, VkCommandBuffer> ||
+        std::same_as<T, VkPipelineLayout> || std::same_as<T, VkDescriptorSet> ||
+        std::same_as<T, VkRenderPass> || std::same_as<T, VkFramebuffer> ||
+        std::same_as<T, VkImage> || std::same_as<T, VkDeviceMemory> ||
+        std::same_as<T, VkDevice> || std::same_as<T, VkQueue> ||
+        std::same_as<T, VkCommandPool> || std::same_as<T, VkPipeline> ||
+        std::same_as<T, VkSwapchainKHR> || std::same_as<T, VkShaderModule> ||
+        std::same_as<T, VkSemaphore> || std::same_as<T, VkFence>
+    )
     void log(LogLevel level, std::string_view category, T handle, std::string_view handleName,
              const std::source_location& location = std::source_location::current()) const {
         if (static_cast<int>(level) < static_cast<int>(level_.load(std::memory_order_relaxed))) {
@@ -165,7 +167,7 @@ public:
     // Set log level dynamically
     void setLogLevel(LogLevel level) {
         level_.store(level, std::memory_order_relaxed);
-        log(LogLevel::Info, "General", "Log level set to {}", std::to_string(static_cast<int>(level)));
+        log(LogLevel::Info, "General", "Log level set to: {}", std::source_location::current(), static_cast<int>(level));
     }
 
     // Set log file with rotation
@@ -176,12 +178,12 @@ public:
         }
         logFile_.open(filename, std::ios::out | std::ios::app);
         if (!logFile_.is_open()) {
-            log(LogLevel::Error, "General", "Failed to open log file: {}", filename);
+            log(LogLevel::Error, "General", "Failed to open log file: {}", std::source_location::current(), filename);
             return false;
         }
         logFilePath_ = filename;
         maxLogFileSize_ = maxSizeBytes;
-        log(LogLevel::Info, "General", "Log file set to: {}", filename);
+        log(LogLevel::Info, "General", "Log file set to: {}", std::source_location::current(), filename);
         return true;
     }
 
@@ -226,14 +228,16 @@ private:
         return "";
     }
 
-    // Map categories to colors
     static std::string_view getCategoryColor(std::string_view category) {
         static const std::map<std::string_view, std::string_view, std::less<>> categoryColors = {
             {"General", WHITE},
             {"Vulkan", BLUE},
             {"Simulation", PURPLE},
             {"Renderer", ORANGE},
-            {"Engine", GREEN}
+            {"Engine", GREEN},
+            {"Audio", TEAL},
+            {"Image", YELLOW_GREEN},
+            {"Input", BRIGHT_MAGENTA}
         };
         auto it = categoryColors.find(category);
         return it != categoryColors.end() ? it->second : WHITE;
@@ -276,7 +280,6 @@ private:
             }
             tail_.store(currentTail, std::memory_order_release);
 
-            // Rotate log file if needed
             if (logFile_.is_open()) {
                 std::lock_guard<std::mutex> lock(fileMutex_);
                 if (std::filesystem::file_size(logFilePath_) > maxLogFileSize_) {
@@ -341,7 +344,6 @@ private:
 
         std::filesystem::rename(logFilePath_, newFile);
 
-        // Remove oldest files if exceeding MaxFiles
         std::vector<std::filesystem::path> logs;
         for (const auto& entry : std::filesystem::directory_iterator(logFilePath_.parent_path())) {
             if (entry.path().extension() == ".log" && entry.path().stem().string().find(logFilePath_.stem().string()) == 0) {
@@ -422,39 +424,6 @@ private:
 } // namespace Logging
 
 namespace std {
-// Formatter for VkResult
-template<>
-struct formatter<VkResult, char> {
-    constexpr auto parse(format_parse_context& ctx) { return ctx.begin(); }
-    template<typename FormatContext>
-    auto format(VkResult result, FormatContext& ctx) const {
-        string_view name;
-        switch (result) {
-            case VK_SUCCESS: name = "VK_SUCCESS"; break;
-            case VK_NOT_READY: name = "VK_NOT_READY"; break;
-            case VK_TIMEOUT: name = "VK_TIMEOUT"; break;
-            case VK_EVENT_SET: name = "VK_EVENT_SET"; break;
-            case VK_EVENT_RESET: name = "VK_EVENT_RESET"; break;
-            case VK_INCOMPLETE: name = "VK_INCOMPLETE"; break;
-            case VK_ERROR_OUT_OF_HOST_MEMORY: name = "VK_ERROR_OUT_OF_HOST_MEMORY"; break;
-            case VK_ERROR_OUT_OF_DEVICE_MEMORY: name = "VK_ERROR_OUT_OF_DEVICE_MEMORY"; break;
-            case VK_ERROR_INITIALIZATION_FAILED: name = "VK_ERROR_INITIALIZATION_FAILED"; break;
-            case VK_ERROR_DEVICE_LOST: name = "VK_ERROR_DEVICE_LOST"; break;
-            case VK_ERROR_MEMORY_MAP_FAILED: name = "VK_ERROR_MEMORY_MAP_FAILED"; break;
-            case VK_ERROR_LAYER_NOT_PRESENT: name = "VK_ERROR_LAYER_NOT_PRESENT"; break;
-            case VK_ERROR_EXTENSION_NOT_PRESENT: name = "VK_ERROR_EXTENSION_NOT_PRESENT"; break;
-            case VK_ERROR_FEATURE_NOT_PRESENT: name = "VK_ERROR_FEATURE_NOT_PRESENT"; break;
-            case VK_ERROR_INCOMPATIBLE_DRIVER: name = "VK_ERROR_INCOMPATIBLE_DRIVER"; break;
-            case VK_ERROR_TOO_MANY_OBJECTS: name = "VK_ERROR_TOO_MANY_OBJECTS"; break;
-            case VK_ERROR_FORMAT_NOT_SUPPORTED: name = "VK_ERROR_FORMAT_NOT_SUPPORTED"; break;
-            case VK_ERROR_FRAGMENTED_POOL: name = "VK_ERROR_FRAGMENTED_POOL"; break;
-            case VK_ERROR_OUT_OF_DATE_KHR: name = "VK_ERROR_OUT_OF_DATE_KHR"; break;
-            default: name = std::format("Unknown VkResult({})", static_cast<int>(result)); break;
-        }
-        return format_to(ctx.out(), "{}", name);
-    }
-};
-
 // Formatter for uint64_t
 template<>
 struct formatter<uint64_t, char> {
@@ -474,7 +443,7 @@ struct formatter<glm::vec3, char> {
     constexpr auto parse(format_parse_context& ctx) { return ctx.begin(); }
     template<typename FormatContext>
     auto format(const glm::vec3& vec, FormatContext& ctx) const {
-        return format_to(ctx.out(), "vec3({:.3f}, {:.3f}, {:.3f})", vec tellraw: vec.x, vec.y, vec.z);
+        return format_to(ctx.out(), "vec3({:.3f}, {:.3f}, {:.3f})", vec.x, vec.y, vec.z);
     }
 };
 
@@ -488,7 +457,15 @@ requires (
     std::same_as<T, VkRenderPass> ||
     std::same_as<T, VkFramebuffer> ||
     std::same_as<T, VkImage> ||
-    std::same_as<T, VkDeviceMemory>
+    std::same_as<T, VkDeviceMemory> ||
+    std::same_as<T, VkDevice> ||
+    std::same_as<T, VkQueue> ||
+    std::same_as<T, VkCommandPool> ||
+    std::same_as<T, VkPipeline> ||
+    std::same_as<T, VkSwapchainKHR> ||
+    std::same_as<T, VkShaderModule> ||
+    std::same_as<T, VkSemaphore> ||
+    std::same_as<T, VkFence>
 )
 struct formatter<T, char> {
     constexpr auto parse(format_parse_context& ctx) { return ctx.begin(); }
@@ -498,6 +475,102 @@ struct formatter<T, char> {
             return format_to(ctx.out(), "VK_NULL_HANDLE");
         }
         return format_to(ctx.out(), "{:p}", static_cast<const void*>(ptr));
+    }
+};
+
+// Formatter for VkFormat
+template<>
+struct formatter<VkFormat, char> {
+    constexpr auto parse(format_parse_context& ctx) { return ctx.begin(); }
+    template<typename FormatContext>
+    auto format(VkFormat format, FormatContext& ctx) const {
+        return format_to(ctx.out(), "{}", static_cast<int>(format));
+    }
+};
+
+// Formatter for SDL_EventType
+template<>
+struct formatter<SDL_EventType, char> {
+    constexpr auto parse(format_parse_context& ctx) { return ctx.begin(); }
+    template<typename FormatContext>
+    auto format(SDL_EventType type, FormatContext& ctx) const {
+        switch (type) {
+            case SDL_EVENT_FIRST: return format_to(ctx.out(), "SDL_EVENT_FIRST");
+            case SDL_EVENT_QUIT: return format_to(ctx.out(), "SDL_EVENT_QUIT");
+            case SDL_EVENT_TERMINATING: return format_to(ctx.out(), "SDL_EVENT_TERMINATING");
+            case SDL_EVENT_LOW_MEMORY: return format_to(ctx.out(), "SDL_EVENT_LOW_MEMORY");
+            case SDL_EVENT_WILL_ENTER_BACKGROUND: return format_to(ctx.out(), "SDL_EVENT_WILL_ENTER_BACKGROUND");
+            case SDL_EVENT_DID_ENTER_BACKGROUND: return format_to(ctx.out(), "SDL_EVENT_DID_ENTER_BACKGROUND");
+            case SDL_EVENT_WILL_ENTER_FOREGROUND: return format_to(ctx.out(), "SDL_EVENT_WILL_ENTER_FOREGROUND");
+            case SDL_EVENT_DID_ENTER_FOREGROUND: return format_to(ctx.out(), "SDL_EVENT_DID_ENTER_FOREGROUND");
+            case SDL_EVENT_LOCALE_CHANGED: return format_to(ctx.out(), "SDL_EVENT_LOCALE_CHANGED");
+            case SDL_EVENT_SYSTEM_THEME_CHANGED: return format_to(ctx.out(), "SDL_EVENT_SYSTEM_THEME_CHANGED");
+            case SDL_EVENT_DISPLAY_ORIENTATION: return format_to(ctx.out(), "SDL_EVENT_DISPLAY_ORIENTATION");
+            case SDL_EVENT_DISPLAY_ADDED: return format_to(ctx.out(), "SDL_EVENT_DISPLAY_ADDED");
+            case SDL_EVENT_DISPLAY_REMOVED: return format_to(ctx.out(), "SDL_EVENT_DISPLAY_REMOVED");
+            case SDL_EVENT_DISPLAY_MOVED: return format_to(ctx.out(), "SDL_EVENT_DISPLAY_MOVED");
+            case SDL_EVENT_DISPLAY_CONTENT_SCALE_CHANGED: return format_to(ctx.out(), "SDL_EVENT_DISPLAY_CONTENT_SCALE_CHANGED");
+            case SDL_EVENT_WINDOW_SHOWN: return format_to(ctx.out(), "SDL_EVENT_WINDOW_SHOWN");
+            case SDL_EVENT_WINDOW_HIDDEN: return format_to(ctx.out(), "SDL_EVENT_WINDOW_HIDDEN");
+            case SDL_EVENT_WINDOW_EXPOSED: return format_to(ctx.out(), "SDL_EVENT_WINDOW_EXPOSED");
+            case SDL_EVENT_WINDOW_MOVED: return format_to(ctx.out(), "SDL_EVENT_WINDOW_MOVED");
+            case SDL_EVENT_WINDOW_RESIZED: return format_to(ctx.out(), "SDL_EVENT_WINDOW_RESIZED");
+            case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED: return format_to(ctx.out(), "SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED");
+            case SDL_EVENT_WINDOW_MINIMIZED: return format_to(ctx.out(), "SDL_EVENT_WINDOW_MINIMIZED");
+            case SDL_EVENT_WINDOW_MAXIMIZED: return format_to(ctx.out(), "SDL_EVENT_WINDOW_MAXIMIZED");
+            case SDL_EVENT_WINDOW_RESTORED: return format_to(ctx.out(), "SDL_EVENT_WINDOW_RESTORED");
+            case SDL_EVENT_WINDOW_MOUSE_ENTER: return format_to(ctx.out(), "SDL_EVENT_WINDOW_MOUSE_ENTER");
+            case SDL_EVENT_WINDOW_MOUSE_LEAVE: return format_to(ctx.out(), "SDL_EVENT_WINDOW_MOUSE_LEAVE");
+            case SDL_EVENT_WINDOW_FOCUS_GAINED: return format_to(ctx.out(), "SDL_EVENT_WINDOW_FOCUS_GAINED");
+            case SDL_EVENT_WINDOW_FOCUS_LOST: return format_to(ctx.out(), "SDL_EVENT_WINDOW_FOCUS_LOST");
+            case SDL_EVENT_WINDOW_CLOSE_REQUESTED: return format_to(ctx.out(), "SDL_EVENT_WINDOW_CLOSE_REQUESTED");
+            case SDL_EVENT_WINDOW_HIT_TEST: return format_to(ctx.out(), "SDL_EVENT_WINDOW_HIT_TEST");
+            case SDL_EVENT_WINDOW_ICCPROF_CHANGED: return format_to(ctx.out(), "SDL_EVENT_WINDOW_ICCPROF_CHANGED");
+            case SDL_EVENT_WINDOW_DISPLAY_CHANGED: return format_to(ctx.out(), "SDL_EVENT_WINDOW_DISPLAY_CHANGED");
+            case SDL_EVENT_WINDOW_DESTROYED: return format_to(ctx.out(), "SDL_EVENT_WINDOW_DESTROYED");
+            case SDL_EVENT_KEY_DOWN: return format_to(ctx.out(), "SDL_EVENT_KEY_DOWN");
+            case SDL_EVENT_KEY_UP: return format_to(ctx.out(), "SDL_EVENT_KEY_UP");
+            case SDL_EVENT_TEXT_EDITING: return format_to(ctx.out(), "SDL_EVENT_TEXT_EDITING");
+            case SDL_EVENT_TEXT_INPUT: return format_to(ctx.out(), "SDL_EVENT_TEXT_INPUT");
+            case SDL_EVENT_KEYMAP_CHANGED: return format_to(ctx.out(), "SDL_EVENT_KEYMAP_CHANGED");
+            case SDL_EVENT_MOUSE_MOTION: return format_to(ctx.out(), "SDL_EVENT_MOUSE_MOTION");
+            case SDL_EVENT_MOUSE_BUTTON_DOWN: return format_to(ctx.out(), "SDL_EVENT_MOUSE_BUTTON_DOWN");
+            case SDL_EVENT_MOUSE_BUTTON_UP: return format_to(ctx.out(), "SDL_EVENT_MOUSE_BUTTON_UP");
+            case SDL_EVENT_MOUSE_WHEEL: return format_to(ctx.out(), "SDL_EVENT_MOUSE_WHEEL");
+            case SDL_EVENT_JOYSTICK_AXIS_MOTION: return format_to(ctx.out(), "SDL_EVENT_JOYSTICK_AXIS_MOTION");
+            case SDL_EVENT_JOYSTICK_BALL_MOTION: return format_to(ctx.out(), "SDL_EVENT_JOYSTICK_BALL_MOTION");
+            case SDL_EVENT_JOYSTICK_HAT_MOTION: return format_to(ctx.out(), "SDL_EVENT_JOYSTICK_HAT_MOTION");
+            case SDL_EVENT_JOYSTICK_BUTTON_DOWN: return format_to(ctx.out(), "SDL_EVENT_JOYSTICK_BUTTON_DOWN");
+            case SDL_EVENT_JOYSTICK_BUTTON_UP: return format_to(ctx.out(), "SDL_EVENT_JOYSTICK_BUTTON_UP");
+            case SDL_EVENT_JOYSTICK_ADDED: return format_to(ctx.out(), "SDL_EVENT_JOYSTICK_ADDED");
+            case SDL_EVENT_JOYSTICK_REMOVED: return format_to(ctx.out(), "SDL_EVENT_JOYSTICK_REMOVED");
+            case SDL_EVENT_JOYSTICK_BATTERY_UPDATED: return format_to(ctx.out(), "SDL_EVENT_JOYSTICK_BATTERY_UPDATED");
+            case SDL_EVENT_GAMEPAD_AXIS_MOTION: return format_to(ctx.out(), "SDL_EVENT_GAMEPAD_AXIS_MOTION");
+            case SDL_EVENT_GAMEPAD_BUTTON_DOWN: return format_to(ctx.out(), "SDL_EVENT_GAMEPAD_BUTTON_DOWN");
+            case SDL_EVENT_GAMEPAD_BUTTON_UP: return format_to(ctx.out(), "SDL_EVENT_GAMEPAD_BUTTON_UP");
+            case SDL_EVENT_GAMEPAD_ADDED: return format_to(ctx.out(), "SDL_EVENT_GAMEPAD_ADDED");
+            case SDL_EVENT_GAMEPAD_REMOVED: return format_to(ctx.out(), "SDL_EVENT_GAMEPAD_REMOVED");
+            case SDL_EVENT_GAMEPAD_TOUCHPAD_DOWN: return format_to(ctx.out(), "SDL_EVENT_GAMEPAD_TOUCHPAD_DOWN");
+            case SDL_EVENT_GAMEPAD_TOUCHPAD_UP: return format_to(ctx.out(), "SDL_EVENT_GAMEPAD_TOUCHPAD_UP");
+            case SDL_EVENT_GAMEPAD_TOUCHPAD_MOTION: return format_to(ctx.out(), "SDL_EVENT_GAMEPAD_TOUCHPAD_MOTION");
+            case SDL_EVENT_GAMEPAD_SENSOR_UPDATE: return format_to(ctx.out(), "SDL_EVENT_GAMEPAD_SENSOR_UPDATE");
+            case SDL_EVENT_FINGER_DOWN: return format_to(ctx.out(), "SDL_EVENT_FINGER_DOWN");
+            case SDL_EVENT_FINGER_UP: return format_to(ctx.out(), "SDL_EVENT_FINGER_UP");
+            case SDL_EVENT_FINGER_MOTION: return format_to(ctx.out(), "SDL_EVENT_FINGER_MOTION");
+            case SDL_EVENT_CLIPBOARD_UPDATE: return format_to(ctx.out(), "SDL_EVENT_CLIPBOARD_UPDATE");
+            case SDL_EVENT_DROP_FILE: return format_to(ctx.out(), "SDL_EVENT_DROP_FILE");
+            case SDL_EVENT_DROP_TEXT: return format_to(ctx.out(), "SDL_EVENT_DROP_TEXT");
+            case SDL_EVENT_DROP_BEGIN: return format_to(ctx.out(), "SDL_EVENT_DROP_BEGIN");
+            case SDL_EVENT_DROP_COMPLETE: return format_to(ctx.out(), "SDL_EVENT_DROP_COMPLETE");
+            case SDL_EVENT_DROP_POSITION: return format_to(ctx.out(), "SDL_EVENT_DROP_POSITION");
+            case SDL_EVENT_SENSOR_UPDATE: return format_to(ctx.out(), "SDL_EVENT_SENSOR_UPDATE");
+            case SDL_EVENT_RENDER_TARGETS_RESET: return format_to(ctx.out(), "SDL_EVENT_RENDER_TARGETS_RESET");
+            case SDL_EVENT_RENDER_DEVICE_RESET: return format_to(ctx.out(), "SDL_EVENT_RENDER_DEVICE_RESET");
+            case SDL_EVENT_POLL_SENTINEL: return format_to(ctx.out(), "SDL_EVENT_POLL_SENTINEL");
+            case SDL_EVENT_USER: return format_to(ctx.out(), "SDL_EVENT_USER");
+            case SDL_EVENT_LAST: return format_to(ctx.out(), "SDL_EVENT_LAST");
+            default: return format_to(ctx.out(), "Unknown SDL_EventType({})", static_cast<uint32_t>(type));
+        }
     }
 };
 

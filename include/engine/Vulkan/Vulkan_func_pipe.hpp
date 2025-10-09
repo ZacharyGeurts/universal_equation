@@ -1,4 +1,4 @@
-// engine/Vulkan/Vulkan_func_pipe.hpp
+// Vulkan_func_pipe.hpp
 // AMOURANTH RTX Engine, October 2025 - Vulkan pipeline utilities for render pass and pipeline creation.
 // Supports Windows/Linux; no mutexes; voxel geometry rendering.
 // Dependencies: Vulkan 1.3+, GLM, C++20 standard library.

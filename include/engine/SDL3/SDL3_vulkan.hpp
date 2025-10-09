@@ -10,9 +10,6 @@
 #include <memory>
 #include <vector>
 #include <string_view>
-#include <format>
-#include <syncstream>
-#include "engine/SDL3/SDL3_window.hpp"
 
 namespace SDL3Initializer {
 
