@@ -1,23 +1,24 @@
-// AMOURANTH RTX Engine, October 2025 - Vulkan buffer initialization.
-// Manages vertex, index, quad, and voxel buffer creation.
-// Dependencies: Vulkan 1.3+, GLM, C++20 standard library.
-// Zachary Geurts 2025
+#ifndef VULKAN_INIT_BUFFERS_HPP
+#define VULKAN_INIT_BUFFERS_HPP
 
-#pragma once
-
-#include <vulkan/vulkan.h>
 #include <glm/glm.hpp>
 #include <span>
+#include <vulkan/vulkan.h>
 #include "engine/Vulkan_init.hpp"
+#include "engine/logging.hpp"
 
 class VulkanBufferManager {
 public:
-    VulkanBufferManager(VulkanContext& context);
+    explicit VulkanBufferManager(VulkanContext* context);
+    ~VulkanBufferManager() = default;
+
     void initializeBuffers(std::span<const glm::vec3> vertices, std::span<const uint32_t> indices);
     void initializeQuadBuffers(std::span<const glm::vec3> quadVertices, std::span<const uint32_t> quadIndices);
     void initializeVoxelBuffers(std::span<const glm::vec3> voxelVertices, std::span<const uint32_t> voxelIndices);
     void cleanupBuffers();
+
 private:
-    VulkanContext& context_;
-    Logging::Logger logger_;
+    VulkanContext* context_;
 };
+
+#endif // VULKAN_INIT_BUFFERS_HPP

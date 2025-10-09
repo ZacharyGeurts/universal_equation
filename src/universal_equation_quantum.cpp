@@ -20,16 +20,16 @@ long double UniversalEquation::computeGravitationalPotential(int vertexIndex1, i
     bool shouldLog = debug_.load() && (++logCount % 10000 == 0); // Log every 10000th call per thread
 
     if (shouldLog) {
-        logger_.log(Logging::LogLevel::Info, "Starting gravitational potential computation between vertices {} and {}",
-                    std::source_location::current(), vertexIndex1, vertexIndex2);
+        LOG_INFO_CAT("Quantum", "Starting gravitational potential computation between vertices {} and {}",
+                     std::source_location::current(), vertexIndex1, vertexIndex2);
     }
 
     // Check for empty vertex array with atomic size for thread safety
     size_t size = nCubeVertices_.size();
     if (size == 0) {
         if (shouldLog) {
-            logger_.log(Logging::LogLevel::Warning, "Empty nCubeVertices_, returning 0 potential",
-                        std::source_location::current());
+            LOG_WARNING_CAT("Quantum", "Empty nCubeVertices_, returning 0 potential",
+                            std::source_location::current());
         }
         return 0.0L;
     }
@@ -37,8 +37,8 @@ long double UniversalEquation::computeGravitationalPotential(int vertexIndex1, i
     // Validate and clamp vertexIndex1
     if (vertexIndex1 < 0 || static_cast<size_t>(vertexIndex1) >= size) {
         if (shouldLog) {
-            logger_.log(Logging::LogLevel::Warning, "Invalid vertexIndex1 {} (size={}), clamping to 0",
-                        std::source_location::current(), vertexIndex1, size);
+            LOG_WARNING_CAT("Quantum", "Invalid vertexIndex1 {} (size={}), clamping to 0",
+                            std::source_location::current(), vertexIndex1, size);
         }
         vertexIndex1 = 0;
     }
@@ -47,16 +47,16 @@ long double UniversalEquation::computeGravitationalPotential(int vertexIndex1, i
     if (vertexIndex2 < 0 || static_cast<size_t>(vertexIndex2) >= size) {
         vertexIndex2 = static_cast<int>(size - 1); // Use last valid index
         if (shouldLog) {
-            logger_.log(Logging::LogLevel::Warning, "Clamped vertexIndex2 to {} (original={}, size={})",
-                        std::source_location::current(), vertexIndex2, vertexIndex2, size);
+            LOG_WARNING_CAT("Quantum", "Clamped vertexIndex2 to {} (original={}, size={})",
+                            std::source_location::current(), vertexIndex2, vertexIndex2, size);
         }
     }
 
     // Skip if vertices are the same to avoid self-interaction
     if (vertexIndex1 == vertexIndex2) {
         if (shouldLog) {
-            logger_.log(Logging::LogLevel::Debug, "Skipping self-interaction for vertex {}",
-                        std::source_location::current(), vertexIndex1);
+            LOG_DEBUG_CAT("Quantum", "Skipping self-interaction for vertex {}",
+                          std::source_location::current(), vertexIndex1);
         }
         return 0.0L;
     }
@@ -69,8 +69,8 @@ long double UniversalEquation::computeGravitationalPotential(int vertexIndex1, i
     size_t dim = static_cast<size_t>(getCurrentDimension());
     if (v1.size() != dim || v2.size() != dim) {
         if (shouldLog) {
-            logger_.log(Logging::LogLevel::Error, "Dimension mismatch: v1.size()={}, v2.size()={}, expected={}",
-                        std::source_location::current(), v1.size(), v2.size(), dim);
+            LOG_ERROR_CAT("Quantum", "Dimension mismatch: v1.size()={}, v2.size()={}, expected={}",
+                          std::source_location::current(), v1.size(), v2.size(), dim);
         }
         return 0.0L; // Return safe value instead of throwing in hot path
     }
@@ -82,8 +82,8 @@ long double UniversalEquation::computeGravitationalPotential(int vertexIndex1, i
         long double diff = v1[i] - v2[i];
         if (std::isnan(diff) || std::isinf(diff)) {
             if (shouldLog) {
-                logger_.log(Logging::LogLevel::Warning, "NaN/Inf diff in dimension {} for vertices {} and {}",
-                            std::source_location::current(), i, vertexIndex1, vertexIndex2);
+                LOG_WARNING_CAT("Quantum", "NaN/Inf diff in dimension {} for vertices {} and {}",
+                                std::source_location::current(), i, vertexIndex1, vertexIndex2);
             }
             diff = 0.0L;
         }
@@ -95,16 +95,16 @@ long double UniversalEquation::computeGravitationalPotential(int vertexIndex1, i
     }
     if (!validDistance) {
         if (shouldLog) {
-            logger_.log(Logging::LogLevel::Warning, "Invalid distance computation for vertices {} and {}, using fallback",
-                        std::source_location::current(), vertexIndex1, vertexIndex2);
+            LOG_WARNING_CAT("Quantum", "Invalid distance computation for vertices {} and {}, using fallback",
+                            std::source_location::current(), vertexIndex1, vertexIndex2);
         }
         distance = 1.0L;
     } else {
         distance = std::sqrt(distance);
         if (std::isnan(distance) || std::isinf(distance) || distance < 0.0L) {
             if (shouldLog) {
-                logger_.log(Logging::LogLevel::Warning, "Invalid sqrt distance for vertices {} and {}: distance={}. Using minDistance",
-                            std::source_location::current(), vertexIndex1, vertexIndex2, distance);
+                LOG_WARNING_CAT("Quantum", "Invalid sqrt distance for vertices {} and {}: distance={}. Using minDistance",
+                                std::source_location::current(), vertexIndex1, vertexIndex2, distance);
             }
             distance = 1e-10L;
         }
@@ -114,8 +114,8 @@ long double UniversalEquation::computeGravitationalPotential(int vertexIndex1, i
     constexpr long double minDistance = 1e-10L;
     if (distance < minDistance) {
         if (shouldLog) {
-            logger_.log(Logging::LogLevel::Debug, "Distance too small for vertices {} and {}: distance={}. Setting to minimum",
-                        std::source_location::current(), vertexIndex1, vertexIndex2, distance);
+            LOG_DEBUG_CAT("Quantum", "Distance too small for vertices {} and {}: distance={}. Setting to minimum",
+                          std::source_location::current(), vertexIndex1, vertexIndex2, distance);
         }
         distance = minDistance;
     }
@@ -134,15 +134,15 @@ long double UniversalEquation::computeGravitationalPotential(int vertexIndex1, i
 
     if (std::isnan(potential) || std::isinf(potential)) {
         if (shouldLog) {
-            logger_.log(Logging::LogLevel::Warning, "Invalid potential for vertices {} and {}: potential={}. Returning 0",
-                        std::source_location::current(), vertexIndex1, vertexIndex2, potential);
+            LOG_WARNING_CAT("Quantum", "Invalid potential for vertices {} and {}: potential={}. Returning 0",
+                            std::source_location::current(), vertexIndex1, vertexIndex2, potential);
         }
         return 0.0L;
     }
 
     if (shouldLog) {
-        logger_.log(Logging::LogLevel::Debug, "Computed gravitational potential for vertices {} and {}: distance={}, potential={}",
-                    std::source_location::current(), vertexIndex1, vertexIndex2, distance, potential);
+        LOG_DEBUG_CAT("Quantum", "Computed gravitational potential for vertices {} and {}: distance={}, potential={}",
+                      std::source_location::current(), vertexIndex1, vertexIndex2, distance, potential);
     }
 
     return potential;
@@ -153,16 +153,16 @@ std::vector<long double> UniversalEquation::computeGravitationalAcceleration(int
     bool shouldLog = debug_.load() && (++logCount % 1000 == 0); // Log every 1000th call per thread
 
     if (shouldLog) {
-        logger_.log(Logging::LogLevel::Info, "Computing gravitational acceleration for vertex {}",
-                    std::source_location::current(), vertexIndex);
+        LOG_INFO_CAT("Quantum", "Computing gravitational acceleration for vertex {}",
+                     std::source_location::current(), vertexIndex);
     }
 
     // Validate vertexIndex
     size_t size = nCubeVertices_.size();
     if (vertexIndex < 0 || static_cast<size_t>(vertexIndex) >= size) {
         if (shouldLog) {
-            logger_.log(Logging::LogLevel::Warning, "Invalid vertexIndex {} (size={}), returning zero acceleration",
-                        std::source_location::current(), vertexIndex, size);
+            LOG_WARNING_CAT("Quantum", "Invalid vertexIndex {} (size={}), returning zero acceleration",
+                            std::source_location::current(), vertexIndex, size);
         }
         return std::vector<long double>(getCurrentDimension(), 0.0L);
     }
@@ -170,8 +170,8 @@ std::vector<long double> UniversalEquation::computeGravitationalAcceleration(int
     // Check for empty vertex array
     if (size == 0) {
         if (shouldLog) {
-            logger_.log(Logging::LogLevel::Warning, "Empty nCubeVertices_, returning zero acceleration",
-                        std::source_location::current());
+            LOG_WARNING_CAT("Quantum", "Empty nCubeVertices_, returning zero acceleration",
+                            std::source_location::current());
         }
         return std::vector<long double>(getCurrentDimension(), 0.0L);
     }
@@ -190,8 +190,8 @@ std::vector<long double> UniversalEquation::computeGravitationalAcceleration(int
     // Ensure dimension consistency for v1
     if (v1.size() != dim) {
         if (shouldLog) {
-            logger_.log(Logging::LogLevel::Error, "Dimension mismatch for v1: size={}, expected={}",
-                        std::source_location::current(), v1.size(), dim);
+            LOG_ERROR_CAT("Quantum", "Dimension mismatch for v1: size={}, expected={}",
+                          std::source_location::current(), v1.size(), dim);
         }
         return acceleration; // Return zeros
     }
@@ -205,8 +205,8 @@ std::vector<long double> UniversalEquation::computeGravitationalAcceleration(int
         // Ensure dimension consistency for v2
         if (v2.size() != dim) {
             if (shouldLog) {
-                logger_.log(Logging::LogLevel::Error, "Dimension mismatch for v2 at index {}: size={}, expected={}",
-                            std::source_location::current(), j_idx, v2.size(), dim);
+                LOG_ERROR_CAT("Quantum", "Dimension mismatch for v2 at index {}: size={}, expected={}",
+                              std::source_location::current(), j_idx, v2.size(), dim);
             }
             continue; // Skip invalid vertices
         }
@@ -218,8 +218,8 @@ std::vector<long double> UniversalEquation::computeGravitationalAcceleration(int
             long double diff = v1[i] - v2[i];
             if (std::isnan(diff) || std::isinf(diff)) {
                 if (shouldLog) {
-                    logger_.log(Logging::LogLevel::Warning, "NaN/Inf diff in dimension {} for vertices {} and {}",
-                                std::source_location::current(), i, vertexIndex, j_idx);
+                    LOG_WARNING_CAT("Quantum", "NaN/Inf diff in dimension {} for vertices {} and {}",
+                                    std::source_location::current(), i, vertexIndex, j_idx);
                 }
                 diff = 0.0L;
             }
@@ -231,16 +231,16 @@ std::vector<long double> UniversalEquation::computeGravitationalAcceleration(int
         }
         if (!validDistance) {
             if (shouldLog) {
-                logger_.log(Logging::LogLevel::Warning, "Invalid distance computation for vertex {} and {}, skipping",
-                            std::source_location::current(), vertexIndex, j_idx);
+                LOG_WARNING_CAT("Quantum", "Invalid distance computation for vertex {} and {}, skipping",
+                                std::source_location::current(), vertexIndex, j_idx);
             }
             continue;
         }
         distance = std::sqrt(distance);
         if (std::isnan(distance) || std::isinf(distance) || distance <= 0.0L) {
             if (shouldLog) {
-                logger_.log(Logging::LogLevel::Warning, "Invalid distance for vertex {} and {}: distance={}. Skipping",
-                            std::source_location::current(), vertexIndex, j_idx, distance);
+                LOG_WARNING_CAT("Quantum", "Invalid distance for vertex {} and {}: distance={}. Skipping",
+                                std::source_location::current(), vertexIndex, j_idx, distance);
             }
             continue;
         }
@@ -248,8 +248,8 @@ std::vector<long double> UniversalEquation::computeGravitationalAcceleration(int
         constexpr long double minDistance = 1e-10L;
         if (distance < minDistance) {
             if (shouldLog) {
-                logger_.log(Logging::LogLevel::Debug, "Skipping vertex {}: distance too small ({})",
-                            std::source_location::current(), j_idx, distance);
+                LOG_DEBUG_CAT("Quantum", "Skipping vertex {}: distance too small ({})",
+                              std::source_location::current(), j_idx, distance);
             }
             continue;
         }
@@ -261,8 +261,8 @@ std::vector<long double> UniversalEquation::computeGravitationalAcceleration(int
             long double unitVector = safe_div(diff, distance);
             if (std::isnan(unitVector) || std::isinf(unitVector)) {
                 if (shouldLog) {
-                    logger_.log(Logging::LogLevel::Warning, "Invalid unit vector in dimension {} for vertex {} and {}, skipping dim",
-                                std::source_location::current(), i, vertexIndex, j_idx);
+                    LOG_WARNING_CAT("Quantum", "Invalid unit vector in dimension {} for vertex {} and {}, skipping dim",
+                                    std::source_location::current(), i, vertexIndex, j_idx);
                 }
                 continue;
             }
@@ -280,8 +280,8 @@ std::vector<long double> UniversalEquation::computeGravitationalAcceleration(int
         acceleration[i] *= scale;
         if (std::isnan(acceleration[i]) || std::isinf(acceleration[i])) {
             if (shouldLog) {
-                logger_.log(Logging::LogLevel::Warning, "Invalid scaled acceleration in dimension {} for vertex {}: value={}. Resetting to 0",
-                            std::source_location::current(), i, vertexIndex, acceleration[i]);
+                LOG_WARNING_CAT("Quantum", "Invalid scaled acceleration in dimension {} for vertex {}: value={}. Resetting to 0",
+                                std::source_location::current(), i, vertexIndex, acceleration[i]);
             }
             acceleration[i] = 0.0L;
         }
@@ -298,8 +298,8 @@ std::vector<long double> UniversalEquation::computeGravitationalAcceleration(int
     }
 
     if (shouldLog) {
-        logger_.log(Logging::LogLevel::Debug, "Computed gravitational acceleration for vertex {}: components={}",
-                    std::source_location::current(), vertexIndex, acceleration.size());
+        LOG_DEBUG_CAT("Quantum", "Computed gravitational acceleration for vertex {}: components={}",
+                      std::source_location::current(), vertexIndex, acceleration.size());
     }
     return acceleration;
 }

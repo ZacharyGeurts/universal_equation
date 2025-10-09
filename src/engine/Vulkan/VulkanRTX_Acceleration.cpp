@@ -129,7 +129,7 @@ void VulkanRTX::compactAccelerationStructures(VkPhysicalDevice physicalDevice, V
                 .deviceAddress = 0
             };
 
-            VK_CHECK(vkCreateAccelerationStructureKHR(device_, &asCreateInfo, nullptr, compactedAS[i].getPtr()),
+            VK_CHECK(vkCreateASFunc(device_, &asCreateInfo, nullptr, compactedAS[i].getPtr()),
                      "Failed to create compacted acceleration structure.");
             LOG_DEBUG_CAT("Vulkan", "Created compacted acceleration structure {}: as={:p}", 
                           std::source_location::current(), i, static_cast<void*>(compactedAS[i].get()));

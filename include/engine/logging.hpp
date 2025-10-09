@@ -1,4 +1,4 @@
-// engine/logging.hpp
+// logging.hpp
 // AMOURANTH RTX Engine, October 2025 - Enhanced thread-safe, asynchronous logging.
 // Thread-safe, asynchronous logging with ANSI-colored output, source location, and delta time.
 // Supports C++20 std::format, std::jthread, OpenMP, and lock-free queue with std::atomic.
@@ -196,10 +196,7 @@ public:
         }
     }
 
-private:
-    static constexpr size_t QueueSize = 1024;
-    static constexpr size_t MaxFiles = 5;
-
+public:
     Logger(LogLevel level, const std::string& filename)
         : logQueue_{}, head_(0), tail_(0), running_(true), level_(level), maxLogFileSize_(10 * 1024 * 1024) {
         if (!filename.empty()) {
@@ -210,6 +207,10 @@ private:
         });
         std::atexit([]() { Logger::get().stop(); });
     }
+
+private:
+    static constexpr size_t QueueSize = 1024;
+    static constexpr size_t MaxFiles = 5;
 
     static LogLevel getDefaultLogLevel() {
         if (const char* levelStr = std::getenv("AMOURANTH_LOG_LEVEL")) {
@@ -488,6 +489,37 @@ struct formatter<VkFormat, char> {
     }
 };
 
+// Formatter for VkResult
+template<>
+struct formatter<VkResult, char> {
+    constexpr auto parse(format_parse_context& ctx) { return ctx.begin(); }
+    template<typename FormatContext>
+    auto format(VkResult result, FormatContext& ctx) const {
+        switch (result) {
+            case VK_SUCCESS: return format_to(ctx.out(), "VK_SUCCESS");
+            case VK_NOT_READY: return format_to(ctx.out(), "VK_NOT_READY");
+            case VK_TIMEOUT: return format_to(ctx.out(), "VK_TIMEOUT");
+            case VK_EVENT_SET: return format_to(ctx.out(), "VK_EVENT_SET");
+            case VK_EVENT_RESET: return format_to(ctx.out(), "VK_EVENT_RESET");
+            case VK_INCOMPLETE: return format_to(ctx.out(), "VK_INCOMPLETE");
+            case VK_ERROR_OUT_OF_HOST_MEMORY: return format_to(ctx.out(), "VK_ERROR_OUT_OF_HOST_MEMORY");
+            case VK_ERROR_OUT_OF_DEVICE_MEMORY: return format_to(ctx.out(), "VK_ERROR_OUT_OF_DEVICE_MEMORY");
+            case VK_ERROR_INITIALIZATION_FAILED: return format_to(ctx.out(), "VK_ERROR_INITIALIZATION_FAILED");
+            case VK_ERROR_DEVICE_LOST: return format_to(ctx.out(), "VK_ERROR_DEVICE_LOST");
+            case VK_ERROR_MEMORY_MAP_FAILED: return format_to(ctx.out(), "VK_ERROR_MEMORY_MAP_FAILED");
+            case VK_ERROR_LAYER_NOT_PRESENT: return format_to(ctx.out(), "VK_ERROR_LAYER_NOT_PRESENT");
+            case VK_ERROR_EXTENSION_NOT_PRESENT: return format_to(ctx.out(), "VK_ERROR_EXTENSION_NOT_PRESENT");
+            case VK_ERROR_FEATURE_NOT_PRESENT: return format_to(ctx.out(), "VK_ERROR_FEATURE_NOT_PRESENT");
+            case VK_ERROR_INCOMPATIBLE_DRIVER: return format_to(ctx.out(), "VK_ERROR_INCOMPATIBLE_DRIVER");
+            case VK_ERROR_TOO_MANY_OBJECTS: return format_to(ctx.out(), "VK_ERROR_TOO_MANY_OBJECTS");
+            case VK_ERROR_FORMAT_NOT_SUPPORTED: return format_to(ctx.out(), "VK_ERROR_FORMAT_NOT_SUPPORTED");
+            case VK_ERROR_FRAGMENTED_POOL: return format_to(ctx.out(), "VK_ERROR_FRAGMENTED_POOL");
+            case VK_ERROR_UNKNOWN: return format_to(ctx.out(), "VK_ERROR_UNKNOWN");
+            default: return format_to(ctx.out(), "VkResult({})", static_cast<int>(result));
+        }
+    }
+};
+
 // Formatter for SDL_EventType
 template<>
 struct formatter<SDL_EventType, char> {
@@ -571,6 +603,16 @@ struct formatter<SDL_EventType, char> {
             case SDL_EVENT_LAST: return format_to(ctx.out(), "SDL_EVENT_LAST");
             default: return format_to(ctx.out(), "Unknown SDL_EventType({})", static_cast<uint32_t>(type));
         }
+    }
+};
+
+// Formatter for std::source_location
+template<>
+struct formatter<std::source_location, char> {
+    constexpr auto parse(format_parse_context& ctx) { return ctx.begin(); }
+    template<typename FormatContext>
+    auto format(const std::source_location& loc, FormatContext& ctx) const {
+        return format_to(ctx.out(), "{}:{}", loc.file_name(), loc.line());
     }
 };
 

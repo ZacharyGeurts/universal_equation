@@ -1,54 +1,49 @@
-#ifndef HANDLE_APP_HPP
-#define HANDLE_APP_HPP
-
-// AMOURANTH RTX Engine, October 2025 - Application lifecycle management.
-// Manages SDL3 input events, Vulkan rendering, audio, and core application loop.
+// handle_app.hpp
+// AMOURANTH RTX Engine - Application and input handling definitions.
+// Manages SDL3 input events, Vulkan rendering, audio, and application lifecycle.
 // Dependencies: SDL3, Vulkan, GLM, C++20 standard library.
+// Supported platforms: Windows, Linux.
 // Zachary Geurts 2025
 
-#include "engine/SDL3_init.hpp"
-#include "engine/SDL3/SDL3_audio.hpp"
-#include "engine/Vulkan_init.hpp"
-#include "engine/logging.hpp"
-#include "engine/core.hpp"
-#include <SDL3/SDL.h>
-#include <functional>
-#include <memory>
-#include <vector>
-#include <optional>
-#include <span>
-#include <glm/glm.hpp>
-#include <chrono>
+#pragma once
 
+#include "engine/core.hpp"
+#include "engine/Vulkan_init.hpp"
+#include "engine/SDL3_init.hpp"
+#include <memory>
+#include <optional>
+#include <vector>
+#include <functional>
+#include <SDL3/SDL.h>
+#include <glm/glm.hpp>
+
+// Forward declare HandleInput to resolve declaration order issue
 class HandleInput;
 
 class Application {
 public:
     Application(const char* title, int width, int height);
     ~Application();
-
     void run();
     void render();
     void handleResize(int width, int height);
+    void initializeInput();
+    void initializeAudio();
     void setRenderMode(int mode) { mode_ = mode; }
     int getRenderMode() const { return mode_; }
 
 private:
-    void initializeInput();
-    void initializeAudio();
-
     std::string title_;
     int width_;
     int height_;
     int mode_;
     std::vector<glm::vec3> vertices_;
     std::vector<uint32_t> indices_;
-    std::unique_ptr<SDL3Initializer> sdl_;
+    std::unique_ptr<SDL3Initializer::SDL3Initializer> sdl_; // Explicitly qualify
     std::unique_ptr<VulkanRenderer> renderer_;
     std::unique_ptr<DimensionalNavigator> navigator_;
     std::optional<AMOURANTH> amouranth_;
     std::unique_ptr<HandleInput> inputHandler_;
-    Logging::Logger logger_;
     SDL_AudioDeviceID audioDevice_;
     SDL_AudioStream* audioStream_;
     std::chrono::steady_clock::time_point lastFrameTime_;
@@ -66,7 +61,7 @@ public:
     using GamepadAxisCallback = std::function<void(const SDL_GamepadAxisEvent&)>;
     using GamepadConnectCallback = std::function<void(bool, SDL_JoystickID, SDL_Gamepad*)>;
 
-    HandleInput(AMOURANTH& amouranth, DimensionalNavigator* navigator, const Logging::Logger& logger);
+    HandleInput(AMOURANTH& amouranth, DimensionalNavigator* navigator);
     void handleInput(Application& app);
     void setCallbacks(
         KeyboardCallback kb = nullptr,
@@ -81,19 +76,8 @@ public:
     );
 
 private:
-    void defaultKeyboardHandler(const SDL_KeyboardEvent& key);
-    void defaultMouseButtonHandler(const SDL_MouseButtonEvent& mb);
-    void defaultMouseMotionHandler(const SDL_MouseMotionEvent& mm);
-    void defaultMouseWheelHandler(const SDL_MouseWheelEvent& mw);
-    void defaultTextInputHandler(const SDL_TextInputEvent& ti);
-    void defaultTouchHandler(const SDL_TouchFingerEvent& tf);
-    void defaultGamepadButtonHandler(const SDL_GamepadButtonEvent& gb);
-    void defaultGamepadAxisHandler(const SDL_GamepadAxisEvent& ga);
-    void defaultGamepadConnectHandler(bool connected, SDL_JoystickID id, SDL_Gamepad* pad);
-
     AMOURANTH& amouranth_;
     DimensionalNavigator* navigator_;
-    const Logging::Logger& logger_;
     KeyboardCallback keyboardCallback_;
     MouseButtonCallback mouseButtonCallback_;
     MouseMotionCallback mouseMotionCallback_;
@@ -103,6 +87,14 @@ private:
     GamepadButtonCallback gamepadButtonCallback_;
     GamepadAxisCallback gamepadAxisCallback_;
     GamepadConnectCallback gamepadConnectCallback_;
-};
 
-#endif // HANDLE_APP_HPP
+    void defaultKeyboardHandler(const SDL_KeyboardEvent& key);
+    void defaultMouseButtonHandler(const SDL_MouseButtonEvent& mb);
+    void defaultMouseMotionHandler(const SDL_MouseMotionEvent& mm);
+    void defaultMouseWheelHandler(const SDL_MouseWheelEvent& mw);
+    void defaultTextInputHandler(const SDL_TextInputEvent& ti);
+    void defaultTouchHandler(const SDL_TouchFingerEvent& tf);
+    void defaultGamepadButtonHandler(const SDL_GamepadButtonEvent& gb);
+    void defaultGamepadAxisHandler(const SDL_GamepadAxisEvent& ga);
+    void defaultGamepadConnectHandler(bool connected, SDL_JoystickID id, SDL_Gamepad* pad);
+};

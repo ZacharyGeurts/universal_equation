@@ -1,3 +1,7 @@
+// mode1.cpp
+// Render mode 1 for AMOURANTH RTX Engine
+// Zachary Geurts 2025
+
 #include "engine/core.hpp"
 #include "Mia.hpp"
 #include <glm/gtc/matrix_transform.hpp>
@@ -8,7 +12,7 @@
 
 void renderMode1(AMOURANTH* amouranth, [[maybe_unused]] uint32_t imageIndex, [[maybe_unused]] VkBuffer vertexBuffer, [[maybe_unused]] VkCommandBuffer commandBuffer,
                  [[maybe_unused]] VkBuffer indexBuffer, [[maybe_unused]] float zoomLevel, [[maybe_unused]] int width, [[maybe_unused]] int height, [[maybe_unused]] float wavePhase,
-                 [[maybe_unused]] std::span<const DimensionData> cache, [[maybe_unused]] VkPipelineLayout pipelineLayout, [[maybe_unused]] VkDescriptorSet descriptorSet,
+                 [[maybe_unused]] std::span<const UniversalEquation::DimensionData> cache, [[maybe_unused]] VkPipelineLayout pipelineLayout, [[maybe_unused]] VkDescriptorSet descriptorSet,
                  [[maybe_unused]] VkDevice device, [[maybe_unused]] VkDeviceMemory vertexBufferMemory, [[maybe_unused]] VkPipeline pipeline,
                  float deltaTime, VkRenderPass renderPass, VkFramebuffer framebuffer) {
     // Initialize Mia for timing and random number generation
@@ -18,7 +22,7 @@ void renderMode1(AMOURANTH* amouranth, [[maybe_unused]] uint32_t imageIndex, [[m
     amouranth->setCurrentDimension(9); // Use 9D for fractal simulation
     const auto& balls = amouranth->getBalls(); // Access 30,000 balls
     if (balls.empty()) {
-        amouranth->getLogger().log(Logging::LogLevel::Error, "No ball data for renderMode1",
+        amouranth->getLogger().log(Logging::LogLevel::Error, "RenderMode1", "No ball data for renderMode1",
                                    std::source_location::current());
         throw std::runtime_error("No ball data for renderMode1");
     }
@@ -139,7 +143,7 @@ void renderMode1(AMOURANTH* amouranth, [[maybe_unused]] uint32_t imageIndex, [[m
 
     // Error checking
     if (VkResult result = vkEndCommandBuffer(commandBuffer); result != VK_SUCCESS) {
-        amouranth->getLogger().log(Logging::LogLevel::Error, "Failed to record command buffer for renderMode1: result={}",
+        amouranth->getLogger().log(Logging::LogLevel::Error, "RenderMode1", "Failed to record command buffer for renderMode1: result={}",
                                    std::source_location::current(), result);
         throw std::runtime_error("Failed to record command buffer for renderMode1");
     }

@@ -1,5 +1,8 @@
-#ifndef MIA_HPP
-#define MIA_HPP
+// Mia.hpp
+// Random number generation for AMOURANTH RTX Engine
+// Zachary Geurts 2025
+
+#pragma once
 
 #include <atomic>
 #include <thread>
@@ -28,7 +31,7 @@ public:
             urandom.close();
             rng_.seed(seed);
         } else {
-            logger_.log(Logging::LogLevel::Warning, "Failed to open /dev/urandom, falling back to std::random_device",
+            logger_.log(Logging::LogLevel::Warning, "Mia", "Failed to open /dev/urandom, falling back to std::random_device",
                         std::source_location::current());
             std::random_device rd;
             rng_.seed(rd());
@@ -42,7 +45,8 @@ public:
 
         // Start update thread
         updateThread_ = std::thread([this] { updateLoop(); });
-        logger_.log(Logging::LogLevel::Debug, "Mia initialized for 13000+ FPS with 1MB random buffer", std::source_location::current());
+        logger_.log(Logging::LogLevel::Debug, "Mia", "Mia initialized for 13000+ FPS with 1MB random buffer",
+                    std::source_location::current());
     }
 
     ~Mia() {
@@ -50,7 +54,7 @@ public:
         if (updateThread_.joinable()) {
             updateThread_.join();
         }
-        logger_.log(Logging::LogLevel::Debug, "Mia destroyed", std::source_location::current());
+        logger_.log(Logging::LogLevel::Debug, "Mia", "Mia destroyed", std::source_location::current());
     }
 
     // Get elapsed time since last update (in seconds)
@@ -79,7 +83,7 @@ public:
         randomValue = std::fmod(randomValue, 1.0L); // Normalize to [0, 1)
 
         if (std::isnan(randomValue) || std::isinf(randomValue)) {
-            logger_.log(Logging::LogLevel::Warning, "Invalid random value, returning fallback: value={}",
+            logger_.log(Logging::LogLevel::Warning, "Mia", "Invalid random value, returning fallback: value={}",
                         std::source_location::current(), randomValue);
             std::uniform_real_distribution<long double> dist(0.0L, 1.0L);
             return dist(rng_);
@@ -100,7 +104,7 @@ private:
             }
             urandom.close();
         } else {
-            logger_.log(Logging::LogLevel::Warning, "Failed to fill random buffer, using std::mt19937_64",
+            logger_.log(Logging::LogLevel::Warning, "Mia", "Failed to fill random buffer, using std::mt19937_64",
                         std::source_location::current());
             bufferSize_ = 0;
         }
@@ -165,5 +169,3 @@ private:
     std::thread updateThread_;
     std::mt19937_64 rng_; // Fallback
 };
-
-#endif // MIA_HPP

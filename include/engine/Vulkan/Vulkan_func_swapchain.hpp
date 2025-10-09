@@ -12,6 +12,7 @@
 #include <vulkan/vulkan.h>
 #include <vector>
 #include "engine/logging.hpp" // For Logging::Logger
+#include "engine/Vulkan/Vulkan_func.hpp" // For PushConstants
 
 namespace VulkanInitializer {
 

@@ -12,19 +12,16 @@
 #include <source_location>
 
 VulkanSwapchainManager::VulkanSwapchainManager(VulkanContext& context, VkSurfaceKHR surface)
-    : context_(context), surface_(surface), logger_() {
-    logger_.log(Logging::LogLevel::Info, "Constructing VulkanSwapchainManager with surface={:p}",
-                std::source_location::current(), static_cast<void*>(surface));
+    : context_(context), surface_(surface) {
+    LOG_INFO_CAT("Vulkan", "Constructing VulkanSwapchainManager with surface={:p}", std::source_location::current(), static_cast<void*>(surface));
 }
 
 void VulkanSwapchainManager::initializeSwapchain(int width, int height) {
-    logger_.log(Logging::LogLevel::Info, "Initializing swapchain with width={}, height={}",
-                std::source_location::current(), width, height);
+    LOG_INFO_CAT("Vulkan", "Initializing swapchain with width={} height={}", std::source_location::current(), width, height);
 
     VkSurfaceCapabilitiesKHR capabilities;
     if (vkGetPhysicalDeviceSurfaceCapabilitiesKHR(context_.physicalDevice, surface_, &capabilities) != VK_SUCCESS) {
-        logger_.log(Logging::LogLevel::Error, "Failed to get surface capabilities",
-                    std::source_location::current());
+        LOG_ERROR_CAT("Vulkan", "Failed to get surface capabilities", std::source_location::current());
         throw std::runtime_error("Failed to get surface capabilities");
     }
 
@@ -89,8 +86,7 @@ void VulkanSwapchainManager::initializeSwapchain(int width, int height) {
     };
 
     if (vkCreateSwapchainKHR(context_.device, &createInfo, nullptr, &context_.swapchain) != VK_SUCCESS) {
-        logger_.log(Logging::LogLevel::Error, "Failed to create swapchain",
-                    std::source_location::current());
+        LOG_ERROR_CAT("Vulkan", "Failed to create swapchain", std::source_location::current());
         throw std::runtime_error("Failed to create swapchain");
     }
 
@@ -118,26 +114,22 @@ void VulkanSwapchainManager::initializeSwapchain(int width, int height) {
             }
         };
         if (vkCreateImageView(context_.device, &viewInfo, nullptr, &context_.swapchainImageViews[i]) != VK_SUCCESS) {
-            logger_.log(Logging::LogLevel::Error, "Failed to create image view for swapchain image {}",
-                        std::source_location::current(), i);
+            LOG_ERROR_CAT("Vulkan", "Failed to create image view for swapchain image {}", std::source_location::current(), i);
             throw std::runtime_error("Failed to create image view");
         }
     }
 
-    logger_.log(Logging::LogLevel::Info, "Swapchain initialized with {} images, extent={{ {}, {} }}",
-                std::source_location::current(), context_.swapchainImages.size(), extent.width, extent.height);
+    LOG_INFO_CAT("Vulkan", "Swapchain initialized with {} images, extent={{ {}, {} }}", std::source_location::current(), context_.swapchainImages.size(), extent.width, extent.height);
 }
 
 void VulkanSwapchainManager::handleResize(int width, int height) {
-    logger_.log(Logging::LogLevel::Info, "Handling swapchain resize to width={}, height={}",
-                std::source_location::current(), width, height);
+    LOG_INFO_CAT("Vulkan", "Handling swapchain resize to width={} height={}", std::source_location::current(), width, height);
     cleanupSwapchain();
     initializeSwapchain(width, height);
 }
 
 void VulkanSwapchainManager::cleanupSwapchain() {
-    logger_.log(Logging::LogLevel::Info, "Cleaning up swapchain",
-                std::source_location::current());
+    LOG_INFO_CAT("Vulkan", "Cleaning up swapchain", std::source_location::current());
 
     for (auto imageView : context_.swapchainImageViews) {
         if (imageView != VK_NULL_HANDLE) {
@@ -150,6 +142,5 @@ void VulkanSwapchainManager::cleanupSwapchain() {
         vkDestroySwapchainKHR(context_.device, context_.swapchain, nullptr);
         context_.swapchain = VK_NULL_HANDLE;
     }
-    logger_.log(Logging::LogLevel::Debug, "Swapchain cleaned up",
-                std::source_location::current());
+    LOG_DEBUG_CAT("Vulkan", "Swapchain cleaned up", std::source_location::current());
 }

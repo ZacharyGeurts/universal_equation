@@ -15,9 +15,9 @@
 #include <stdexcept>
 #include <latch>
 #include <omp.h>
+#include <source_location>
 
 UniversalEquation::UniversalEquation(
-    const Logging::Logger& logger,
     int maxDimensions,
     int mode,
     long double influence,
@@ -87,17 +87,16 @@ UniversalEquation::UniversalEquation(
     nurbKnots_(9, 0.0L),
     nurbWeights_(5, 1.0L),
     dimensionData_(),
-    navigator_(nullptr),
-    logger_(logger) {
-    logger_.log(Logging::LogLevel::Info, "Constructing UniversalEquation: maxVertices={}, maxDimensions={}, mode={}, GodWaveFreq={}",
-                std::source_location::current(), getMaxVertices(), getMaxDimensions(), getMode(), getGodWaveFreq());
+    navigator_(nullptr) {
+    LOG_INFO_CAT("Simulation", "Constructing UniversalEquation: maxVertices={}, maxDimensions={}, mode={}, GodWaveFreq={}",
+                 std::source_location::current(), getMaxVertices(), getMaxDimensions(), getMode(), getGodWaveFreq());
     if (getMaxVertices() > 1'000'000) {
-        logger_.log(Logging::LogLevel::Warning, "High vertex count ({}) may cause memory issues",
-                    std::source_location::current(), getMaxVertices());
+        LOG_WARNING_CAT("Simulation", "High vertex count ({}) may cause memory issues",
+                        std::source_location::current(), getMaxVertices());
     }
     if (mode <= 0 || maxDimensions <= 0) {
-        logger_.log(Logging::LogLevel::Error, "maxDimensions and mode must be greater than 0: maxDimensions={}, mode={}",
-                    std::source_location::current(), maxDimensions, mode);
+        LOG_ERROR_CAT("Simulation", "maxDimensions and mode must be greater than 0: maxDimensions={}, mode={}",
+                      std::source_location::current(), maxDimensions, mode);
         throw std::invalid_argument("maxDimensions and mode must be greater than 0");
     }
     if (debug_.load() && (influence != getInfluence() || weak != getWeak() || collapse != getCollapse() ||
@@ -110,8 +109,8 @@ UniversalEquation::UniversalEquation(
                           spinInteraction != getSpinInteraction() || emFieldStrength != getEMFieldStrength() ||
                           renormFactor != getRenormFactor() || vacuumEnergy != getVacuumEnergy() ||
                           GodWaveFreq != getGodWaveFreq())) {
-        logger_.log(Logging::LogLevel::Warning, "Some input parameters were clamped to valid ranges",
-                    std::source_location::current());
+        LOG_WARNING_CAT("Simulation", "Some input parameters were clamped to valid ranges",
+                        std::source_location::current());
     }
     nurbMatterControlPoints_ = {1.0L, 0.8L, 0.5L, 0.3L, 0.1L};
     nurbEnergyControlPoints_ = {0.1L, 0.5L, 1.0L, 1.5L, 2.0L};
@@ -119,16 +118,15 @@ UniversalEquation::UniversalEquation(
     nurbWeights_ = {1.0L, 1.0L, 1.0L, 1.0L, 1.0L};
     try {
         initializeWithRetry();
-        logger_.log(Logging::LogLevel::Info, "UniversalEquation initialized: vertices={}, totalCharge={}",
-                    std::source_location::current(), nCubeVertices_.size(), getTotalCharge());
+        LOG_INFO_CAT("Simulation", "UniversalEquation initialized: vertices={}, totalCharge={}",
+                     std::source_location::current(), nCubeVertices_.size(), getTotalCharge());
     } catch (const std::exception& e) {
-        logger_.log(Logging::LogLevel::Error, "Constructor failed: {}", std::source_location::current(), e.what());
+        LOG_ERROR_CAT("Simulation", "Constructor failed: {}", std::source_location::current(), e.what());
         throw;
     }
 }
 
 UniversalEquation::UniversalEquation(
-    const Logging::Logger& logger,
     int maxDimensions,
     int mode,
     long double influence,
@@ -136,10 +134,10 @@ UniversalEquation::UniversalEquation(
     bool debug,
     uint64_t numVertices
 ) : UniversalEquation(
-        logger, maxDimensions, mode, influence, weak, 5.0L, 1.5L, 5.0L, 1.0L, 0.5L, 1.0L, 0.01L, 0.5L, 0.1L,
+        maxDimensions, mode, influence, weak, 5.0L, 1.5L, 5.0L, 1.0L, 0.5L, 1.0L, 0.01L, 0.5L, 0.1L,
         0.5L, 0.5L, 2.0L, 4.0L, 1.0L, 1.0e6L, 1.0L, 0.5L, 2.0L, debug, numVertices) {
-    logger_.log(Logging::LogLevel::Debug, "Initialized UniversalEquation with simplified constructor, GodWaveFreq={}",
-                std::source_location::current(), getGodWaveFreq());
+    LOG_DEBUG_CAT("Simulation", "Initialized UniversalEquation with simplified constructor, GodWaveFreq={}",
+                  std::source_location::current(), getGodWaveFreq());
 }
 
 UniversalEquation::UniversalEquation(const UniversalEquation& other)
@@ -188,10 +186,9 @@ UniversalEquation::UniversalEquation(const UniversalEquation& other)
       nurbKnots_(other.getNurbKnots().begin(), other.getNurbKnots().end()),
       nurbWeights_(other.getNurbWeights().begin(), other.getNurbWeights().end()),
       dimensionData_(other.getDimensionData()),
-      navigator_(nullptr),
-      logger_(other.logger_) {
-    logger_.log(Logging::LogLevel::Info, "Copy constructing UniversalEquation: vertices={}",
-                std::source_location::current(), other.nCubeVertices_.size());
+      navigator_(nullptr) {
+    LOG_INFO_CAT("Simulation", "Copy constructing UniversalEquation: vertices={}",
+                 std::source_location::current(), other.nCubeVertices_.size());
     try {
         nCubeVertices_.reserve(other.nCubeVertices_.size());
         vertexMomenta_.reserve(other.nCubeVertices_.size());
@@ -203,18 +200,18 @@ UniversalEquation::UniversalEquation(const UniversalEquation& other)
         }
         initializeWithRetry();
         validateProjectedVertices();
-        logger_.log(Logging::LogLevel::Debug, "Copy constructor completed: vertices={}",
-                    std::source_location::current(), nCubeVertices_.size());
+        LOG_DEBUG_CAT("Simulation", "Copy constructor completed: vertices={}",
+                      std::source_location::current(), nCubeVertices_.size());
     } catch (const std::exception& e) {
-        logger_.log(Logging::LogLevel::Error, "Copy constructor failed: {}", std::source_location::current(), e.what());
+        LOG_ERROR_CAT("Simulation", "Copy constructor failed: {}", std::source_location::current(), e.what());
         throw;
     }
 }
 
 UniversalEquation& UniversalEquation::operator=(const UniversalEquation& other) {
     if (this != &other) {
-        logger_.log(Logging::LogLevel::Info, "Assigning UniversalEquation: vertices={}",
-                    std::source_location::current(), other.nCubeVertices_.size());
+        LOG_INFO_CAT("Simulation", "Assigning UniversalEquation: vertices={}",
+                     std::source_location::current(), other.nCubeVertices_.size());
         influence_.store(other.getInfluence());
         weak_.store(other.getWeak());
         collapse_.store(other.getCollapse());
@@ -268,10 +265,10 @@ UniversalEquation& UniversalEquation::operator=(const UniversalEquation& other) 
             }
             initializeWithRetry();
             validateProjectedVertices();
-            logger_.log(Logging::LogLevel::Debug, "Copy assignment completed: vertices={}",
-                        std::source_location::current(), nCubeVertices_.size());
+            LOG_DEBUG_CAT("Simulation", "Copy assignment completed: vertices={}",
+                          std::source_location::current(), nCubeVertices_.size());
         } catch (const std::exception& e) {
-            logger_.log(Logging::LogLevel::Error, "Copy assignment failed: {}", std::source_location::current(), e.what());
+            LOG_ERROR_CAT("Simulation", "Copy assignment failed: {}", std::source_location::current(), e.what());
             throw;
         }
     }
@@ -279,18 +276,18 @@ UniversalEquation& UniversalEquation::operator=(const UniversalEquation& other) 
 }
 
 UniversalEquation::~UniversalEquation() {
-    logger_.log(Logging::LogLevel::Debug, "Destroying UniversalEquation: vertices={}",
-                std::source_location::current(), nCubeVertices_.size());
+    LOG_DEBUG_CAT("Simulation", "Destroying UniversalEquation: vertices={}",
+                  std::source_location::current(), nCubeVertices_.size());
 }
 
 void UniversalEquation::initializeNCube() {
     std::latch init_latch(1);
     try {
-        logger_.log(Logging::LogLevel::Info, "Initializing n-cube: maxVertices={}, currentDimension={}",
-                    std::source_location::current(), getMaxVertices(), getCurrentDimension());
+        LOG_INFO_CAT("Simulation", "Initializing n-cube: maxVertices={}, currentDimension={}",
+                     std::source_location::current(), getMaxVertices(), getCurrentDimension());
         if (getDebug() && getMaxVertices() > 1'000'000) {
-            logger_.log(Logging::LogLevel::Warning, "High vertex count ({}) may impact memory usage",
-                        std::source_location::current(), getMaxVertices());
+            LOG_WARNING_CAT("Simulation", "High vertex count ({}) may impact memory usage",
+                            std::source_location::current(), getMaxVertices());
         }
 
         nCubeVertices_.clear();
@@ -299,14 +296,14 @@ void UniversalEquation::initializeNCube() {
         vertexWaveAmplitudes_.clear();
         interactions_.clear();
         projectedVerts_.clear();
-        logger_.log(Logging::LogLevel::Debug, "Cleared all vectors", std::source_location::current());
+        LOG_DEBUG_CAT("Simulation", "Cleared all vectors", std::source_location::current());
 
-        logger_.log(Logging::LogLevel::Debug, "Reserving {} elements for nCubeVertices_",
-                    std::source_location::current(), getMaxVertices());
+        LOG_DEBUG_CAT("Simulation", "Reserving {} elements for nCubeVertices_",
+                      std::source_location::current(), getMaxVertices());
         nCubeVertices_.reserve(getMaxVertices());
         if (nCubeVertices_.capacity() < getMaxVertices()) {
-            logger_.log(Logging::LogLevel::Error, "Failed to reserve {} elements for nCubeVertices_, actual capacity={}",
-                        std::source_location::current(), getMaxVertices(), nCubeVertices_.capacity());
+            LOG_ERROR_CAT("Simulation", "Failed to reserve {} elements for nCubeVertices_, actual capacity={}",
+                          std::source_location::current(), getMaxVertices(), nCubeVertices_.capacity());
             throw std::bad_alloc();
         }
         vertexMomenta_.reserve(getMaxVertices());
@@ -334,22 +331,22 @@ void UniversalEquation::initializeNCube() {
             projectedVerts_.push_back(glm::vec3(0.0f, 0.0f, 0.0f));
             totalCharge_.fetch_add(1.0L / getMaxVertices());
             if (getDebug() && (i % 1000 == 0 || i == getMaxVertices() - 1)) {
-                logger_.log(Logging::LogLevel::Debug, "Initialized vertex {}/{}, nCubeVertices_.size()={}",
-                            std::source_location::current(), i, getMaxVertices(), nCubeVertices_.size());
+                LOG_DEBUG_CAT("Simulation", "Initialized vertex {}/{}, nCubeVertices_.size()={}",
+                              std::source_location::current(), i, getMaxVertices(), nCubeVertices_.size());
             }
         }
 
         if (!projectedVerts_.empty() && reinterpret_cast<std::uintptr_t>(projectedVerts_.data()) % alignof(glm::vec3) != 0) {
-            logger_.log(Logging::LogLevel::Error, "projectedVerts_ is misaligned: address={}, alignment={}",
-                        std::source_location::current(), reinterpret_cast<std::uintptr_t>(projectedVerts_.data()), alignof(glm::vec3));
+            LOG_ERROR_CAT("Simulation", "projectedVerts_ is misaligned: address={}, alignment={}",
+                          std::source_location::current(), reinterpret_cast<std::uintptr_t>(projectedVerts_.data()), alignof(glm::vec3));
             throw std::runtime_error("Misaligned projectedVerts_");
         }
 
-        logger_.log(Logging::LogLevel::Info, "n-cube initialized: vertices={}, totalCharge={}",
-                    std::source_location::current(), nCubeVertices_.size(), getTotalCharge());
+        LOG_INFO_CAT("Simulation", "n-cube initialized: vertices={}, totalCharge={}",
+                     std::source_location::current(), nCubeVertices_.size(), getTotalCharge());
         init_latch.count_down();
     } catch (const std::exception& e) {
-        logger_.log(Logging::LogLevel::Error, "initializeNCube failed: {}", std::source_location::current(), e.what());
+        LOG_ERROR_CAT("Simulation", "initializeNCube failed: {}", std::source_location::current(), e.what());
         throw;
     }
     init_latch.wait();
@@ -357,18 +354,18 @@ void UniversalEquation::initializeNCube() {
 
 void UniversalEquation::validateProjectedVertices() const {
     if (projectedVerts_.empty()) {
-        logger_.log(Logging::LogLevel::Warning, "projectedVerts_ is empty, initializing with default values",
-                    std::source_location::current());
+        LOG_WARNING_CAT("Simulation", "projectedVerts_ is empty, initializing with default values",
+                        std::source_location::current());
         projectedVerts_.resize(nCubeVertices_.size(), glm::vec3(0.0f, 0.0f, 0.0f));
     }
     if (projectedVerts_.size() != nCubeVertices_.size()) {
-        logger_.log(Logging::LogLevel::Error, "projectedVerts_ size mismatch: projectedVerts_.size()={}, nCubeVertices_.size()={}",
-                    std::source_location::current(), projectedVerts_.size(), nCubeVertices_.size());
+        LOG_ERROR_CAT("Simulation", "projectedVerts_ size mismatch: projectedVerts_.size()={}, nCubeVertices_.size()={}",
+                      std::source_location::current(), projectedVerts_.size(), nCubeVertices_.size());
         throw std::runtime_error("projectedVerts_ size does not match nCubeVertices_");
     }
     if (!projectedVerts_.empty() && reinterpret_cast<std::uintptr_t>(projectedVerts_.data()) % alignof(glm::vec3) != 0) {
-        logger_.log(Logging::LogLevel::Error, "projectedVerts_ is misaligned: address={}, alignment={}",
-                    std::source_location::current(), reinterpret_cast<std::uintptr_t>(projectedVerts_.data()), alignof(glm::vec3));
+        LOG_ERROR_CAT("Simulation", "projectedVerts_ is misaligned: address={}, alignment={}",
+                      std::source_location::current(), reinterpret_cast<std::uintptr_t>(projectedVerts_.data()), alignof(glm::vec3));
         throw std::runtime_error("Misaligned projectedVerts_");
     }
 }
@@ -382,25 +379,25 @@ long double UniversalEquation::computeKineticEnergy(int vertexIndex) const {
     }
     kineticEnergy *= 0.5L * materialDensity_.load(); // KE = (1/2) * mass * v^2, assuming density as mass proxy
     if (debug_.load()) {
-        logger_.log(Logging::LogLevel::Debug, "Computed kinetic energy for vertex {}: result={}",
-                    std::source_location::current(), vertexIndex, kineticEnergy);
+        LOG_DEBUG_CAT("Simulation", "Computed kinetic energy for vertex {}: result={}",
+                      std::source_location::current(), vertexIndex, kineticEnergy);
     }
     return kineticEnergy;
 }
 
 void UniversalEquation::updateInteractions() const {
-    logger_.log(Logging::LogLevel::Info, "Starting interaction update: vertices={}, dimension={}",
-                std::source_location::current(), nCubeVertices_.size(), getCurrentDimension());
+    LOG_INFO_CAT("Simulation", "Starting interaction update: vertices={}, dimension={}",
+                 std::source_location::current(), nCubeVertices_.size(), getCurrentDimension());
     interactions_.clear();
     projectedVerts_.clear();
-    logger_.log(Logging::LogLevel::Debug, "Cleared interactions_ and projectedVerts_",
-                std::source_location::current());
+    LOG_DEBUG_CAT("Simulation", "Cleared interactions_ and projectedVerts_",
+                  std::source_location::current());
 
     size_t d = static_cast<size_t>(getCurrentDimension());
     uint64_t numVertices = std::min(static_cast<uint64_t>(nCubeVertices_.size()), getMaxVertices());
     if (debug_.load()) {
-        logger_.log(Logging::LogLevel::Debug, "Processing {} vertices (maxVertices_={})",
-                    std::source_location::current(), numVertices, getMaxVertices());
+        LOG_DEBUG_CAT("Simulation", "Processing {} vertices (maxVertices_={})",
+                      std::source_location::current(), numVertices, getMaxVertices());
     }
 
     std::vector<std::vector<DimensionInteraction>> localInteractions(omp_get_max_threads());
@@ -409,8 +406,8 @@ void UniversalEquation::updateInteractions() const {
         localInteractions[t].reserve(numVertices / omp_get_max_threads() + 1);
         localProjected[t].reserve(numVertices / omp_get_max_threads() + 1);
         if (debug_.load()) {
-            logger_.log(Logging::LogLevel::Debug, "Thread {}: reserved {} elements for localInteractions and localProjected",
-                        std::source_location::current(), t, numVertices / omp_get_max_threads() + 1);
+            LOG_DEBUG_CAT("Simulation", "Thread {}: reserved {} elements for localInteractions and localProjected",
+                          std::source_location::current(), t, numVertices / omp_get_max_threads() + 1);
         }
     }
 
@@ -430,8 +427,8 @@ void UniversalEquation::updateInteractions() const {
     long double depthRef = referenceVertex[depthIdx] + trans;
     if (depthRef <= 0.0L) {
         depthRef = 0.001L;
-        logger_.log(Logging::LogLevel::Warning, "Clamped depthRef to 0.001: original={}",
-                    std::source_location::current(), referenceVertex[depthIdx] + trans);
+        LOG_WARNING_CAT("Simulation", "Clamped depthRef to 0.001: original={}",
+                        std::source_location::current(), referenceVertex[depthIdx] + trans);
     }
 
     std::latch latch(omp_get_max_threads());
@@ -439,15 +436,15 @@ void UniversalEquation::updateInteractions() const {
     {
         int thread_id = omp_get_thread_num();
         if (debug_.load()) {
-            logger_.log(Logging::LogLevel::Debug, "Thread {}: processing vertices 0 to {}",
-                        std::source_location::current(), thread_id, numVertices);
+            LOG_DEBUG_CAT("Simulation", "Thread {}: processing vertices 0 to {}",
+                          std::source_location::current(), thread_id, numVertices);
         }
         #pragma omp for schedule(dynamic)
         for (uint64_t i = 0; i < numVertices; ++i) {
             if (i >= nCubeVertices_.size()) {
                 if (debug_.load()) {
-                    logger_.log(Logging::LogLevel::Warning, "Thread {}: skipping vertex {} (exceeds nCubeVertices_.size()={})",
-                                std::source_location::current(), thread_id, i, nCubeVertices_.size());
+                    LOG_WARNING_CAT("Simulation", "Thread {}: skipping vertex {} (exceeds nCubeVertices_.size()={})",
+                                    std::source_location::current(), thread_id, i, nCubeVertices_.size());
                 }
                 continue;
             }
@@ -457,8 +454,8 @@ void UniversalEquation::updateInteractions() const {
             if (depthI <= 0.0L) {
                 depthI = 0.001L;
                 if (debug_.load()) {
-                    logger_.log(Logging::LogLevel::Warning, "Thread {}: clamped depthI to 0.001 for vertex {}",
-                                std::source_location::current(), thread_id, i);
+                    LOG_WARNING_CAT("Simulation", "Thread {}: clamped depthI to 0.001 for vertex {}",
+                                    std::source_location::current(), thread_id, i);
                 }
             }
             long double scaleI = safe_div(focal, depthI);
@@ -471,8 +468,8 @@ void UniversalEquation::updateInteractions() const {
             if (distance <= 0.0L || std::isnan(distance) || std::isinf(distance)) {
                 distance = 1e-10L;
                 if (debug_.load()) {
-                    logger_.log(Logging::LogLevel::Warning, "Thread {}: invalid distance for vertex {}, using default={}",
-                                std::source_location::current(), thread_id, i, distance);
+                    LOG_WARNING_CAT("Simulation", "Thread {}: invalid distance for vertex {}, using default={}",
+                                    std::source_location::current(), thread_id, i, distance);
                 }
             }
             long double strength = computeInteraction(static_cast<int>(i), distance);
@@ -503,19 +500,19 @@ void UniversalEquation::updateInteractions() const {
         interactions_.insert(interactions_.end(), localInteractions[t].begin(), localInteractions[t].end());
         projectedVerts_.insert(projectedVerts_.end(), localProjected[t].begin(), localProjected[t].end());
     }
-    logger_.log(Logging::LogLevel::Info, "Interactions updated: interactions_.size()={}, projectedVerts_.size()={}",
-                std::source_location::current(), interactions_.size(), projectedVerts_.size());
+    LOG_INFO_CAT("Simulation", "Interactions updated: interactions_.size()={}, projectedVerts_.size()={}",
+                 std::source_location::current(), interactions_.size(), projectedVerts_.size());
     if (totalInteractions != totalProjected || totalInteractions != interactions_.size() || totalProjected != projectedVerts_.size()) {
-        logger_.log(Logging::LogLevel::Error, "Mismatch in merged sizes: expected interactions={}, projected={}, actual interactions_.size()={}, projectedVerts_.size()={}",
-                    std::source_location::current(), totalInteractions, totalProjected, interactions_.size(), projectedVerts_.size());
+        LOG_ERROR_CAT("Simulation", "Mismatch in merged sizes: expected interactions={}, projected={}, actual interactions_.size()={}, projectedVerts_.size()={}",
+                      std::source_location::current(), totalInteractions, totalProjected, interactions_.size(), projectedVerts_.size());
         throw std::runtime_error("Mismatch in merged vector sizes");
     }
     validateProjectedVertices();
 }
 
 UniversalEquation::EnergyResult UniversalEquation::compute() {
-    logger_.log(Logging::LogLevel::Info, "Starting compute: vertices={}, dimension={}",
-                std::source_location::current(), nCubeVertices_.size(), getCurrentDimension());
+    LOG_INFO_CAT("Simulation", "Starting compute: vertices={}, dimension={}",
+                 std::source_location::current(), nCubeVertices_.size(), getCurrentDimension());
     if (getNeedsUpdate()) {
         updateInteractions();
         needsUpdate_.store(false);
@@ -534,9 +531,8 @@ UniversalEquation::EnergyResult UniversalEquation::compute() {
     // Ensure vectors are properly sized
     if (nCubeVertices_.size() != numVertices || vertexMomenta_.size() != numVertices ||
         vertexSpins_.size() != numVertices || vertexWaveAmplitudes_.size() != numVertices) {
-        logger_.log(Logging::LogLevel::Error, "Vector size mismatch: nCubeVertices_={}, vertexMomenta_={}, vertexSpins_={}, vertexWaveAmplitudes_={}",
-                    std::source_location::current(), nCubeVertices_.size(), vertexMomenta_.size(),
-                    vertexSpins_.size(), vertexWaveAmplitudes_.size());
+        LOG_ERROR_CAT("Simulation", "Vector size mismatch: nCubeVertices_={}, vertexMomenta_={}, vertexSpins_={}, vertexWaveAmplitudes_={}",
+                      std::source_location::current(), nCubeVertices_.size(), vertexMomenta_.size(), vertexSpins_.size(), vertexWaveAmplitudes_.size());
         throw std::runtime_error("Vector size mismatch in compute");
     }
 
@@ -545,20 +541,19 @@ UniversalEquation::EnergyResult UniversalEquation::compute() {
     {
         int thread_id = omp_get_thread_num();
         if (debug_.load()) {
-            logger_.log(Logging::LogLevel::Debug, "Thread {}: computing energies for vertices",
-                        std::source_location::current(), thread_id);
+            LOG_DEBUG_CAT("Simulation", "Thread {}: computing energies for vertices",
+                          std::source_location::current(), thread_id);
         }
         #pragma omp for schedule(dynamic) nowait
         for (uint64_t i = 0; i < numVertices; ++i) {
             if (i >= nCubeVertices_.size()) {
                 if (debug_.load()) {
-                    logger_.log(Logging::LogLevel::Warning, "Thread {}: skipping vertex {} (exceeds nCubeVertices_.size()={})",
-                                std::source_location::current(), thread_id, i, nCubeVertices_.size());
+                    LOG_WARNING_CAT("Simulation", "Thread {}: skipping vertex {} (exceeds nCubeVertices_.size()={})",
+                                    std::source_location::current(), thread_id, i, nCubeVertices_.size());
                 }
                 continue;
             }
             validateVertexIndex(static_cast<int>(i));
-
             // Compute total gravitational potential for vertex i by summing over sampled vertices
             long double totalPotential = 0.0L;
             uint64_t sampleStep = std::max<uint64_t>(1, numVertices / 100); // Sample ~100 pairs per vertex
@@ -568,8 +563,8 @@ UniversalEquation::EnergyResult UniversalEquation::compute() {
                     totalPotential += computeGravitationalPotential(static_cast<int>(i), static_cast<int>(j));
                 } catch (const std::out_of_range& e) {
                     if (debug_.load()) {
-                        logger_.log(Logging::LogLevel::Warning, "Thread {}: skipping invalid vertex pair ({}, {}): {}",
-                                    std::source_location::current(), thread_id, i, j, e.what());
+                        LOG_WARNING_CAT("Simulation", "Thread {}: skipping invalid vertex pair ({}, {}): {}",
+                                        std::source_location::current(), thread_id, i, j, e.what());
                     }
                     continue;
                 }
@@ -578,8 +573,8 @@ UniversalEquation::EnergyResult UniversalEquation::compute() {
             totalPotential *= static_cast<long double>(sampleStep);
             if (std::isnan(totalPotential) || std::isinf(totalPotential)) {
                 if (debug_.load()) {
-                    logger_.log(Logging::LogLevel::Warning, "Thread {}: invalid totalPotential for vertex {}: {}, resetting to 0",
-                                std::source_location::current(), thread_id, i, totalPotential);
+                    LOG_WARNING_CAT("Simulation", "Thread {}: invalid totalPotential for vertex {}: {}, resetting to 0",
+                                    std::source_location::current(), thread_id, i, totalPotential);
                 }
                 totalPotential = 0.0L;
             }
@@ -607,8 +602,7 @@ UniversalEquation::EnergyResult UniversalEquation::compute() {
         result.GodWaveEnergy += GodWaveEnergies[i];
     }
     result.observable = safe_div(result.observable, static_cast<long double>(numVertices));
-    logger_.log(Logging::LogLevel::Info, "Compute completed: {}",
-                std::source_location::current(), result.toString());
+    LOG_INFO_CAT("Simulation", "Compute completed: {}", std::source_location::current(), result.toString());
     return result;
 }
 
@@ -634,16 +628,14 @@ void UniversalEquation::initializeWithRetry() {
             }
             updateInteractions();
             validateProjectedVertices();
-            logger_.log(Logging::LogLevel::Info, "Initialization completed successfully",
-                        std::source_location::current());
+            LOG_INFO_CAT("Simulation", "Initialization completed successfully", std::source_location::current());
             retry_latch.count_down();
             return;
         } catch (const std::bad_alloc& e) {
-            logger_.log(Logging::LogLevel::Warning, "Memory allocation failed for dimension {}. Reducing dimension to {}. Attempt {}/{}",
-                        std::source_location::current(), getCurrentDimension(), getCurrentDimension() - 1, attempts + 1, maxAttempts);
+            LOG_WARNING_CAT("Simulation", "Memory allocation failed for dimension {}. Reducing dimension to {}. Attempt {}/{}",
+                            std::source_location::current(), getCurrentDimension(), getCurrentDimension() - 1, attempts + 1, maxAttempts);
             if (getCurrentDimension() == 1) {
-                logger_.log(Logging::LogLevel::Error, "Failed to allocate memory even at dimension 1",
-                            std::source_location::current());
+                LOG_ERROR_CAT("Simulation", "Failed to allocate memory even at dimension 1", std::source_location::current());
                 throw std::runtime_error("Failed to allocate memory even at dimension 1");
             }
             setCurrentDimension(getCurrentDimension() - 1);
@@ -652,34 +644,32 @@ void UniversalEquation::initializeWithRetry() {
             ++attempts;
         }
     }
-    logger_.log(Logging::LogLevel::Error, "Max retry attempts reached for initialization",
-                std::source_location::current());
+    LOG_ERROR_CAT("Simulation", "Max retry attempts reached for initialization", std::source_location::current());
     throw std::runtime_error("Max retry attempts reached for initialization");
 }
 
 void UniversalEquation::initializeCalculator(AMOURANTH* amouranth) {
-    logger_.log(Logging::LogLevel::Info, "Initializing calculator with AMOURANTH={}",
-                std::source_location::current(), static_cast<void*>(amouranth));
+    LOG_INFO_CAT("Simulation", "Initializing calculator with AMOURANTH={}",
+                 std::source_location::current(), static_cast<void*>(amouranth));
     try {
         if (amouranth) {
-            navigator_ = amouranth->getNavigator();
             if (navigator_) {
                 navigator_->initialize(getCurrentDimension(), getMaxVertices());
-                logger_.log(Logging::LogLevel::Debug, "DimensionalNavigator initialized: navigator_={}",
-                            std::source_location::current(), static_cast<void*>(navigator_));
+                LOG_DEBUG_CAT("Simulation", "DimensionalNavigator initialized: navigator_={}",
+                              std::source_location::current(), static_cast<void*>(navigator_));
             } else {
-                logger_.log(Logging::LogLevel::Warning, "AMOURANTH provided but navigator_ is null",
-                            std::source_location::current());
+                LOG_WARNING_CAT("Simulation", "AMOURANTH provided but navigator_ is null, skipping navigator initialization",
+                                std::source_location::current());
             }
         } else {
-            logger_.log(Logging::LogLevel::Warning, "AMOURANTH is null, skipping navigator initialization",
-                        std::source_location::current());
+            LOG_WARNING_CAT("Simulation", "AMOURANTH is null, skipping navigator initialization",
+                            std::source_location::current());
         }
         needsUpdate_.store(true);
         initializeWithRetry();
         validateProjectedVertices();
     } catch (const std::exception& e) {
-        logger_.log(Logging::LogLevel::Error, "initializeCalculator failed: {}", std::source_location::current(), e.what());
+        LOG_ERROR_CAT("Simulation", "initializeCalculator failed: {}", std::source_location::current(), e.what());
         throw;
     }
 }
@@ -687,15 +677,15 @@ void UniversalEquation::initializeCalculator(AMOURANTH* amouranth) {
 void UniversalEquation::setGodWaveFreq(long double value) {
     GodWaveFreq_.store(std::clamp(value, 0.1L, 10.0L));
     needsUpdate_.store(true);
-    logger_.log(Logging::LogLevel::Debug, "Set GodWaveFreq: value={}", std::source_location::current(), GodWaveFreq_.load());
+    LOG_DEBUG_CAT("Simulation", "Set GodWaveFreq: value={}", std::source_location::current(), GodWaveFreq_.load());
 }
 
 long double UniversalEquation::computeNurbMatter(int vertexIndex) const {
     validateVertexIndex(vertexIndex);
     long double result = getNurbMatterStrength() * vertexWaveAmplitudes_[vertexIndex] * 0.5L;
     if (debug_.load()) {
-        logger_.log(Logging::LogLevel::Debug, "Computed NURB matter for vertex {}: result={}",
-                    std::source_location::current(), vertexIndex, result);
+        LOG_DEBUG_CAT("Simulation", "Computed NURB matter for vertex {}: result={}",
+                      std::source_location::current(), vertexIndex, result);
     }
     return result;
 }
@@ -704,8 +694,8 @@ long double UniversalEquation::computeNurbEnergy(int vertexIndex) const {
     validateVertexIndex(vertexIndex);
     long double result = getNurbEnergyStrength() * vertexWaveAmplitudes_[vertexIndex] * 0.3L;
     if (debug_.load()) {
-        logger_.log(Logging::LogLevel::Debug, "Computed NURB energy for vertex {}: result={}",
-                    std::source_location::current(), vertexIndex, result);
+        LOG_DEBUG_CAT("Simulation", "Computed NURB energy for vertex {}: result={}",
+                      std::source_location::current(), vertexIndex, result);
     }
     return result;
 }
@@ -714,8 +704,8 @@ long double UniversalEquation::computeSpinEnergy(int vertexIndex) const {
     validateVertexIndex(vertexIndex);
     long double result = getSpinInteraction() * vertexSpins_[vertexIndex] * 0.2L;
     if (debug_.load()) {
-        logger_.log(Logging::LogLevel::Debug, "Computed spin energy for vertex {}: result={}",
-                    std::source_location::current(), vertexIndex, result);
+        LOG_DEBUG_CAT("Simulation", "Computed spin energy for vertex {}: result={}",
+                      std::source_location::current(), vertexIndex, result);
     }
     return result;
 }
@@ -724,8 +714,8 @@ long double UniversalEquation::computeEMField(int vertexIndex) const {
     validateVertexIndex(vertexIndex);
     long double result = getEMFieldStrength() * vertexWaveAmplitudes_[vertexIndex] * 0.01L;
     if (debug_.load()) {
-        logger_.log(Logging::LogLevel::Debug, "Computed EM field for vertex {}: result={}",
-                    std::source_location::current(), vertexIndex, result);
+        LOG_DEBUG_CAT("Simulation", "Computed EM field for vertex {}: result={}",
+                      std::source_location::current(), vertexIndex, result);
     }
     return result;
 }
@@ -734,8 +724,8 @@ long double UniversalEquation::computeGodWave(int vertexIndex) const {
     validateVertexIndex(vertexIndex);
     long double result = getGodWaveFreq() * vertexWaveAmplitudes_[vertexIndex] * 0.1L;
     if (debug_.load()) {
-        logger_.log(Logging::LogLevel::Debug, "Computed God wave for vertex {}: result={}",
-                    std::source_location::current(), vertexIndex, result);
+        LOG_DEBUG_CAT("Simulation", "Computed God wave for vertex {}: result={}",
+                      std::source_location::current(), vertexIndex, result);
     }
     return result;
 }
@@ -744,8 +734,8 @@ long double UniversalEquation::computeInteraction(int vertexIndex, long double d
     validateVertexIndex(vertexIndex);
     long double result = getInfluence() * safe_div(1.0L, distance + 1e-10L);
     if (debug_.load()) {
-        logger_.log(Logging::LogLevel::Debug, "Computed interaction for vertex {}: distance={}, result={}",
-                    std::source_location::current(), vertexIndex, distance, result);
+        LOG_DEBUG_CAT("Simulation", "Computed interaction for vertex {}: distance={}, result={}",
+                      std::source_location::current(), vertexIndex, distance, result);
     }
     return result;
 }
@@ -757,8 +747,8 @@ std::vector<long double> UniversalEquation::computeVectorPotential(int vertexInd
         result[i] = vertexMomenta_[vertexIndex][i] * getWeak();
     }
     if (debug_.load()) {
-        logger_.log(Logging::LogLevel::Debug, "Computed vector potential for vertex {}: result size={}",
-                    std::source_location::current(), vertexIndex, result.size());
+        LOG_DEBUG_CAT("Simulation", "Computed vector potential for vertex {}: result size={}",
+                      std::source_location::current(), vertexIndex, result.size());
     }
     return result;
 }
@@ -766,20 +756,19 @@ std::vector<long double> UniversalEquation::computeVectorPotential(int vertexInd
 long double UniversalEquation::safeExp(long double x) const {
     if (std::isnan(x) || std::isinf(x)) {
         if (debug_.load()) {
-            logger_.log(Logging::LogLevel::Warning, "Invalid input to safeExp: x={}", std::source_location::current(), x);
+            LOG_WARNING_CAT("Simulation", "Invalid input to safeExp: x={}", std::source_location::current(), x);
         }
         return 0.0L;
     }
     if (x > 100.0L) {
         if (debug_.load()) {
-            logger_.log(Logging::LogLevel::Warning, "Clamping large exponent in safeExp: x={}", std::source_location::current(), x);
+            LOG_WARNING_CAT("Simulation", "Clamping large exponent in safeExp: x={}", std::source_location::current(), x);
         }
         x = 100.0L;
     }
     long double result = std::exp(x);
     if (debug_.load()) {
-        logger_.log(Logging::LogLevel::Debug, "Computed safeExp: x={}, result={}",
-                    std::source_location::current(), x, result);
+        LOG_DEBUG_CAT("Simulation", "Computed safeExp: x={}, result={}", std::source_location::current(), x, result);
     }
     return result;
 }
@@ -787,30 +776,29 @@ long double UniversalEquation::safeExp(long double x) const {
 long double UniversalEquation::safe_div(long double a, long double b) const {
     if (b == 0.0L || std::isnan(b) || std::isinf(b)) {
         if (debug_.load()) {
-            logger_.log(Logging::LogLevel::Warning, "Invalid divisor in safe_div: a={}, b={}",
-                        std::source_location::current(), a, b);
+            LOG_WARNING_CAT("Simulation", "Invalid divisor in safe_div: a={}, b={}", std::source_location::current(), a, b);
         }
         return 0.0L;
     }
     long double result = a / b;
     if (std::isnan(result) || std::isinf(result)) {
         if (debug_.load()) {
-            logger_.log(Logging::LogLevel::Warning, "Invalid result in safe_div: a={}, b={}, result={}",
-                        std::source_location::current(), a, b, result);
+            LOG_WARNING_CAT("Simulation", "Invalid result in safe_div: a={}, b={}, result={}",
+                            std::source_location::current(), a, b, result);
         }
         return 0.0L;
     }
     if (debug_.load()) {
-        logger_.log(Logging::LogLevel::Debug, "Computed safe_div: a={}, b={}, result={}",
-                    std::source_location::current(), a, b, result);
+        LOG_DEBUG_CAT("Simulation", "Computed safe_div: a={}, b={}, result={}",
+                      std::source_location::current(), a, b, result);
     }
     return result;
 }
 
-void UniversalEquation::validateVertexIndex(int vertexIndex, const std::source_location& loc) const {
+void UniversalEquation::validateVertexIndex(int vertexIndex, [[maybe_unused]] const std::source_location& loc) const {
     if (vertexIndex < 0 || static_cast<size_t>(vertexIndex) >= nCubeVertices_.size()) {
-        logger_.log(Logging::LogLevel::Error, "Invalid vertexIndex: vertexIndex={}, size={}",
-                    loc, vertexIndex, nCubeVertices_.size());
+        LOG_ERROR_CAT("Simulation", "Invalid vertexIndex: vertexIndex={}, size={}",
+                      std::source_location::current(), vertexIndex, nCubeVertices_.size());
         throw std::out_of_range("Invalid vertex index");
     }
 }
@@ -818,230 +806,230 @@ void UniversalEquation::validateVertexIndex(int vertexIndex, const std::source_l
 void UniversalEquation::setCurrentDimension(int dimension) {
     currentDimension_.store(std::clamp(dimension, 1, maxDimensions_));
     needsUpdate_.store(true);
-    logger_.log(Logging::LogLevel::Debug, "Set currentDimension: value={}", std::source_location::current(), dimension);
+    LOG_DEBUG_CAT("Simulation", "Set currentDimension: value={}", std::source_location::current(), dimension);
 }
 
 void UniversalEquation::setMode(int mode) {
     mode_.store(std::clamp(mode, 1, maxDimensions_));
     needsUpdate_.store(true);
-    logger_.log(Logging::LogLevel::Debug, "Set mode: value={}", std::source_location::current(), mode);
+    LOG_DEBUG_CAT("Simulation", "Set mode: value={}", std::source_location::current(), mode);
 }
 
 void UniversalEquation::setInfluence(long double value) {
     influence_.store(std::clamp(value, 0.0L, 10.0L));
     needsUpdate_.store(true);
-    logger_.log(Logging::LogLevel::Debug, "Set influence: value={}", std::source_location::current(), value);
+    LOG_DEBUG_CAT("Simulation", "Set influence: value={}", std::source_location::current(), value);
 }
 
 void UniversalEquation::setWeak(long double value) {
     weak_.store(std::clamp(value, 0.0L, 1.0L));
     needsUpdate_.store(true);
-    logger_.log(Logging::LogLevel::Debug, "Set weak: value={}", std::source_location::current(), value);
+    LOG_DEBUG_CAT("Simulation", "Set weak: value={}", std::source_location::current(), value);
 }
 
 void UniversalEquation::setCollapse(long double value) {
     collapse_.store(std::clamp(value, 0.0L, 5.0L));
     needsUpdate_.store(true);
-    logger_.log(Logging::LogLevel::Debug, "Set collapse: value={}", std::source_location::current(), value);
+    LOG_DEBUG_CAT("Simulation", "Set collapse: value={}", std::source_location::current(), value);
 }
 
 void UniversalEquation::setTwoD(long double value) {
     twoD_.store(std::clamp(value, 0.0L, 5.0L));
     needsUpdate_.store(true);
-    logger_.log(Logging::LogLevel::Debug, "Set twoD: value={}", std::source_location::current(), value);
+    LOG_DEBUG_CAT("Simulation", "Set twoD: value={}", std::source_location::current(), value);
 }
 
 void UniversalEquation::setThreeDInfluence(long double value) {
     threeDInfluence_.store(std::clamp(value, 0.0L, 5.0L));
     needsUpdate_.store(true);
-    logger_.log(Logging::LogLevel::Debug, "Set threeDInfluence: value={}", std::source_location::current(), value);
+    LOG_DEBUG_CAT("Simulation", "Set threeDInfluence: value={}", std::source_location::current(), value);
 }
 
 void UniversalEquation::setOneDPermeation(long double value) {
     oneDPermeation_.store(std::clamp(value, 0.0L, 5.0L));
     needsUpdate_.store(true);
-    logger_.log(Logging::LogLevel::Debug, "Set oneDPermeation: value={}", std::source_location::current(), value);
+    LOG_DEBUG_CAT("Simulation", "Set oneDPermeation: value={}", std::source_location::current(), value);
 }
 
 void UniversalEquation::setNurbMatterStrength(long double value) {
     nurbMatterStrength_.store(std::clamp(value, 0.0L, 1.0L));
     needsUpdate_.store(true);
-    logger_.log(Logging::LogLevel::Debug, "Set nurbMatterStrength: value={}", std::source_location::current(), value);
+    LOG_DEBUG_CAT("Simulation", "Set nurbMatterStrength: value={}", std::source_location::current(), value);
 }
 
 void UniversalEquation::setNurbEnergyStrength(long double value) {
     nurbEnergyStrength_.store(std::clamp(value, 0.0L, 2.0L));
     needsUpdate_.store(true);
-    logger_.log(Logging::LogLevel::Debug, "Set nurbEnergyStrength: value={}", std::source_location::current(), value);
+    LOG_DEBUG_CAT("Simulation", "Set nurbEnergyStrength: value={}", std::source_location::current(), value);
 }
 
 void UniversalEquation::setAlpha(long double value) {
     alpha_.store(std::clamp(value, 0.01L, 10.0L));
     needsUpdate_.store(true);
-    logger_.log(Logging::LogLevel::Debug, "Set alpha: value={}", std::source_location::current(), value);
+    LOG_DEBUG_CAT("Simulation", "Set alpha: value={}", std::source_location::current(), value);
 }
 
 void UniversalEquation::setBeta(long double value) {
     beta_.store(std::clamp(value, 0.0L, 1.0L));
     needsUpdate_.store(true);
-    logger_.log(Logging::LogLevel::Debug, "Set beta: value={}", std::source_location::current(), value);
+    LOG_DEBUG_CAT("Simulation", "Set beta: value={}", std::source_location::current(), value);
 }
 
 void UniversalEquation::setCarrollFactor(long double value) {
     carrollFactor_.store(std::clamp(value, 0.0L, 1.0L));
     needsUpdate_.store(true);
-    logger_.log(Logging::LogLevel::Debug, "Set carrollFactor: value={}", std::source_location::current(), value);
+    LOG_DEBUG_CAT("Simulation", "Set carrollFactor: value={}", std::source_location::current(), value);
 }
 
 void UniversalEquation::setMeanFieldApprox(long double value) {
     meanFieldApprox_.store(std::clamp(value, 0.0L, 1.0L));
     needsUpdate_.store(true);
-    logger_.log(Logging::LogLevel::Debug, "Set meanFieldApprox: value={}", std::source_location::current(), value);
+    LOG_DEBUG_CAT("Simulation", "Set meanFieldApprox: value={}", std::source_location::current(), value);
 }
 
 void UniversalEquation::setAsymCollapse(long double value) {
     asymCollapse_.store(std::clamp(value, 0.0L, 1.0L));
     needsUpdate_.store(true);
-    logger_.log(Logging::LogLevel::Debug, "Set asymCollapse: value={}", std::source_location::current(), value);
+    LOG_DEBUG_CAT("Simulation", "Set asymCollapse: value={}", std::source_location::current(), value);
 }
 
 void UniversalEquation::setPerspectiveTrans(long double value) {
     perspectiveTrans_.store(std::clamp(value, 0.0L, 10.0L));
     needsUpdate_.store(true);
-    logger_.log(Logging::LogLevel::Debug, "Set perspectiveTrans: value={}", std::source_location::current(), value);
+    LOG_DEBUG_CAT("Simulation", "Set perspectiveTrans: value={}", std::source_location::current(), value);
 }
 
 void UniversalEquation::setPerspectiveFocal(long double value) {
     perspectiveFocal_.store(std::clamp(value, 1.0L, 20.0L));
     needsUpdate_.store(true);
-    logger_.log(Logging::LogLevel::Debug, "Set perspectiveFocal: value={}", std::source_location::current(), value);
+    LOG_DEBUG_CAT("Simulation", "Set perspectiveFocal: value={}", std::source_location::current(), value);
 }
 
 void UniversalEquation::setSpinInteraction(long double value) {
     spinInteraction_.store(std::clamp(value, 0.0L, 1.0L));
     needsUpdate_.store(true);
-    logger_.log(Logging::LogLevel::Debug, "Set spinInteraction: value={}", std::source_location::current(), value);
+    LOG_DEBUG_CAT("Simulation", "Set spinInteraction: value={}", std::source_location::current(), value);
 }
 
 void UniversalEquation::setEMFieldStrength(long double value) {
     emFieldStrength_.store(std::clamp(value, 0.0L, 1.0e7L));
     needsUpdate_.store(true);
-    logger_.log(Logging::LogLevel::Debug, "Set emFieldStrength: value={}", std::source_location::current(), value);
+    LOG_DEBUG_CAT("Simulation", "Set emFieldStrength: value={}", std::source_location::current(), value);
 }
 
 void UniversalEquation::setRenormFactor(long double value) {
     renormFactor_.store(std::clamp(value, 0.1L, 10.0L));
     needsUpdate_.store(true);
-    logger_.log(Logging::LogLevel::Debug, "Set renormFactor: value={}", std::source_location::current(), value);
+    LOG_DEBUG_CAT("Simulation", "Set renormFactor: value={}", std::source_location::current(), value);
 }
 
 void UniversalEquation::setVacuumEnergy(long double value) {
     vacuumEnergy_.store(std::clamp(value, 0.0L, 1.0L));
     needsUpdate_.store(true);
-    logger_.log(Logging::LogLevel::Debug, "Set vacuumEnergy: value={}", std::source_location::current(), value);
+    LOG_DEBUG_CAT("Simulation", "Set vacuumEnergy: value={}", std::source_location::current(), value);
 }
 
 void UniversalEquation::setDebug(bool value) {
     debug_.store(value);
-    logger_.log(Logging::LogLevel::Debug, "Set debug: value={}", std::source_location::current(), value);
+    LOG_DEBUG_CAT("Simulation", "Set debug: value={}", std::source_location::current(), value);
 }
 
 void UniversalEquation::setCurrentVertices(uint64_t value) {
     currentVertices_.store(std::min(value, maxVertices_));
     needsUpdate_.store(true);
-    logger_.log(Logging::LogLevel::Debug, "Set currentVertices: value={}", std::source_location::current(), value);
+    LOG_DEBUG_CAT("Simulation", "Set currentVertices: value={}", std::source_location::current(), value);
 }
 
 void UniversalEquation::setNavigator(DimensionalNavigator* nav) {
     navigator_ = nav;
     needsUpdate_.store(true);
-    logger_.log(Logging::LogLevel::Debug, "Set navigator: value={}", std::source_location::current(), static_cast<void*>(nav));
+    LOG_DEBUG_CAT("Simulation", "Set navigator: value={}", std::source_location::current(), static_cast<void*>(nav));
 }
 
 void UniversalEquation::setNCubeVertex(int vertexIndex, const std::vector<long double>& vertex) {
     validateVertexIndex(vertexIndex);
     nCubeVertices_[vertexIndex] = vertex;
     needsUpdate_.store(true);
-    logger_.log(Logging::LogLevel::Debug, "Set nCubeVertex for index {}: vertex size={}",
-                std::source_location::current(), vertexIndex, vertex.size());
+    LOG_DEBUG_CAT("Simulation", "Set nCubeVertex for index {}: vertex size={}",
+                  std::source_location::current(), vertexIndex, vertex.size());
 }
 
 void UniversalEquation::setVertexMomentum(int vertexIndex, const std::vector<long double>& momentum) {
     validateVertexIndex(vertexIndex);
     vertexMomenta_[vertexIndex] = momentum;
     needsUpdate_.store(true);
-    logger_.log(Logging::LogLevel::Debug, "Set vertexMomentum for index {}: momentum size={}",
-                std::source_location::current(), vertexIndex, momentum.size());
+    LOG_DEBUG_CAT("Simulation", "Set vertexMomentum for index {}: momentum size={}",
+                  std::source_location::current(), vertexIndex, momentum.size());
 }
 
 void UniversalEquation::setVertexSpin(int vertexIndex, long double spin) {
     validateVertexIndex(vertexIndex);
     vertexSpins_[vertexIndex] = spin;
     needsUpdate_.store(true);
-    logger_.log(Logging::LogLevel::Debug, "Set vertexSpin for index {}: spin={}",
-                std::source_location::current(), vertexIndex, spin);
+    LOG_DEBUG_CAT("Simulation", "Set vertexSpin for index {}: spin={}",
+                  std::source_location::current(), vertexIndex, spin);
 }
 
 void UniversalEquation::setVertexWaveAmplitude(int vertexIndex, long double amplitude) {
     validateVertexIndex(vertexIndex);
     vertexWaveAmplitudes_[vertexIndex] = amplitude;
     needsUpdate_.store(true);
-    logger_.log(Logging::LogLevel::Debug, "Set vertexWaveAmplitude for index {}: amplitude={}",
-                std::source_location::current(), vertexIndex, amplitude);
+    LOG_DEBUG_CAT("Simulation", "Set vertexWaveAmplitude for index {}: amplitude={}",
+                  std::source_location::current(), vertexIndex, amplitude);
 }
 
 void UniversalEquation::setProjectedVertex(int vertexIndex, const glm::vec3& vertex) {
     validateVertexIndex(vertexIndex);
     projectedVerts_[vertexIndex] = vertex;
     needsUpdate_.store(true);
-    logger_.log(Logging::LogLevel::Debug, "Set projectedVertex for index {}: vertex=({},{},{})",
-                std::source_location::current(), vertexIndex, vertex.x, vertex.y, vertex.z);
+    LOG_DEBUG_CAT("Simulation", "Set projectedVertex for index {}: vertex=({},{},{})",
+                  std::source_location::current(), vertexIndex, vertex.x, vertex.y, vertex.z);
 }
 
 void UniversalEquation::setNCubeVertices(const std::vector<std::vector<long double>>& vertices) {
     nCubeVertices_ = vertices;
     needsUpdate_.store(true);
-    logger_.log(Logging::LogLevel::Debug, "Set nCubeVertices: size={}", std::source_location::current(), vertices.size());
+    LOG_DEBUG_CAT("Simulation", "Set nCubeVertices: size={}", std::source_location::current(), vertices.size());
 }
 
 void UniversalEquation::setVertexMomenta(const std::vector<std::vector<long double>>& momenta) {
     vertexMomenta_ = momenta;
     needsUpdate_.store(true);
-    logger_.log(Logging::LogLevel::Debug, "Set vertexMomenta: size={}", std::source_location::current(), momenta.size());
+    LOG_DEBUG_CAT("Simulation", "Set vertexMomenta: size={}", std::source_location::current(), momenta.size());
 }
 
 void UniversalEquation::setVertexSpins(const std::vector<long double>& spins) {
     vertexSpins_ = spins;
     needsUpdate_.store(true);
-    logger_.log(Logging::LogLevel::Debug, "Set vertexSpins: size={}", std::source_location::current(), spins.size());
+    LOG_DEBUG_CAT("Simulation", "Set vertexSpins: size={}", std::source_location::current(), spins.size());
 }
 
 void UniversalEquation::setVertexWaveAmplitudes(const std::vector<long double>& amplitudes) {
     vertexWaveAmplitudes_ = amplitudes;
     needsUpdate_.store(true);
-    logger_.log(Logging::LogLevel::Debug, "Set vertexWaveAmplitudes: size={}", std::source_location::current(), amplitudes.size());
+    LOG_DEBUG_CAT("Simulation", "Set vertexWaveAmplitudes: size={}", std::source_location::current(), amplitudes.size());
 }
 
 void UniversalEquation::setProjectedVertices(const std::vector<glm::vec3>& vertices) {
     projectedVerts_ = vertices;
     needsUpdate_.store(true);
-    logger_.log(Logging::LogLevel::Debug, "Set projectedVertices: size={}", std::source_location::current(), vertices.size());
+    LOG_DEBUG_CAT("Simulation", "Set projectedVertices: size={}", std::source_location::current(), vertices.size());
     validateProjectedVertices();
 }
 
 void UniversalEquation::setTotalCharge(long double value) {
     totalCharge_.store(value);
-    logger_.log(Logging::LogLevel::Debug, "Set totalCharge: value={}", std::source_location::current(), value);
+    LOG_DEBUG_CAT("Simulation", "Set totalCharge: value={}", std::source_location::current(), value);
 }
 
 void UniversalEquation::setMaterialDensity(long double density) {
     materialDensity_.store(std::clamp(density, 0.0L, 1.0e6L)); // Reasonable range for density
     needsUpdate_.store(true);
-    logger_.log(Logging::LogLevel::Debug, "Set materialDensity: value={}", std::source_location::current(), materialDensity_.load());
+    LOG_DEBUG_CAT("Simulation", "Set materialDensity: value={}", std::source_location::current(), materialDensity_.load());
 }
 
 void UniversalEquation::evolveTimeStep(long double dt) {
-    logger_.log(Logging::LogLevel::Info, "Evolving time step: dt={}", std::source_location::current(), dt);
+    LOG_INFO_CAT("Simulation", "Evolving time step: dt={}", std::source_location::current(), dt);
     for (size_t i = 0; i < nCubeVertices_.size(); ++i) {
         validateVertexIndex(static_cast<int>(i));
         for (size_t j = 0; j < static_cast<size_t>(getCurrentDimension()); ++j) {
@@ -1050,11 +1038,11 @@ void UniversalEquation::evolveTimeStep(long double dt) {
     }
     simulationTime_.fetch_add(static_cast<float>(dt));
     needsUpdate_.store(true);
-    logger_.log(Logging::LogLevel::Debug, "Time step evolved: simulationTime={}", std::source_location::current(), simulationTime_.load());
+    LOG_DEBUG_CAT("Simulation", "Time step evolved: simulationTime={}", std::source_location::current(), simulationTime_.load());
 }
 
 void UniversalEquation::updateMomentum() {
-    logger_.log(Logging::LogLevel::Info, "Updating momentum for {} vertices", std::source_location::current(), nCubeVertices_.size());
+    LOG_INFO_CAT("Simulation", "Updating momentum for {} vertices", std::source_location::current(), nCubeVertices_.size());
     for (size_t i = 0; i < vertexMomenta_.size(); ++i) {
         validateVertexIndex(static_cast<int>(i));
         auto acc = computeGravitationalAcceleration(static_cast<int>(i));
@@ -1063,18 +1051,19 @@ void UniversalEquation::updateMomentum() {
         }
     }
     needsUpdate_.store(true);
-    logger_.log(Logging::LogLevel::Debug, "Momentum updated", std::source_location::current());
+    LOG_DEBUG_CAT("Simulation", "Momentum updated", std::source_location::current());
 }
 
 void UniversalEquation::advanceCycle() {
-    logger_.log(Logging::LogLevel::Info, "Advancing simulation cycle", std::source_location::current());
+    LOG_INFO_CAT("Simulation", "Advancing simulation cycle", std::source_location::current());
     updateMomentum();
     evolveTimeStep(0.01L);
-    logger_.log(Logging::LogLevel::Debug, "Simulation cycle advanced", std::source_location::current());
+    LOG_DEBUG_CAT("Simulation", "Simulation cycle advanced", std::source_location::current());
 }
 
 std::vector<UniversalEquation::DimensionData> UniversalEquation::computeBatch(int startDim, int endDim) {
-    logger_.log(Logging::LogLevel::Info, "Starting batch computation from dimension {} to {}", std::source_location::current(), startDim, endDim);
+    LOG_INFO_CAT("Simulation", "Starting batch computation from dimension {} to {}",
+                 std::source_location::current(), startDim, endDim);
     std::vector<DimensionData> results;
     int originalDim = getCurrentDimension();
     for (int dim = startDim; dim <= endDim && dim <= maxDimensions_; ++dim) {
@@ -1093,20 +1082,20 @@ std::vector<UniversalEquation::DimensionData> UniversalEquation::computeBatch(in
         data.GodWaveEnergy = result.GodWaveEnergy;
         results.push_back(data);
         if (debug_.load()) {
-            logger_.log(Logging::LogLevel::Debug, "Computed dimension {}: {}", std::source_location::current(), dim, data.toString());
+            LOG_DEBUG_CAT("Simulation", "Computed dimension {}: {}", std::source_location::current(), dim, data.toString());
         }
     }
     setCurrentDimension(originalDim);
     initializeWithRetry();
-    logger_.log(Logging::LogLevel::Info, "Batch computation completed: results size={}", std::source_location::current(), results.size());
+    LOG_INFO_CAT("Simulation", "Batch computation completed: results size={}", std::source_location::current(), results.size());
     return results;
 }
 
 void UniversalEquation::exportToCSV(const std::string& filename, const std::vector<DimensionData>& data) const {
-    logger_.log(Logging::LogLevel::Info, "Exporting to CSV: filename={}", std::source_location::current(), filename);
+    LOG_INFO_CAT("Simulation", "Exporting to CSV: filename={}", std::source_location::current(), filename);
     std::ofstream file(filename);
     if (!file.is_open()) {
-        logger_.log(Logging::LogLevel::Error, "Failed to open file for CSV export: {}", std::source_location::current(), filename);
+        LOG_ERROR_CAT("Simulation", "Failed to open file for CSV export: {}", std::source_location::current(), filename);
         throw std::runtime_error("Failed to open CSV file");
     }
     file << "Dimension,Observable,Potential,NURB_Matter,NURB_Energy,Spin_Energy,Momentum_Energy,Field_Energy,God_Wave_Energy\n";
@@ -1117,11 +1106,11 @@ void UniversalEquation::exportToCSV(const std::string& filename, const std::vect
              << d.momentumEnergy << "," << d.fieldEnergy << "," << d.GodWaveEnergy << "\n";
     }
     file.close();
-    logger_.log(Logging::LogLevel::Debug, "CSV export completed", std::source_location::current());
+    LOG_DEBUG_CAT("Simulation", "CSV export completed", std::source_location::current());
 }
 
 UniversalEquation::DimensionData UniversalEquation::updateCache() {
-    logger_.log(Logging::LogLevel::Info, "Updating cache", std::source_location::current());
+    LOG_INFO_CAT("Simulation", "Updating cache", std::source_location::current());
     EnergyResult result = compute();
     dimensionData_.dimension = getCurrentDimension();
     dimensionData_.observable = result.observable;
@@ -1133,7 +1122,7 @@ UniversalEquation::DimensionData UniversalEquation::updateCache() {
     dimensionData_.fieldEnergy = result.fieldEnergy;
     dimensionData_.GodWaveEnergy = result.GodWaveEnergy;
     if (debug_.load()) {
-        logger_.log(Logging::LogLevel::Debug, "Cache updated: {}", std::source_location::current(), dimensionData_.toString());
+        LOG_DEBUG_CAT("Simulation", "Cache updated: {}", std::source_location::current(), dimensionData_.toString());
     }
     return dimensionData_;
 }
@@ -1142,8 +1131,8 @@ long double UniversalEquation::computeGodWaveAmplitude(int vertexIndex, long dou
     validateVertexIndex(vertexIndex);
     long double result = getGodWaveFreq() * vertexWaveAmplitudes_[vertexIndex] * std::cos(getGodWaveFreq() * time);
     if (debug_.load()) {
-        logger_.log(Logging::LogLevel::Debug, "Computed God wave amplitude for vertex {} at time {}: result={}",
-                    std::source_location::current(), vertexIndex, time, result);
+        LOG_DEBUG_CAT("Simulation", "Computed God wave amplitude for vertex {} at time {}: result={}",
+                      std::source_location::current(), vertexIndex, time, result);
     }
     return result;
 }

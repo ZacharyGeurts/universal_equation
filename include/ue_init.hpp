@@ -1,14 +1,11 @@
+// ue_init.hpp
+// Universal Equation initialization for AMOURANTH RTX Engine
+// Zachary Geurts 2025
+
 #ifndef UE_INIT_HPP
 #define UE_INIT_HPP
 
-// UniversalEquation, October 2025
-// Core physics simulation for AMOURANTH RTX Engine.
-// Manages N-dimensional calculations, nurb matter, and energy dynamics.
-// Dependencies: C++20, GLM, Logging
-// Zachary Geurts 2025
-
 #include "engine/logging.hpp"
-//#include "engine/core.hpp"
 #include <glm/glm.hpp>
 #include <vector>
 #include <string>
@@ -79,8 +76,8 @@ public:
         }
     };
 
+    // Full constructor with all parameters
     UniversalEquation(
-        const Logging::Logger& logger,
         int maxDimensions,
         int mode,
         long double influence,
@@ -107,8 +104,8 @@ public:
         uint64_t numVertices
     );
 
+    // Simplified constructor
     UniversalEquation(
-        const Logging::Logger& logger,
         int maxDimensions,
         int mode,
         long double influence,
@@ -184,6 +181,10 @@ public:
     long double getRenormFactor() const { return renormFactor_.load(); }
     long double getVacuumEnergy() const { return vacuumEnergy_.load(); }
     long double getGodWaveFreq() const { return GodWaveFreq_.load(); }
+    long double getObservable([[maybe_unused]] int dimension) const { return 1.0L; }
+    long double getPotential([[maybe_unused]] int dimension) const { return 0.0L; }
+    long double getNurbMatter([[maybe_unused]] int dimension) const { return 0.0L; }
+    long double getNurbEnergy([[maybe_unused]] int dimension) const { return vacuumEnergy_.load(); }
     int getCurrentDimension() const { return currentDimension_.load(); }
     int getMaxDimensions() const { return maxDimensions_; }
     int getMode() const { return mode_.load(); }
@@ -230,8 +231,8 @@ public:
     long double computeGodWaveAmplitude(int vertexIndex, long double time) const;
     long double safeExp(long double x) const;
     long double safe_div(long double a, long double b) const;
-    void validateVertexIndex(int vertexIndex, const std::source_location& loc = std::source_location::current()) const;
-	void validateProjectedVertices() const;
+    void validateVertexIndex(int vertexIndex, [[maybe_unused]] const std::source_location& loc = std::source_location::current()) const;
+    void validateProjectedVertices() const;
 
     // Methods implemented in universal_equation_physical.cpp
     long double computeVertexVolume(int vertexIndex) const;
@@ -309,7 +310,6 @@ private:
     std::vector<long double> nurbWeights_;
     DimensionData dimensionData_;
     DimensionalNavigator* navigator_;
-    const Logging::Logger& logger_;
 };
 
 #endif // UE_INIT_HPP
