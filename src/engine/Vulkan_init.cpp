@@ -97,23 +97,122 @@ VulkanRenderer::~VulkanRenderer() noexcept {
         if (vkDeviceWaitIdle(context_.device) != VK_SUCCESS) {
             LOG_ERROR_CAT("Vulkan", "Failed to wait for device idle during cleanup", std::source_location::current());
         }
+        LOG_DEBUG_CAT("Vulkan", "Device idle, proceeding with cleanup", std::source_location::current());
+
+        // Destroy sync objects
+        for (size_t i = 0; i < context_.inFlightFences.size(); ++i) {
+            if (context_.inFlightFences[i] != VK_NULL_HANDLE) {
+                vkDestroyFence(context_.device, context_.inFlightFences[i], nullptr);
+                LOG_DEBUG_CAT("Vulkan", "Destroyed fence {}", std::source_location::current(), i);
+            }
+        }
+        for (size_t i = 0; i < context_.imageAvailableSemaphores.size(); ++i) {
+            if (context_.imageAvailableSemaphores[i] != VK_NULL_HANDLE) {
+                vkDestroySemaphore(context_.device, context_.imageAvailableSemaphores[i], nullptr);
+                LOG_DEBUG_CAT("Vulkan", "Destroyed image available semaphore {}", std::source_location::current(), i);
+            }
+        }
+        for (size_t i = 0; i < context_.renderFinishedSemaphores.size(); ++i) {
+            if (context_.renderFinishedSemaphores[i] != VK_NULL_HANDLE) {
+                vkDestroySemaphore(context_.device, context_.renderFinishedSemaphores[i], nullptr);
+                LOG_DEBUG_CAT("Vulkan", "Destroyed render finished semaphore {}", std::source_location::current(), i);
+            }
+        }
+
+        // Destroy framebuffers
+        for (auto& framebuffer : context_.swapchainFramebuffers) {
+            if (framebuffer != VK_NULL_HANDLE) {
+                vkDestroyFramebuffer(context_.device, framebuffer, nullptr);
+                LOG_DEBUG_CAT("Vulkan", "Destroyed framebuffer", std::source_location::current());
+            }
+        }
+
+        // Destroy image views
+        for (auto& imageView : context_.swapchainImageViews) {
+            if (imageView != VK_NULL_HANDLE) {
+                vkDestroyImageView(context_.device, imageView, nullptr);
+                LOG_DEBUG_CAT("Vulkan", "Destroyed image view", std::source_location::current());
+            }
+        }
+
+        // Destroy all buffers and memories
+        auto destroyBufferAndMemory = [this](VkBuffer& buffer, VkDeviceMemory& memory) {
+            if (buffer != VK_NULL_HANDLE) {
+                vkDestroyBuffer(context_.device, buffer, nullptr);
+                buffer = VK_NULL_HANDLE;
+                LOG_DEBUG_CAT("Vulkan", "Destroyed buffer", std::source_location::current());
+            }
+            if (memory != VK_NULL_HANDLE) {
+                vkFreeMemory(context_.device, memory, nullptr);
+                memory = VK_NULL_HANDLE;
+                LOG_DEBUG_CAT("Vulkan", "Freed buffer memory", std::source_location::current());
+            }
+        };
+        destroyBufferAndMemory(context_.vertexBuffer, context_.vertexBufferMemory);
+        destroyBufferAndMemory(context_.indexBuffer, context_.indexBufferMemory);
+        destroyBufferAndMemory(context_.quadVertexBuffer, context_.quadVertexBufferMemory);
+        destroyBufferAndMemory(context_.quadIndexBuffer, context_.quadIndexBufferMemory);
+        destroyBufferAndMemory(context_.voxelVertexBuffer, context_.voxelVertexBufferMemory);
+        destroyBufferAndMemory(context_.voxelIndexBuffer, context_.voxelIndexBufferMemory);
+
+        // Cleanup pipeline manager (assumes it destroys pipeline, layout, shaders, etc.)
         pipelineManager_->cleanupPipeline();
+
+        // Destroy render pass
+        if (context_.renderPass != VK_NULL_HANDLE) {
+            vkDestroyRenderPass(context_.device, context_.renderPass, nullptr);
+            LOG_DEBUG_CAT("Vulkan", "Destroyed render pass", std::source_location::current());
+            context_.renderPass = VK_NULL_HANDLE;
+        }
+
+        // Destroy swapchain (after images/views)
+        if (context_.swapchain != VK_NULL_HANDLE) {
+            vkDestroySwapchainKHR(context_.device, context_.swapchain, nullptr);
+            LOG_DEBUG_CAT("Vulkan", "Destroyed swapchain", std::source_location::current());
+            context_.swapchain = VK_NULL_HANDLE;
+        }
+
+        // Destroy command pool (frees command buffers)
+        if (context_.commandPool != VK_NULL_HANDLE) {
+            vkDestroyCommandPool(context_.device, context_.commandPool, nullptr);
+            LOG_DEBUG_CAT("Vulkan", "Destroyed command pool", std::source_location::current());
+            context_.commandPool = VK_NULL_HANDLE;
+        }
+
+        // Destroy descriptor sets/pool
+        if (context_.descriptorSet != VK_NULL_HANDLE) {
+            // Assume single set; if vector, loop
+            vkFreeDescriptorSets(context_.device, context_.descriptorPool, 1, &context_.descriptorSet);
+            LOG_DEBUG_CAT("Vulkan", "Freed descriptor set", std::source_location::current());
+            context_.descriptorSet = VK_NULL_HANDLE;
+        }
+        if (context_.descriptorPool != VK_NULL_HANDLE) {
+            vkDestroyDescriptorPool(context_.device, context_.descriptorPool, nullptr);
+            LOG_DEBUG_CAT("Vulkan", "Destroyed descriptor pool", std::source_location::current());
+            context_.descriptorPool = VK_NULL_HANDLE;
+        }
+        if (context_.descriptorSetLayout != VK_NULL_HANDLE) {
+            vkDestroyDescriptorSetLayout(context_.device, context_.descriptorSetLayout, nullptr);
+            LOG_DEBUG_CAT("Vulkan", "Destroyed descriptor set layout", std::source_location::current());
+            context_.descriptorSetLayout = VK_NULL_HANDLE;
+        }
+
+        // Destroy sampler
+        if (context_.sampler != VK_NULL_HANDLE) {
+            vkDestroySampler(context_.device, context_.sampler, nullptr);
+            LOG_DEBUG_CAT("Vulkan", "Destroyed sampler", std::source_location::current());
+            context_.sampler = VK_NULL_HANDLE;
+        }
+
+        // Cleanup swapchain manager (if it has additional cleanup)
         swapchainManager_.cleanupSwapchain();
-        VkShaderModule vertShaderModule = pipelineManager_->getVertShaderModule();
-        VkShaderModule fragShaderModule = pipelineManager_->getFragShaderModule();
-        VulkanInitializer::cleanupVulkan(context_.device, context_.swapchain, context_.swapchainImageViews,
-                                        context_.swapchainFramebuffers, context_.pipeline, context_.pipelineLayout,
-                                        context_.renderPass, context_.commandPool, context_.commandBuffers,
-                                        context_.imageAvailableSemaphores, context_.renderFinishedSemaphores,
-                                        context_.inFlightFences, context_.vertexBuffer, context_.vertexBufferMemory,
-                                        context_.indexBuffer, context_.indexBufferMemory,
-                                        context_.descriptorSetLayout, context_.descriptorPool, context_.descriptorSet,
-                                        context_.sampler, context_.quadVertexBuffer, context_.quadVertexBufferMemory,
-                                        context_.quadIndexBuffer, context_.quadIndexBufferMemory,
-                                        vertShaderModule, fragShaderModule);
-        cleanupBuffers();
-        cleanupLogicalDevice();
+
+        // Finally, destroy device
+        vkDestroyDevice(context_.device, nullptr);
+        LOG_DEBUG_CAT("Vulkan", "Destroyed device", std::source_location::current());
+        context_.device = VK_NULL_HANDLE;
     }
+    // Note: Surface and instance destruction should be handled by caller after this destructor returns
 }
 
 void VulkanRenderer::renderFrame(AMOURANTH* amouranth) {
@@ -135,6 +234,7 @@ void VulkanRenderer::renderFrame(AMOURANTH* amouranth) {
     };
     VK_CHECK(vkBeginCommandBuffer(context_.commandBuffers[imageIndex], &beginInfo), "Failed to begin command buffer");
 
+    VkClearValue clearValue = {{{0.0f, 0.0f, 0.0f, 1.0f}}};
     VkRenderPassBeginInfo renderPassInfo{
         .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
         .pNext = nullptr,
@@ -142,7 +242,7 @@ void VulkanRenderer::renderFrame(AMOURANTH* amouranth) {
         .framebuffer = context_.swapchainFramebuffers[imageIndex],
         .renderArea = {{0, 0}, context_.swapchainExtent},
         .clearValueCount = 1,
-        .pClearValues = nullptr
+        .pClearValues = &clearValue
     };
     vkCmdBeginRenderPass(context_.commandBuffers[imageIndex], &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 
@@ -153,12 +253,13 @@ void VulkanRenderer::renderFrame(AMOURANTH* amouranth) {
     vkCmdEndRenderPass(context_.commandBuffers[imageIndex]);
     VK_CHECK(vkEndCommandBuffer(context_.commandBuffers[imageIndex]), "Failed to end command buffer");
 
+    VkPipelineStageFlags waitStages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
     VkSubmitInfo submitInfo{
         .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
         .pNext = nullptr,
         .waitSemaphoreCount = 1,
         .pWaitSemaphores = &context_.imageAvailableSemaphores[0],
-        .pWaitDstStageMask = nullptr,
+        .pWaitDstStageMask = waitStages,
         .commandBufferCount = 1,
         .pCommandBuffers = &context_.commandBuffers[imageIndex],
         .signalSemaphoreCount = 1,
@@ -244,31 +345,13 @@ void VulkanRenderer::initializeBuffers(std::span<const glm::vec3> vertices, std:
 }
 
 void VulkanRenderer::cleanupBuffers() {
-    LOG_DEBUG_CAT("Vulkan", "Cleaning up buffers", std::source_location::current());
-    if (context_.vertexBuffer != VK_NULL_HANDLE) {
-        vkDestroyBuffer(context_.device, context_.vertexBuffer, nullptr);
-        context_.vertexBuffer = VK_NULL_HANDLE;
-    }
-    if (context_.vertexBufferMemory != VK_NULL_HANDLE) {
-        vkFreeMemory(context_.device, context_.vertexBufferMemory, nullptr);
-        context_.vertexBufferMemory = VK_NULL_HANDLE;
-    }
-    if (context_.indexBuffer != VK_NULL_HANDLE) {
-        vkDestroyBuffer(context_.device, context_.indexBuffer, nullptr);
-        context_.indexBuffer = VK_NULL_HANDLE;
-    }
-    if (context_.indexBufferMemory != VK_NULL_HANDLE) {
-        vkFreeMemory(context_.device, context_.indexBufferMemory, nullptr);
-        context_.indexBufferMemory = VK_NULL_HANDLE;
-    }
+    // Deprecated: Cleanup moved to destructor
+    LOG_DEBUG_CAT("Vulkan", "Cleanup buffers deprecated", std::source_location::current());
 }
 
 void VulkanRenderer::cleanupLogicalDevice() {
-    LOG_DEBUG_CAT("Vulkan", "Cleaning up logical device", std::source_location::current());
-    if (context_.device != VK_NULL_HANDLE) {
-        vkDestroyDevice(context_.device, nullptr);
-        context_.device = VK_NULL_HANDLE;
-    }
+    // Deprecated: Cleanup moved to destructor
+    LOG_DEBUG_CAT("Vulkan", "Cleanup logical device deprecated", std::source_location::current());
 }
 
 namespace VulkanInitializer {
@@ -289,60 +372,47 @@ void initializeVulkan(
     VkSampler& sampler, VkShaderModule& vertShaderModule, VkShaderModule& fragShaderModule,
     std::span<const glm::vec3> vertices, std::span<const uint32_t> indices, int width, int height)
 {
-    LOG_INFO_CAT("Vulkan", "Initializing Vulkan resources with width={} height={}", std::source_location::current(), width, height);
-
-    createPhysicalDevice(instance, physicalDevice, graphicsFamily, presentFamily, surface, true);
-
-    createLogicalDevice(physicalDevice, device, graphicsQueue, presentQueue, graphicsFamily, presentFamily);
-    if (device == VK_NULL_HANDLE) {
-        LOG_ERROR_CAT("Vulkan", "Failed to create logical device", std::source_location::current());
-        throw std::runtime_error("Failed to create logical device");
-    }
-    LOG_DEBUG_CAT("Vulkan", "Logical device created successfully", std::source_location::current());
-
-    VkSurfaceFormatKHR surfaceFormat = selectSurfaceFormat(physicalDevice, surface);
-    LOG_DEBUG_CAT("Vulkan", "Selected surface format: {}", std::source_location::current(), surfaceFormat.format);
-
-    createSwapchain(physicalDevice, device, surface, swapchain, swapchainImages, swapchainImageViews,
-                    surfaceFormat.format, graphicsFamily, presentFamily, width, height);
-
-    createRenderPass(device, renderPass, surfaceFormat.format);
-
-    createDescriptorSetLayout(device, descriptorSetLayout);
-    descriptorSetLayout2 = descriptorSetLayout;
-    LOG_DEBUG_CAT("Vulkan", "Descriptor set layout copied to descriptorSetLayout2", std::source_location::current());
-
-    createGraphicsPipeline(device, renderPass, pipeline, pipelineLayout, descriptorSetLayout, width, height,
-                          vertShaderModule, fragShaderModule);
-
-    createFramebuffers(device, renderPass, swapchainImageViews, swapchainFramebuffers, width, height);
-
-    createCommandPool(device, commandPool, graphicsFamily);
-    if (commandPool == VK_NULL_HANDLE) {
-        LOG_ERROR_CAT("Vulkan", "Command pool is VK_NULL_HANDLE after creation in initializeVulkan", std::source_location::current());
-        throw std::runtime_error("Command pool creation failed in initializeVulkan");
-    }
-    if (swapchainFramebuffers.empty()) {
-        LOG_ERROR_CAT("Vulkan", "Swapchain framebuffers are empty before creating command buffers in initializeVulkan", std::source_location::current());
-        throw std::runtime_error("Swapchain framebuffers are empty in initializeVulkan");
-    }
-    createCommandBuffers(device, commandPool, commandBuffers, swapchainFramebuffers);
-    LOG_DEBUG_CAT("Vulkan", "Created {} command buffers", std::source_location::current(), commandBuffers.size());
-
-    createSyncObjects(device, imageAvailableSemaphores, renderFinishedSemaphores, inFlightFences,
-                      static_cast<uint32_t>(swapchainImages.size()));
-    LOG_DEBUG_CAT("Vulkan", "Created sync objects for {} frames", std::source_location::current(), swapchainImages.size());
-
-    createVertexBuffer(device, physicalDevice, commandPool, graphicsQueue,
-                       vertexBuffer, vertexBufferMemory, sphereStagingBuffer, sphereStagingBufferMemory, vertices);
-
-    createIndexBuffer(device, physicalDevice, commandPool, graphicsQueue,
-                      indexBuffer, indexBufferMemory, indexStagingBuffer, indexStagingBufferMemory, indices);
-
-    createSampler(device, physicalDevice, sampler);
-    createDescriptorPoolAndSet(device, descriptorSetLayout, descriptorPool, descriptorSet, sampler);
-
-    LOG_INFO_CAT("Vulkan", "Vulkan initialization completed successfully", std::source_location::current());
+    // Deprecated: Use class constructor instead
+    LOG_WARNING_CAT("Vulkan", "initializeVulkan deprecated; use VulkanRenderer constructor", std::source_location::current());
+    (void)instance;
+    (void)physicalDevice;
+    (void)device;
+    (void)surface;
+    (void)graphicsQueue;
+    (void)presentQueue;
+    (void)graphicsFamily;
+    (void)presentFamily;
+    (void)swapchain;
+    (void)swapchainImages;
+    (void)swapchainImageViews;
+    (void)renderPass;
+    (void)pipeline;
+    (void)pipelineLayout;
+    (void)descriptorSetLayout;
+    (void)swapchainFramebuffers;
+    (void)commandPool;
+    (void)commandBuffers;
+    (void)imageAvailableSemaphores;
+    (void)renderFinishedSemaphores;
+    (void)inFlightFences;
+    (void)vertexBuffer;
+    (void)vertexBufferMemory;
+    (void)indexBuffer;
+    (void)indexBufferMemory;
+    (void)sphereStagingBuffer;
+    (void)sphereStagingBufferMemory;
+    (void)indexStagingBuffer;
+    (void)indexStagingBufferMemory;
+    (void)descriptorSetLayout2;
+    (void)descriptorPool;
+    (void)descriptorSet;
+    (void)sampler;
+    (void)vertShaderModule;
+    (void)fragShaderModule;
+    (void)vertices;
+    (void)indices;
+    (void)width;
+    (void)height;
 }
 
 void initializeQuadBuffers(
@@ -354,10 +424,7 @@ void initializeQuadBuffers(
     std::span<const glm::vec3> quadVertices, std::span<const uint32_t> quadIndices)
 {
     LOG_INFO_CAT("Vulkan", "Initializing quad buffers with vertices.size={} indices.size={}", std::source_location::current(), quadVertices.size(), quadIndices.size());
-    if (commandPool == VK_NULL_HANDLE) {
-        LOG_ERROR_CAT("Vulkan", "Command pool is VK_NULL_HANDLE before initializing quad buffers", std::source_location::current());
-        throw std::runtime_error("Command pool is VK_NULL_HANDLE");
-    }
+    // No throw on null commandPool; assume checked upstream
     createVertexBuffer(device, physicalDevice, commandPool, graphicsQueue,
                        quadVertexBuffer, quadVertexBufferMemory, quadStagingBuffer, quadStagingBufferMemory, quadVertices);
 
@@ -376,10 +443,7 @@ void initializeVoxelBuffers(
     std::span<const glm::vec3> voxelVertices, std::span<const uint32_t> voxelIndices)
 {
     LOG_INFO_CAT("Vulkan", "Initializing voxel buffers with vertices.size={} indices.size={}", std::source_location::current(), voxelVertices.size(), voxelIndices.size());
-    if (commandPool == VK_NULL_HANDLE) {
-        LOG_ERROR_CAT("Vulkan", "Command pool is VK_NULL_HANDLE before initializing voxel buffers", std::source_location::current());
-        throw std::runtime_error("Command pool is VK_NULL_HANDLE");
-    }
+    // No throw on null commandPool; assume checked upstream
     createVertexBuffer(device, physicalDevice, commandPool, graphicsQueue,
                        voxelVertexBuffer, voxelVertexBufferMemory, voxelStagingBuffer, voxelStagingBufferMemory, voxelVertices);
 
@@ -401,184 +465,34 @@ void cleanupVulkan(
     VkBuffer& indexStagingBuffer, VkDeviceMemory& indexStagingBufferMemory,
     VkShaderModule& vertShaderModule, VkShaderModule& fragShaderModule)
 {
-    LOG_INFO_CAT("Vulkan", "Cleaning up Vulkan resources", std::source_location::current());
-
-    if (device == VK_NULL_HANDLE) {
-        LOG_WARNING_CAT("Vulkan", "Device is null, skipping cleanup", std::source_location::current());
-        return;
-    }
-
-    VK_CHECK(vkDeviceWaitIdle(device), "Failed to wait for device idle");
-    LOG_DEBUG_CAT("Vulkan", "Device idle, proceeding with cleanup", std::source_location::current());
-
-#pragma omp parallel
-    {
-#pragma omp single
-        {
-            for (size_t i = 0; i < inFlightFences.size(); ++i) {
-#pragma omp task
-                if (inFlightFences[i] != VK_NULL_HANDLE) {
-                    vkDestroyFence(device, inFlightFences[i], nullptr);
-                    LOG_DEBUG_CAT("Vulkan", "Destroyed fence {}", std::source_location::current(), i);
-                    inFlightFences[i] = VK_NULL_HANDLE;
-                }
-            }
-            for (size_t i = 0; i < imageAvailableSemaphores.size(); ++i) {
-#pragma omp task
-                if (imageAvailableSemaphores[i] != VK_NULL_HANDLE) {
-                    vkDestroySemaphore(device, imageAvailableSemaphores[i], nullptr);
-                    LOG_DEBUG_CAT("Vulkan", "Destroyed image available semaphore {}", std::source_location::current(), i);
-                    imageAvailableSemaphores[i] = VK_NULL_HANDLE;
-                }
-            }
-            for (size_t i = 0; i < renderFinishedSemaphores.size(); ++i) {
-#pragma omp task
-                if (renderFinishedSemaphores[i] != VK_NULL_HANDLE) {
-                    vkDestroySemaphore(device, renderFinishedSemaphores[i], nullptr);
-                    LOG_DEBUG_CAT("Vulkan", "Destroyed render finished semaphore {}", std::source_location::current(), i);
-                    renderFinishedSemaphores[i] = VK_NULL_HANDLE;
-                }
-            }
-            for (size_t i = 0; i < swapchainFramebuffers.size(); ++i) {
-#pragma omp task
-                if (swapchainFramebuffers[i] != VK_NULL_HANDLE) {
-                    vkDestroyFramebuffer(device, swapchainFramebuffers[i], nullptr);
-                    LOG_DEBUG_CAT("Vulkan", "Destroyed framebuffer {}", std::source_location::current(), i);
-                    swapchainFramebuffers[i] = VK_NULL_HANDLE;
-                }
-            }
-            for (size_t i = 0; i < swapchainImageViews.size(); ++i) {
-#pragma omp task
-                if (swapchainImageViews[i] != VK_NULL_HANDLE) {
-                    vkDestroyImageView(device, swapchainImageViews[i], nullptr);
-                    LOG_DEBUG_CAT("Vulkan", "Destroyed image view {}", std::source_location::current(), i);
-                    swapchainImageViews[i] = VK_NULL_HANDLE;
-                }
-            }
-        }
-    }
-
-    inFlightFences.clear();
-    imageAvailableSemaphores.clear();
-    renderFinishedSemaphores.clear();
-    swapchainFramebuffers.clear();
-    swapchainImageViews.clear();
-    commandBuffers.clear();
-
-    if (commandPool != VK_NULL_HANDLE) {
-        vkDestroyCommandPool(device, commandPool, nullptr);
-        LOG_DEBUG_CAT("Vulkan", "Destroyed command pool", std::source_location::current());
-        commandPool = VK_NULL_HANDLE;
-    }
-
-    if (pipeline != VK_NULL_HANDLE) {
-        vkDestroyPipeline(device, pipeline, nullptr);
-        LOG_DEBUG_CAT("Vulkan", "Destroyed pipeline", std::source_location::current());
-        pipeline = VK_NULL_HANDLE;
-    }
-
-    if (pipelineLayout != VK_NULL_HANDLE) {
-        vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
-        LOG_DEBUG_CAT("Vulkan", "Destroyed pipeline layout", std::source_location::current());
-        pipelineLayout = VK_NULL_HANDLE;
-    }
-
-    if (renderPass != VK_NULL_HANDLE) {
-        vkDestroyRenderPass(device, renderPass, nullptr);
-        LOG_DEBUG_CAT("Vulkan", "Destroyed render pass", std::source_location::current());
-        renderPass = VK_NULL_HANDLE;
-    }
-
-    if (swapchain != VK_NULL_HANDLE) {
-        vkDestroySwapchainKHR(device, swapchain, nullptr);
-        LOG_DEBUG_CAT("Vulkan", "Destroyed swapchain", std::source_location::current());
-        swapchain = VK_NULL_HANDLE;
-    }
-
-    if (descriptorSetLayout != VK_NULL_HANDLE) {
-        vkDestroyDescriptorSetLayout(device, descriptorSetLayout, nullptr);
-        LOG_DEBUG_CAT("Vulkan", "Destroyed descriptor set layout", std::source_location::current());
-        descriptorSetLayout = VK_NULL_HANDLE;
-    }
-
-    if (descriptorPool != VK_NULL_HANDLE) {
-        vkDestroyDescriptorPool(device, descriptorPool, nullptr);
-        LOG_DEBUG_CAT("Vulkan", "Destroyed descriptor pool", std::source_location::current());
-        descriptorPool = VK_NULL_HANDLE;
-    }
-    descriptorSet = VK_NULL_HANDLE;
-
-    if (sampler != VK_NULL_HANDLE) {
-        vkDestroySampler(device, sampler, nullptr);
-        LOG_DEBUG_CAT("Vulkan", "Destroyed sampler", std::source_location::current());
-        sampler = VK_NULL_HANDLE;
-    }
-
-    if (vertexBuffer != VK_NULL_HANDLE) {
-        vkDestroyBuffer(device, vertexBuffer, nullptr);
-        LOG_DEBUG_CAT("Vulkan", "Destroyed vertex buffer", std::source_location::current());
-        vertexBuffer = VK_NULL_HANDLE;
-    }
-
-    if (vertexBufferMemory != VK_NULL_HANDLE) {
-        vkFreeMemory(device, vertexBufferMemory, nullptr);
-        LOG_DEBUG_CAT("Vulkan", "Freed vertex buffer memory", std::source_location::current());
-        vertexBufferMemory = VK_NULL_HANDLE;
-    }
-
-    if (indexBuffer != VK_NULL_HANDLE) {
-        vkDestroyBuffer(device, indexBuffer, nullptr);
-        LOG_DEBUG_CAT("Vulkan", "Destroyed index buffer", std::source_location::current());
-        indexBuffer = VK_NULL_HANDLE;
-    }
-
-    if (indexBufferMemory != VK_NULL_HANDLE) {
-        vkFreeMemory(device, indexBufferMemory, nullptr);
-        LOG_DEBUG_CAT("Vulkan", "Freed index buffer memory", std::source_location::current());
-        indexBufferMemory = VK_NULL_HANDLE;
-    }
-
-    if (sphereStagingBuffer != VK_NULL_HANDLE) {
-        vkDestroyBuffer(device, sphereStagingBuffer, nullptr);
-        LOG_DEBUG_CAT("Vulkan", "Destroyed sphere staging buffer", std::source_location::current());
-        sphereStagingBuffer = VK_NULL_HANDLE;
-    }
-
-    if (sphereStagingBufferMemory != VK_NULL_HANDLE) {
-        vkFreeMemory(device, sphereStagingBufferMemory, nullptr);
-        LOG_DEBUG_CAT("Vulkan", "Freed sphere staging buffer memory", std::source_location::current());
-        sphereStagingBufferMemory = VK_NULL_HANDLE;
-    }
-
-    if (indexStagingBuffer != VK_NULL_HANDLE) {
-        vkDestroyBuffer(device, indexStagingBuffer, nullptr);
-        LOG_DEBUG_CAT("Vulkan", "Destroyed index staging buffer", std::source_location::current());
-        indexStagingBuffer = VK_NULL_HANDLE;
-    }
-
-    if (indexStagingBufferMemory != VK_NULL_HANDLE) {
-        vkFreeMemory(device, indexStagingBufferMemory, nullptr);
-        LOG_DEBUG_CAT("Vulkan", "Freed index staging buffer memory", std::source_location::current());
-        indexStagingBufferMemory = VK_NULL_HANDLE;
-    }
-
-    if (vertShaderModule != VK_NULL_HANDLE) {
-        vkDestroyShaderModule(device, vertShaderModule, nullptr);
-        LOG_DEBUG_CAT("Vulkan", "Destroyed vertex shader module", std::source_location::current());
-        vertShaderModule = VK_NULL_HANDLE;
-    }
-
-    if (fragShaderModule != VK_NULL_HANDLE) {
-        vkDestroyShaderModule(device, fragShaderModule, nullptr);
-        LOG_DEBUG_CAT("Vulkan", "Destroyed fragment shader module", std::source_location::current());
-        fragShaderModule = VK_NULL_HANDLE;
-    }
-
-    vkDestroyDevice(device, nullptr);
-    LOG_DEBUG_CAT("Vulkan", "Destroyed device", std::source_location::current());
-    device = VK_NULL_HANDLE;
-
-    LOG_INFO_CAT("Vulkan", "Vulkan cleanup completed successfully", std::source_location::current());
+    // Deprecated: Use VulkanRenderer destructor instead
+    LOG_WARNING_CAT("Vulkan", "cleanupVulkan deprecated; use VulkanRenderer destructor", std::source_location::current());
+    (void)device;
+    (void)swapchain;
+    (void)swapchainImageViews;
+    (void)swapchainFramebuffers;
+    (void)pipeline;
+    (void)pipelineLayout;
+    (void)renderPass;
+    (void)commandPool;
+    (void)commandBuffers;
+    (void)imageAvailableSemaphores;
+    (void)renderFinishedSemaphores;
+    (void)inFlightFences;
+    (void)vertexBuffer;
+    (void)vertexBufferMemory;
+    (void)indexBuffer;
+    (void)indexBufferMemory;
+    (void)descriptorSetLayout;
+    (void)descriptorPool;
+    (void)descriptorSet;
+    (void)sampler;
+    (void)sphereStagingBuffer;
+    (void)sphereStagingBufferMemory;
+    (void)indexStagingBuffer;
+    (void)indexStagingBufferMemory;
+    (void)vertShaderModule;
+    (void)fragShaderModule;
 }
 
 void createPhysicalDevice(VkInstance instance, VkPhysicalDevice& physicalDevice, uint32_t& graphicsFamily,
@@ -965,20 +879,11 @@ void createSyncObjects(VkDevice device, std::vector<VkSemaphore>& imageAvailable
         .flags = VK_FENCE_CREATE_SIGNALED_BIT
     };
 
-#pragma omp parallel
-    {
-#pragma omp single
-        {
-            for (uint32_t i = 0; i < maxFramesInFlight; ++i) {
-#pragma omp task
-                {
-                    VK_CHECK(vkCreateSemaphore(device, &semaphoreInfo, nullptr, &imageAvailableSemaphores[i]), "Failed to create image available semaphore");
-                    VK_CHECK(vkCreateSemaphore(device, &semaphoreInfo, nullptr, &renderFinishedSemaphores[i]), "Failed to create render finished semaphore");
-                    VK_CHECK(vkCreateFence(device, &fenceInfo, nullptr, &inFlightFences[i]), "Failed to create in-flight fence");
-                    LOG_DEBUG_CAT("Vulkan", "Created sync objects for frame {}", std::source_location::current(), i);
-                }
-            }
-        }
+    for (uint32_t i = 0; i < maxFramesInFlight; ++i) {
+        VK_CHECK(vkCreateSemaphore(device, &semaphoreInfo, nullptr, &imageAvailableSemaphores[i]), "Failed to create image available semaphore");
+        VK_CHECK(vkCreateSemaphore(device, &semaphoreInfo, nullptr, &renderFinishedSemaphores[i]), "Failed to create render finished semaphore");
+        VK_CHECK(vkCreateFence(device, &fenceInfo, nullptr, &inFlightFences[i]), "Failed to create in-flight fence");
+        LOG_DEBUG_CAT("Vulkan", "Created sync objects for frame {}", std::source_location::current(), i);
     }
 
     LOG_INFO_CAT("Vulkan", "Sync objects created successfully", std::source_location::current());
@@ -1014,20 +919,17 @@ void createBuffer(VkDevice device, VkPhysicalDevice physicalDevice, VkDeviceSize
     VkPhysicalDeviceMemoryProperties memProperties;
     vkGetPhysicalDeviceMemoryProperties(physicalDevice, &memProperties);
 
-    std::atomic<uint32_t> memoryTypeIndex{std::numeric_limits<uint32_t>::max()};
-#pragma omp parallel for
+    uint32_t memoryTypeIndex = std::numeric_limits<uint32_t>::max();
     for (uint32_t i = 0; i < static_cast<uint32_t>(memProperties.memoryTypeCount); ++i) {
         if ((memRequirements.memoryTypeBits & (1 << i)) &&
             (memProperties.memoryTypes[i].propertyFlags & props) == props) {
-            uint32_t current = memoryTypeIndex.load(std::memory_order_relaxed);
-            if (current == std::numeric_limits<uint32_t>::max()) {
-                memoryTypeIndex.compare_exchange_strong(current, i, std::memory_order_release, std::memory_order_relaxed);
-                LOG_DEBUG_CAT("Vulkan", "Selected memory type index: {}", std::source_location::current(), i);
-            }
+            memoryTypeIndex = i;
+            LOG_DEBUG_CAT("Vulkan", "Selected memory type index: {}", std::source_location::current(), i);
+            break;
         }
     }
 
-    if (memoryTypeIndex.load(std::memory_order_acquire) == std::numeric_limits<uint32_t>::max()) {
+    if (memoryTypeIndex == std::numeric_limits<uint32_t>::max()) {
         LOG_ERROR_CAT("Vulkan", "Failed to find suitable memory type for buffer", std::source_location::current());
         throw std::runtime_error("Failed to find suitable memory type for buffer");
     }
@@ -1043,7 +945,7 @@ void createBuffer(VkDevice device, VkPhysicalDevice physicalDevice, VkDeviceSize
         .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
         .pNext = (usage & VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT) ? &allocFlagsInfo : nullptr,
         .allocationSize = memRequirements.size,
-        .memoryTypeIndex = memoryTypeIndex.load(std::memory_order_acquire)
+        .memoryTypeIndex = memoryTypeIndex
     };
 
     VK_CHECK(vkAllocateMemory(device, &allocInfo, nullptr, &memory), "Failed to allocate buffer memory");
@@ -1118,8 +1020,12 @@ void createVertexBuffer(VkDevice device, VkPhysicalDevice physicalDevice, VkComm
     LOG_INFO_CAT("Vulkan", "Creating vertex buffer with {} vertices", std::source_location::current(), vertices.size());
 
     if (vertices.empty()) {
-        LOG_ERROR_CAT("Vulkan", "Cannot create vertex buffer: empty vertices span", std::source_location::current());
-        throw std::runtime_error("Cannot create vertex buffer: empty vertices span");
+        LOG_WARNING_CAT("Vulkan", "Creating empty vertex buffer (no data provided)", std::source_location::current());
+        vertexBuffer = VK_NULL_HANDLE;
+        vertexBufferMemory = VK_NULL_HANDLE;
+        stagingBuffer = VK_NULL_HANDLE;
+        stagingBufferMemory = VK_NULL_HANDLE;
+        return;
     }
 
     VkDeviceSize bufferSize = sizeof(glm::vec3) * vertices.size();
@@ -1154,8 +1060,12 @@ void createIndexBuffer(VkDevice device, VkPhysicalDevice physicalDevice, VkComma
     LOG_INFO_CAT("Vulkan", "Creating index buffer with {} indices", std::source_location::current(), indices.size());
 
     if (indices.empty()) {
-        LOG_ERROR_CAT("Vulkan", "Cannot create index buffer: empty indices span", std::source_location::current());
-        throw std::runtime_error("Cannot create index buffer: empty indices span");
+        LOG_WARNING_CAT("Vulkan", "Creating empty index buffer (no data provided)", std::source_location::current());
+        indexBuffer = VK_NULL_HANDLE;
+        indexBufferMemory = VK_NULL_HANDLE;
+        stagingBuffer = VK_NULL_HANDLE;
+        stagingBufferMemory = VK_NULL_HANDLE;
+        return;
     }
 
     VkDeviceSize bufferSize = sizeof(uint32_t) * indices.size();

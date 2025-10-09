@@ -298,13 +298,13 @@ private:
                         #pragma omp task
                         {
                             const auto& msg = batch[i];
-                            std::string_view levelColor;
+                            std::string_view categoryColor = getCategoryColor(msg.category);
                             std::string_view levelStr;
                             switch (msg.level) {
-                                case LogLevel::Debug:   levelColor = CYAN;   levelStr = "[DEBUG]"; break;
-                                case LogLevel::Info:    levelColor = GREEN;  levelStr = "[INFO]";  break;
-                                case LogLevel::Warning: levelColor = YELLOW; levelStr = "[WARN]";  break;
-                                case LogLevel::Error:   levelColor = MAGENTA; levelStr = "[ERROR]"; break;
+                                case LogLevel::Debug:   levelStr = "[DEBUG]"; break;
+                                case LogLevel::Info:    levelStr = "[INFO]";  break;
+                                case LogLevel::Warning: levelStr = "[WARN]";  break;
+                                case LogLevel::Error:   levelStr = "[ERROR]"; break;
                             }
 
                             auto delta = std::chrono::duration_cast<std::chrono::microseconds>(msg.timestamp - *firstLogTime_).count();
@@ -321,8 +321,8 @@ private:
                                 timeStr = std::format("{:>6.3f}h", delta / 3600000000.0);
                             }
 
-                            std::string output = std::format("{} {} [{}] [{}] [{}:{}] {}{}",
-                                                             levelColor, levelStr, timeStr, msg.category,
+                            std::string output = std::format("{}{} [{}] [{}] [{}:{}] {}{}",
+                                                             categoryColor, levelStr, timeStr, msg.category,
                                                              msg.location.file_name(), msg.location.line(),
                                                              msg.formattedMessage, RESET);
                             std::osyncstream(std::cout) << output << std::endl;
@@ -374,13 +374,13 @@ private:
         tail_.store(currentTail, std::memory_order_release);
 
         for (const auto& msg : batch) {
-            std::string_view levelColor;
+            std::string_view categoryColor = getCategoryColor(msg.category);
             std::string_view levelStr;
             switch (msg.level) {
-                case LogLevel::Debug:   levelColor = CYAN;   levelStr = "[DEBUG]"; break;
-                case LogLevel::Info:    levelColor = GREEN;  levelStr = "[INFO]";  break;
-                case LogLevel::Warning: levelColor = YELLOW; levelStr = "[WARN]";  break;
-                case LogLevel::Error:   levelColor = MAGENTA; levelStr = "[ERROR]"; break;
+                case LogLevel::Debug:   levelStr = "[DEBUG]"; break;
+                case LogLevel::Info:    levelStr = "[INFO]";  break;
+                case LogLevel::Warning: levelStr = "[WARN]";  break;
+                case LogLevel::Error:   levelStr = "[ERROR]"; break;
             }
 
             auto delta = std::chrono::duration_cast<std::chrono::microseconds>(msg.timestamp - *firstLogTime_).count();
@@ -397,8 +397,8 @@ private:
                 timeStr = std::format("{:>6.3f}h", delta / 3600000000.0);
             }
 
-            std::string output = std::format("{} {} [{}] [{}] [{}:{}] {}{}",
-                                             levelColor, levelStr, timeStr, msg.category,
+            std::string output = std::format("{}{} [{}] [{}] [{}:{}] {}{}",
+                                             categoryColor, levelStr, timeStr, msg.category,
                                              msg.location.file_name(), msg.location.line(),
                                              msg.formattedMessage, RESET);
             std::osyncstream(std::cout) << output << std::endl;
