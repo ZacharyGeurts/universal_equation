@@ -1,3 +1,8 @@
+// ue_init.hpp
+// Header file for UniversalEquation and related classes in the AMOURANTH RTX Engine.
+// Defines core structures and classes for N-dimensional calculations and simulation logic.
+// Copyright Zachary Geurts 2025 (powered by Grok with Science B*! precision)
+
 #pragma once
 #ifndef UE_INIT_HPP
 #define UE_INIT_HPP
@@ -7,10 +12,25 @@
 #include <vector>
 #include <vulkan/vulkan.h>
 #include "engine/logging.hpp"
+#include <atomic>
+#include <mutex>
+#include <thread>
+#include <latch>
+#include <omp.h>
+#include <numbers>
+#include <cmath>
+#include <stdexcept>
+#include <iomanip>
+#include <sstream>
+#include <fstream>
+#include <format>
+#include <source_location>
 
 class VulkanRenderer; // Forward declaration
+class AMOURANTH; // Forward declaration
 
-namespace UniversalEquation {
+// Namespace for UniversalEquation-related structures
+namespace UE {
     struct DimensionData {
         int dimension = 0;
         long double scale = 1.0L;
@@ -74,7 +94,13 @@ namespace UniversalEquation {
         DimensionInteraction(int idx, long double dist, long double str, std::vector<long double> vecPot, long double gwAmp)
             : index(idx), distance(dist), strength(str), vectorPotential(std::move(vecPot)), godWaveAmplitude(gwAmp) {}
     };
-}
+
+    struct UniformBufferObject {
+        glm::mat4 model;
+        glm::mat4 view;
+        glm::mat4 proj;
+    };
+} // namespace UE
 
 class DimensionalNavigator {
 public:
@@ -104,99 +130,6 @@ private:
     uint64_t numVertices_ = 30000;
 };
 
-class AMOURANTH {
-public:
-    AMOURANTH(DimensionalNavigator* navigator, VkDevice device, VkDeviceMemory vertexBufferMemory,
-              VkDeviceMemory indexBufferMemory, VkPipeline pipeline)
-        : navigator_(navigator), device_(device), vertexBufferMemory_(vertexBufferMemory),
-          indexBufferMemory_(indexBufferMemory), pipeline_(pipeline),
-          universalEquation_(9, 1, 1.0L, 0.1L, false, 30000) {
-        cache_.reserve(100); // Limit cache size
-    }
-
-    // Getters
-    glm::mat4 getViewMatrix() const { return isUserCamActive_ ? userCamMatrix_ : glm::mat4(1.0f); }
-    glm::mat4 getProjectionMatrix() const {
-        return glm::perspective(glm::radians(45.0f), static_cast<float>(width_) / height_, 0.1f, 100.0f);
-    }
-    const std::vector<uint32_t>& getSphereIndices() const { return sphereIndices_; }
-    std::span<const UniversalEquation::DimensionData> getCache() const { return cache_; }
-    Logging::Logger& getLogger() const {
-        static Logging::Logger logger(Logging::LogLevel::Info, "AMOURANTH");
-        return logger;
-    }
-    const std::vector<glm::vec3>& getBalls() const { return universalEquation_.getProjectedVertices(); }
-    int getWidth() const { return width_; }
-    int getHeight() const { return height_; }
-    int getMode() const { return mode_; }
-    int getCurrentDimension() const { return currentDimension_; }
-    float getZoomLevel() const { return zoomLevel_; }
-    float getInfluence() const { return influence_; }
-    float getNurbMatter() const { return nurbMatter_; }
-    float getNurbEnergy() const { return nurbEnergy_; }
-    bool isPaused() const { return isPaused_; }
-    bool isUserCamActive() const { return isUserCamActive_; }
-    VkDevice getDevice() const { return device_; }
-    VkDeviceMemory getVertexBufferMemory() const { return vertexBufferMemory_; }
-    VkDeviceMemory getIndexBufferMemory() const { return indexBufferMemory_; }
-    VkPipeline getPipeline() const { return pipeline_; }
-    const UniversalEquation& getUniversalEquation() const { return universalEquation_; }
-
-    // Setters
-    void setSphereIndices(const std::vector<uint32_t>& indices) { sphereIndices_ = indices; }
-    void setWidth(int width) { width_ = width; }
-    void setHeight(int height) { height_ = height; }
-    void setMode(int mode) { mode_ = mode; universalEquation_.setMode(mode); }
-    void setCurrentDimension(int dimension) { currentDimension_ = dimension; universalEquation_.setCurrentDimension(dimension); }
-    void setZoomLevel(float zoom) { zoomLevel_ = std::max(0.1f, zoom); }
-    void setInfluence(float influence) { influence_ = std::max(0.0f, influence); }
-    void setNurbMatter(float matter) { nurbMatter_ = std::max(0.0f, matter); universalEquation_.setNurbMatterStrength(matter); }
-    void setNurbEnergy(float energy) { nurbEnergy_ = std::max(0.0f, energy); universalEquation_.setNurbEnergyStrength(energy); }
-    void setUserCamMatrix(const glm::mat4& matrix) { userCamMatrix_ = matrix; }
-    void updateZoom(bool zoomIn) { zoomLevel_ += zoomIn ? 0.1f : -0.1f; zoomLevel_ = std::max(0.1f, zoomLevel_); }
-    void adjustInfluence(float delta) { influence_ += delta; influence_ = std::max(0.0f, influence_); }
-    void adjustNurbMatter(float delta) { nurbMatter_ += delta; nurbMatter_ = std::max(0.0f, nurbMatter_); universalEquation_.setNurbMatterStrength(nurbMatter_); }
-    void adjustNurbEnergy(float delta) { nurbEnergy_ += delta; nurbEnergy_ = std::max(0.0f, nurbEnergy_); universalEquation_.setNurbEnergyStrength(nurbEnergy_); }
-    void togglePause() { isPaused_ = !isPaused_; }
-    void toggleUserCam() { isUserCamActive_ = !isUserCamActive_; }
-    void moveUserCam(float dx, float dy, float dz) {
-        if (isUserCamActive_) {
-            userCamMatrix_ = glm::translate(userCamMatrix_, glm::vec3(dx, dy, dz));
-        }
-    }
-
-    void update(float deltaTime) {
-        if (!isPaused_) {
-            universalEquation_.evolveTimeStep(deltaTime);
-            cache_.clear(); // Prevent unbounded growth
-            auto data = universalEquation_.updateCache();
-            cache_.push_back(data);
-            if (cache_.size() > 100) cache_.erase(cache_.begin());
-        }
-    }
-
-private:
-    DimensionalNavigator* navigator_;
-    VkDevice device_;
-    VkDeviceMemory vertexBufferMemory_;
-    VkDeviceMemory indexBufferMemory_;
-    VkPipeline pipeline_;
-    UniversalEquation universalEquation_;
-    std::vector<uint32_t> sphereIndices_;
-    std::vector<UniversalEquation::DimensionData> cache_;
-    int width_ = 800;
-    int height_ = 600;
-    int mode_ = 1;
-    int currentDimension_ = 3;
-    float zoomLevel_ = 1.0f;
-    float influence_ = 1.0f;
-    float nurbMatter_ = 1.0f;
-    float nurbEnergy_ = 1.0f;
-    bool isPaused_ = false;
-    bool isUserCamActive_ = false;
-    glm::mat4 userCamMatrix_ = glm::mat4(1.0f);
-};
-
 class UniversalEquation {
 public:
     UniversalEquation(int maxDimensions, int mode, long double influence, long double weak, bool debug, uint64_t numVertices);
@@ -212,52 +145,52 @@ public:
     ~UniversalEquation();
 
     // Getters
-    long double getInfluence() const { return influence_.load(); }
-    long double getWeak() const { return weak_.load(); }
-    long double getCollapse() const { return collapse_.load(); }
-    long double getTwoD() const { return twoD_.load(); }
-    long double getThreeDInfluence() const { return threeDInfluence_.load(); }
-    long double getOneDPermeation() const { return oneDPermeation_.load(); }
-    long double getNurbMatterStrength() const { return nurbMatterStrength_.load(); }
-    long double getNurbEnergyStrength() const { return nurbEnergyStrength_.load(); }
-    long double getAlpha() const { return alpha_.load(); }
-    long double getBeta() const { return beta_.load(); }
-    long double getCarrollFactor() const { return carrollFactor_.load(); }
-    long double getMeanFieldApprox() const { return meanFieldApprox_.load(); }
-    long double getAsymCollapse() const { return asymCollapse_.load(); }
-    long double getPerspectiveTrans() const { return perspectiveTrans_.load(); }
-    long double getPerspectiveFocal() const { return perspectiveFocal_.load(); }
-    long double getSpinInteraction() const { return spinInteraction_.load(); }
-    long double getEMFieldStrength() const { return emFieldStrength_.load(); }
-    long double getRenormFactor() const { return renormFactor_.load(); }
-    long double getVacuumEnergy() const { return vacuumEnergy_.load(); }
-    long double getGodWaveFreq() const { return godWaveFreq_.load(); }
-    int getCurrentDimension() const { return currentDimension_.load(); }
-    int getMode() const { return mode_.load(); }
-    bool getDebug() const { return debug_.load(); }
-    bool getNeedsUpdate() const { return needsUpdate_.load(); }
-    long double getTotalCharge() const { return totalCharge_.load(); }
-    long double getAvgProjScale() const { return avgProjScale_.load(); }
-    float getSimulationTime() const { return simulationTime_.load(); }
-    long double getMaterialDensity() const { return materialDensity_.load(); }
-    uint64_t getCurrentVertices() const { return currentVertices_.load(); }
-    uint64_t getMaxVertices() const { return maxVertices_; }
-    int getMaxDimensions() const { return maxDimensions_; }
-    long double getOmega() const { return omega_; }
-    long double getInvMaxDim() const { return invMaxDim_; }
-    const std::vector<std::vector<long double>>& getNCubeVertices() const { return nCubeVertices_; }
-    const std::vector<std::vector<long double>>& getVertexMomenta() const { return vertexMomenta_; }
-    const std::vector<long double>& getVertexSpins() const { return vertexSpins_; }
-    const std::vector<long double>& getVertexWaveAmplitudes() const { return vertexWaveAmplitudes_; }
-    const std::vector<UniversalEquation::DimensionInteraction>& getInteractions() const { return interactions_; }
-    const std::vector<glm::vec3>& getProjectedVertices() const { return projectedVerts_; }
-    const std::vector<long double>& getCachedCos() const { return cachedCos_; }
-    const std::vector<long double>& getNurbMatterControlPoints() const { return nurbMatterControlPoints_; }
-    const std::vector<long double>& getNurbEnergyControlPoints() const { return nurbEnergyControlPoints_; }
-    const std::vector<long double>& getNurbKnots() const { return nurbKnots_; }
-    const std::vector<long double>& getNurbWeights() const { return nurbWeights_; }
-    const std::vector<UniversalEquation::DimensionData>& getDimensionData() const { return dimensionData_; }
-    DimensionalNavigator* getNavigator() const { return navigator_; }
+    int getCurrentDimension() const;
+    int getMode() const;
+    bool getDebug() const;
+    uint64_t getMaxVertices() const;
+    int getMaxDimensions() const;
+    long double getGodWaveFreq() const;
+    long double getInfluence() const;
+    long double getWeak() const;
+    long double getCollapse() const;
+    long double getTwoD() const;
+    long double getThreeDInfluence() const;
+    long double getOneDPermeation() const;
+    long double getNurbMatterStrength() const;
+    long double getNurbEnergyStrength() const;
+    long double getAlpha() const;
+    long double getBeta() const;
+    long double getCarrollFactor() const;
+    long double getMeanFieldApprox() const;
+    long double getAsymCollapse() const;
+    long double getPerspectiveTrans() const;
+    long double getPerspectiveFocal() const;
+    long double getSpinInteraction() const;
+    long double getEMFieldStrength() const;
+    long double getRenormFactor() const;
+    long double getVacuumEnergy() const;
+    bool getNeedsUpdate() const;
+    long double getTotalCharge() const;
+    long double getAvgProjScale() const;
+    float getSimulationTime() const;
+    long double getMaterialDensity() const;
+    uint64_t getCurrentVertices() const;
+    long double getOmega() const;
+    long double getInvMaxDim() const;
+    const std::vector<std::vector<long double>>& getNCubeVertices() const;
+    const std::vector<std::vector<long double>>& getVertexMomenta() const;
+    const std::vector<long double>& getVertexSpins() const;
+    const std::vector<long double>& getVertexWaveAmplitudes() const;
+    const std::vector<UE::DimensionInteraction>& getInteractions() const;
+    const std::vector<glm::vec3>& getProjectedVerts() const;
+    const std::vector<long double>& getCachedCos() const;
+    const std::vector<long double>& getNurbMatterControlPoints() const;
+    const std::vector<long double>& getNurbEnergyControlPoints() const;
+    const std::vector<long double>& getNurbKnots() const;
+    const std::vector<long double>& getNurbWeights() const;
+    const std::vector<UE::DimensionData>& getDimensionData() const;
+    DimensionalNavigator* getNavigator() const;
 
     // Setters
     void setCurrentDimension(int dimension);
@@ -298,14 +231,19 @@ public:
     void setTotalCharge(long double value);
     void setMaterialDensity(long double density);
 
-    // Methods
+    // Core Methods
     void initializeNCube();
-    void validateProjectedVertices() const;
-    long double computeKineticEnergy(int vertexIndex) const;
-    void updateInteractions();
-    EnergyResult compute();
     void initializeWithRetry();
     void initializeCalculator(AMOURANTH* amouranth);
+    void updateInteractions();
+    UE::EnergyResult compute();
+    void evolveTimeStep(long double dt);
+    void updateMomentum();
+    void advanceCycle();
+    std::vector<UE::DimensionData> computeBatch(int startDim, int endDim);
+    void exportToCSV(const std::string& filename, const std::vector<UE::DimensionData>& data) const;
+    UE::DimensionData updateCache();
+    long double computeGodWaveAmplitude(int vertexIndex, long double time) const;
     long double computeNurbMatter(int vertexIndex) const;
     long double computeNurbEnergy(int vertexIndex) const;
     long double computeSpinEnergy(int vertexIndex) const;
@@ -313,23 +251,14 @@ public:
     long double computeGodWave(int vertexIndex) const;
     long double computeInteraction(int vertexIndex, long double distance) const;
     std::vector<long double> computeVectorPotential(int vertexIndex) const;
+    long double computeGravitationalPotential(int vertexIndex, int otherIndex) const;
+    std::vector<long double> computeGravitationalAcceleration(int vertexIndex) const;
+
+    // Utility Methods
     long double safeExp(long double x) const;
     long double safe_div(long double a, long double b) const;
     void validateVertexIndex(int vertexIndex, const std::source_location& loc = std::source_location::current()) const;
-    void evolveTimeStep(long double dt);
-    void updateMomentum();
-    void advanceCycle();
-    std::vector<DimensionData> computeBatch(int startDim, int endDim);
-    void exportToCSV(const std::string& filename, const std::vector<DimensionData>& data) const;
-    DimensionData updateCache();
-    long double computeGodWaveAmplitude(int vertexIndex, long double time) const;
-    const std::vector<long double>& getNCubeVertex(int vertexIndex) const;
-    const std::vector<long double>& getVertexMomentum(int vertexIndex) const;
-    long double getVertexSpin(int vertexIndex) const;
-    long double getVertexWaveAmplitude(int vertexIndex) const;
-    const glm::vec3& getProjectedVertex(int vertexIndex) const;
-    long double computeGravitationalPotential(int vertexIndex1, int vertexIndex2) const;
-    std::vector<long double> computeGravitationalAcceleration(int vertexIndex) const;
+    void validateProjectedVertices() const;
 
 private:
     std::atomic<long double> influence_;
@@ -361,23 +290,105 @@ private:
     std::atomic<float> simulationTime_;
     std::atomic<long double> materialDensity_;
     std::atomic<uint64_t> currentVertices_;
-    uint64_t maxVertices_;
-    int maxDimensions_;
-    long double omega_;
-    long double invMaxDim_;
+    const uint64_t maxVertices_;
+    const int maxDimensions_;
+    const long double omega_;
+    const long double invMaxDim_;
     std::vector<std::vector<long double>> nCubeVertices_;
     std::vector<std::vector<long double>> vertexMomenta_;
     std::vector<long double> vertexSpins_;
     std::vector<long double> vertexWaveAmplitudes_;
-    std::vector<DimensionInteraction> interactions_;
+    std::vector<UE::DimensionInteraction> interactions_;
     std::vector<glm::vec3> projectedVerts_;
     std::vector<long double> cachedCos_;
     std::vector<long double> nurbMatterControlPoints_;
     std::vector<long double> nurbEnergyControlPoints_;
     std::vector<long double> nurbKnots_;
     std::vector<long double> nurbWeights_;
-    std::vector<DimensionData> dimensionData_;
+    std::vector<UE::DimensionData> dimensionData_;
     DimensionalNavigator* navigator_;
+};
+
+class AMOURANTH {
+public:
+    AMOURANTH(DimensionalNavigator* navigator, VkDevice logicalDevice, VkDeviceMemory vertexMemory,
+              VkDeviceMemory indexMemory, VkPipeline pipeline)
+        : navigator_(navigator),
+          logicalDevice_(logicalDevice),
+          vertexMemory_(vertexMemory),
+          indexMemory_(indexMemory),
+          pipeline_(pipeline),
+          mode_(1),
+          currentDimension_(3),
+          nurbMatter_(0.5f),
+          nurbEnergy_(1.0f),
+          universalEquation_(9, 1, 1.0L, 0.1L, false, 30000) {
+        universalEquation_.setNavigator(navigator_);
+        universalEquation_.initializeCalculator(this);
+        LOG_INFO("AMOURANTH initialized with dimension=3, vertices=30000");
+    }
+
+    ~AMOURANTH() {
+        LOG_DEBUG("Destroying AMOURANTH");
+    }
+
+    const std::vector<glm::vec3>& getBalls() const {
+        return universalEquation_.getProjectedVerts();
+    }
+
+    int getMode() const { return mode_; }
+    int getCurrentDimension() const { return currentDimension_; }
+    float getNurbMatter() const { return nurbMatter_; }
+    float getNurbEnergy() const { return nurbEnergy_; }
+    const UniversalEquation& getUniversalEquation() const { return universalEquation_; }
+
+    void setMode(int mode) {
+        mode_ = mode;
+        universalEquation_.setMode(mode);
+    }
+
+    void setCurrentDimension(int dimension) {
+        currentDimension_ = dimension;
+        universalEquation_.setCurrentDimension(dimension);
+    }
+
+    void setNurbMatter(float matter) {
+        nurbMatter_ = std::max(0.0f, matter);
+        universalEquation_.setNurbMatterStrength(matter);
+    }
+
+    void setNurbEnergy(float energy) {
+        nurbEnergy_ = std::max(0.0f, energy);
+        universalEquation_.setNurbEnergyStrength(energy);
+    }
+
+    void adjustNurbMatter(float delta) {
+        nurbMatter_ += delta;
+        nurbMatter_ = std::max(0.0f, nurbMatter_);
+        universalEquation_.setNurbMatterStrength(nurbMatter_);
+    }
+
+    void adjustNurbEnergy(float delta) {
+        nurbEnergy_ += delta;
+        nurbEnergy_ = std::max(0.0f, nurbEnergy_);
+        universalEquation_.setNurbEnergyStrength(nurbEnergy_);
+    }
+
+    void update(float deltaTime) {
+        universalEquation_.evolveTimeStep(deltaTime);
+    }
+
+private:
+    DimensionalNavigator* navigator_;
+    VkDevice logicalDevice_;
+    VkDeviceMemory vertexMemory_;
+    VkDeviceMemory indexMemory_;
+    VkPipeline pipeline_;
+    int mode_;
+    int currentDimension_;
+    float nurbMatter_;
+    float nurbEnergy_;
+    UniversalEquation universalEquation_;
 };
 
 #endif // UE_INIT_HPP

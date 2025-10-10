@@ -64,7 +64,8 @@ void VulkanBufferManager::initializeBuffers(std::span<const glm::vec3> vertices,
     vkDestroyBuffer(context_.device, stagingBuffer, nullptr);
     vkFreeMemory(context_.device, stagingBufferMemory, nullptr);
 
-    VulkanInitializer::createBuffer(context_.device, context_.physicalDevice, sizeof(UniversalEquation::UniformBufferObject),
+    // Complete the uniform buffer creation
+    VulkanInitializer::createBuffer(context_.device, context_.physicalDevice, sizeof(UE::UniformBufferObject),
                                    VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
                                    VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
                                    uniformBuffer_, uniformBufferMemory_);

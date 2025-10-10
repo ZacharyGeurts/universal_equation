@@ -1,8 +1,19 @@
+// Vulkan_init.cpp
 #include "engine/Vulkan_init.hpp"
 #include "universal_equation.hpp"
 #include <stdexcept>
 #include <fstream>
 #include <algorithm>
+
+class Camera {
+public:
+    glm::mat4 getViewMatrix() const {
+        return glm::lookAt(glm::vec3(0.0f, 0.0f, 3.0f), glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+    }
+    glm::mat4 getProjectionMatrix() const {
+        return glm::perspective(glm::radians(45.0f), 800.0f / 600.0f, 0.1f, 100.0f);
+    }
+};
 
 void VulkanInitializer::initializeVulkan(VulkanContext& context, int width, int height) {
     LOG_INFO_CAT("Vulkan", "Initializing Vulkan with instance={:p}, surface={:p}, width={}, height={}",
@@ -633,7 +644,7 @@ void VulkanInitializer::createDescriptorPoolAndSet(VkDevice device, VkDescriptor
     VkDescriptorBufferInfo bufferInfo{
         .buffer = uniformBuffer,
         .offset = 0,
-        .range = sizeof(UniversalEquation::UniformBufferObject)
+        .range = sizeof(UE::UniformBufferObject)
     };
     VkWriteDescriptorSetAccelerationStructureKHR asInfo{
         .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR,
@@ -931,6 +942,8 @@ void VulkanBufferManager::initializeBuffers(std::span<const glm::vec3> vertices,
     LOG_DEBUG_CAT("VulkanBuffer", "Initializing buffers with vertex count={}, index count={}",
                   std::source_location::current(), vertices.size(), indices.size());
 
+    indexCount_ = static_cast<uint32_t>(indices.size());
+
     VkDeviceSize vertexBufferSize = sizeof(glm::vec3) * vertices.size();
     VkBuffer stagingBuffer;
     VkDeviceMemory stagingBufferMemory;
@@ -975,7 +988,7 @@ void VulkanBufferManager::initializeBuffers(std::span<const glm::vec3> vertices,
     vkDestroyBuffer(context_.device, stagingBuffer, nullptr);
     vkFreeMemory(context_.device, stagingBufferMemory, nullptr);
 
-    VulkanInitializer::createBuffer(context_.device, context_.physicalDevice, sizeof(UniversalEquation::UniformBufferObject),
+    VulkanInitializer::createBuffer(context_.device, context_.physicalDevice, sizeof(UE::UniformBufferObject),
                                    VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
                                    VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
                                    uniformBuffer_, uniformBufferMemory_);
@@ -1201,7 +1214,7 @@ VulkanRenderer::VulkanRenderer(VkInstance instance, VkSurfaceKHR surface,
         .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
         .commandBufferCount = static_cast<uint32_t>(commandBuffers_.size())
     };
-    VkResult result = vkAllocateCommandBuffers(context_.device, &allocInfo, commandBuffers_.data());
+    result = vkAllocateCommandBuffers(context_.device, &allocInfo, commandBuffers_.data());
     if (result != VK_SUCCESS) {
         LOG_ERROR_CAT("Vulkan", "Failed to allocate command buffers: result={}", std::source_location::current(), result);
         throw std::runtime_error("Failed to allocate command buffers");
@@ -1302,7 +1315,7 @@ VulkanRenderer::~VulkanRenderer() {
     }
 }
 
-void VulkanRenderer::renderFrame(const AMOURANTH& camera) {
+void VulkanRenderer::renderFrame(const Camera& camera, const AMOURANTH& amouranth) {
     LOG_DEBUG_CAT("Vulkan", "Rendering frame", std::source_location::current());
 
     vkWaitForFences(context_.device, 1, &inFlightFence_, VK_TRUE, UINT64_MAX);
@@ -1319,15 +1332,14 @@ void VulkanRenderer::renderFrame(const AMOURANTH& camera) {
         throw std::runtime_error("Failed to acquire swapchain image");
     }
 
-    UniversalEquation::UniformBufferObject ubo{};
-    // Populate ubo with camera data (example, adjust according to AMOURANTH class)
+    UE::UniformBufferObject ubo{};
+    ubo.model = glm::mat4(1.0f); // Example model matrix, adjust based on AMOURANTH data
     ubo.view = camera.getViewMatrix();
     ubo.proj = camera.getProjectionMatrix();
-    ubo.model = glm::mat4(1.0f); // Example model matrix
 
     void* data;
-    vkMapMemory(context_.device, bufferManager_->getUniformBufferMemory(), 0, sizeof(UniversalEquation::UniformBufferObject), 0, &data);
-    memcpy(data, &ubo, sizeof(UniversalEquation::UniformBufferObject));
+    vkMapMemory(context_.device, bufferManager_->getUniformBufferMemory(), 0, sizeof(UE::UniformBufferObject), 0, &data);
+    memcpy(data, &ubo, sizeof(UE::UniformBufferObject));
     vkUnmapMemory(context_.device, bufferManager_->getUniformBufferMemory());
 
     VkCommandBuffer commandBuffer = commandBuffers_[imageIndex];
