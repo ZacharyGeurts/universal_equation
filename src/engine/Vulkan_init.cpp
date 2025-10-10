@@ -1,5 +1,5 @@
 #include "engine/Vulkan_init.hpp"
-#include "VulkanBufferManager.hpp" // Include for VulkanBufferManager
+#include "VulkanBufferManager.hpp"
 #include "engine/logging.hpp"
 #include <fstream>
 #include <algorithm>
@@ -173,8 +173,8 @@ void VulkanPipelineManager::createPipelineLayout() {
 }
 
 void VulkanPipelineManager::createGraphicsPipeline() {
-    vertexShaderModule_ = VulkanInitializer::loadShader(context_.device, "assets/shaders/vert.spv");
-    fragmentShaderModule_ = VulkanInitializer::loadShader(context_.device, "assets/shaders/frag.spv");
+    vertexShaderModule_ = VulkanInitializer::loadShader(context_.device, "assets/shaders/rasterization/vertex.spv");
+    fragmentShaderModule_ = VulkanInitializer::loadShader(context_.device, "assets/shaders/rasterization/fragment.spv");
     if (vertexShaderModule_ == VK_NULL_HANDLE || fragmentShaderModule_ == VK_NULL_HANDLE) {
         LOG_ERROR_CAT("Vulkan", "Failed to load shader modules", std::source_location::current());
         return;
@@ -236,8 +236,8 @@ VulkanRenderer::VulkanRenderer(VkInstance instance, VkSurfaceKHR surface, std::s
     VulkanInitializer::createRayTracingPipeline(context_);
     VulkanInitializer::createShaderBindingTable(context_);
     VulkanInitializer::createDescriptorPoolAndSet(context_.device, pipelineManager_->getDescriptorSetLayout(),
-                                                context_.descriptorPool, context_.descriptorSet, context_.sampler,
-                                                bufferManager_->getUniformBuffer(), context_.storageImageView, context_.topLevelAS);
+                                             context_.descriptorPool, context_.descriptorSet, context_.sampler,
+                                             bufferManager_->getUniformBuffer(0), context_.storageImageView, context_.topLevelAS);
     createFramebuffers();
     createCommandBuffers();
     createSyncObjects();
@@ -1431,7 +1431,7 @@ void VulkanInitializer::createAccelerationStructures(VulkanContext& context, std
         .geometryType = VK_GEOMETRY_TYPE_INSTANCES_KHR,
         .geometry = {.instances = instancesData},
         .flags = VK_GEOMETRY_OPAQUE_BIT_KHR
-    };
+	    };
     VkAccelerationStructureBuildGeometryInfoKHR topLevelBuildInfo{
         .sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR,
         .pNext = nullptr,
@@ -1542,9 +1542,9 @@ void VulkanInitializer::createRayTracingPipeline(VulkanContext& context) {
         LOG_ERROR_CAT("Vulkan", "Failed to load vkCreateRayTracingPipelinesKHR", std::source_location::current());
         return;
     }
-    VkShaderModule raygenShader = loadShader(context.device, "assets/shaders/raygen.spv");
-    VkShaderModule missShader = loadShader(context.device, "assets/shaders/miss.spv");
-    VkShaderModule closestHitShader = loadShader(context.device, "assets/shaders/closesthit.spv");
+    VkShaderModule raygenShader = loadShader(context.device, "assets/shaders/raytracing/raygen.spv");
+    VkShaderModule missShader = loadShader(context.device, "assets/shaders/raytracing/miss.spv");
+    VkShaderModule closestHitShader = loadShader(context.device, "assets/shaders/raytracing/closesthit.spv");
     if (raygenShader == VK_NULL_HANDLE || missShader == VK_NULL_HANDLE || closestHitShader == VK_NULL_HANDLE) {
         LOG_ERROR_CAT("Vulkan", "Failed to load ray-tracing shader modules", std::source_location::current());
         if (raygenShader != VK_NULL_HANDLE) vkDestroyShaderModule(context.device, raygenShader, nullptr);
