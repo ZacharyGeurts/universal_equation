@@ -1,6 +1,6 @@
 // src/engine/core.cpp
 // AMOURANTH RTX Engine, October 2025 - Core simulation logic implementation.
-// Implements AMOURANTH, DimensionalNavigator, and rendering modes.
+// Implements AMOURANTH and rendering modes.
 // Dependencies: Vulkan 1.3+, GLM, SDL3, C++20 standard library.
 // Supported platforms: Windows, Linux.
 // Zachary Geurts 2025
@@ -21,7 +21,7 @@ DimensionalNavigator::DimensionalNavigator(const std::string& name, int width, i
     initializeCache();
 }
 
-void DimensionalNavigator::initialize(int dimension, uint64_t numVertices) {
+void DimensionalNavigator::initialize(int dimension, [[maybe_unused]] uint64_t numVertices) {
     LOG_DEBUG_CAT("Simulation", "Initializing DimensionalNavigator: dimension: {}, numVertices: {}", 
                   std::source_location::current(), dimension, numVertices);
     cache_.resize(std::min(static_cast<size_t>(dimension), static_cast<size_t>(kMaxRenderedDimensions)));
@@ -136,7 +136,7 @@ AMOURANTH::AMOURANTH(AMOURANTH&& other) noexcept
 AMOURANTH& AMOURANTH::operator=(AMOURANTH&& other) noexcept {
     if (this != &other) {
         simulator_ = other.simulator_;
-        logger_ = other.logger_;
+        // logger_ is a const reference, cannot be reassigned
         mode_ = other.mode_;
         wavePhase_ = other.wavePhase_;
         waveSpeed_ = other.waveSpeed_;
@@ -180,7 +180,7 @@ void AMOURANTH::render(uint32_t imageIndex, VkBuffer vertexBuffer, VkCommandBuff
                       static_cast<void*>(renderPass), static_cast<void*>(framebuffer));
         throw std::runtime_error("Invalid Vulkan resources in render");
     }
-    switch (mode_) { // Use AMOURANTH's mode_ instead of simulator_->getMode()
+    switch (mode_) {
         case 1: renderMode1(this, imageIndex, vertexBuffer, commandBuffer, indexBuffer, zoomLevel_,
                            width_, height_, wavePhase_, cache_, pipelineLayout, descriptorSet,
                            device_, vertexBufferMemory_, pipeline_, deltaTime, renderPass, framebuffer); break;

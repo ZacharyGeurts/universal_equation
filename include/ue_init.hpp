@@ -22,36 +22,7 @@
 
 // Forward declarations
 class VulkanRenderer;
-
-class DimensionalNavigator {
-public:
-    static constexpr size_t kMaxRenderedDimensions = 8;
-
-    DimensionalNavigator(const std::string& name, int width, int height, VulkanRenderer& renderer);
-    void initialize(int dimension, uint64_t numVertices);
-    void setMode(int mode);
-    void setZoomLevel(float zoom);
-    void setWavePhase(float phase);
-    void setWidth(int width);
-    void setHeight(int height);
-    int getMode() const { return mode_; }
-    float getZoomLevel() const { return zoomLevel_; }
-    float getWavePhase() const { return wavePhase_; }
-    int getWidth() const { return width_; }
-    int getHeight() const { return height_; }
-    std::span<const UniversalEquation::DimensionData> getCache() const;
-
-private:
-    void initializeCache();
-    std::string name_;
-    int width_;
-    int height_;
-    int mode_;
-    float zoomLevel_;
-    float wavePhase_;
-    VulkanRenderer& renderer_;
-    std::vector<UniversalEquation::DimensionData> cache_;
-};
+class AMOURANTH;
 
 class UniversalEquation {
 public:
@@ -77,8 +48,73 @@ public:
         }
     };
 
-    // Rest of UniversalEquation definition remains the same as in previous response
-    // (Omitted for brevity, but includes EnergyResult, DimensionInteraction, constructors, etc.)
+    UniversalEquation(int dimensions, int mode, double nurbMatterStrength, double fineStructureConstant, bool useNurbs, uint64_t numVertices)
+        : dimensions_(dimensions), mode_(mode), nurbMatterStrength_(nurbMatterStrength),
+          fineStructureConstant_(fineStructureConstant), useNurbs_(useNurbs), numVertices_(numVertices) {}
+
+    void initializeCalculator(AMOURANTH*) { // Removed parameter name to silence warning
+        // Placeholder: Implement in universal_equation_physical.cpp
+    }
+
+    void setInfluence(double value) { influence_ = value; }
+    double getInfluence() const { return influence_; }
+
+    void setNurbMatterStrength(double value) { nurbMatterStrength_ = value; }
+    double getNurbMatterStrength() const { return nurbMatterStrength_; }
+
+    void setNurbEnergyStrength(double value) { nurbEnergyStrength_ = value; }
+    double getNurbEnergyStrength() const { return nurbEnergyStrength_; }
+
+    void setMode(int mode) { mode_ = mode; }
+
+    void setCurrentDimension(int dimension) { currentDimension_ = dimension; }
+
+    long double getObservable(int dimension) const { return dimensionData_[dimension - 1].observable; }
+    long double getPotential(int dimension) const { return dimensionData_[dimension - 1].potential; }
+    long double getNurbMatter(int dimension) const { return dimensionData_[dimension - 1].nurbMatter; }
+    long double getNurbEnergy(int dimension) const { return dimensionData_[dimension - 1].nurbEnergy; }
+
+private:
+    int dimensions_;
+    int mode_;
+    double nurbMatterStrength_;
+    double nurbEnergyStrength_;
+    double fineStructureConstant_;
+    bool useNurbs_;
+    uint64_t numVertices_;
+    double influence_ = 0.0;
+    int currentDimension_ = 1;
+    std::vector<DimensionData> dimensionData_ = std::vector<DimensionData>(8, {0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0});
+};
+
+class DimensionalNavigator {
+public:
+    static constexpr size_t kMaxRenderedDimensions = 8;
+
+    DimensionalNavigator(const std::string& name, int width, int height, VulkanRenderer& renderer);
+    void initialize(int dimension, uint64_t numVertices);
+    void setMode(int mode);
+    void setZoomLevel(float zoom);
+    void setWavePhase(float phase);
+    void setWidth(int width);
+    void setHeight(int height);
+    int getMode() const { return mode_; }
+    float getZoomLevel() const { return zoomLevel_; }
+    float getWavePhase() const { return wavePhase_; }
+    int getWidth() const { return width_; }
+    int getHeight() const { return height_; }
+    std::span<const UniversalEquation::DimensionData> getCache() const { return cache_; }
+
+private:
+    void initializeCache();
+    std::string name_;
+    int width_;
+    int height_;
+    int mode_;
+    float zoomLevel_;
+    float wavePhase_;
+    VulkanRenderer& renderer_;
+    std::vector<UniversalEquation::DimensionData> cache_;
 };
 
 class AMOURANTH {
