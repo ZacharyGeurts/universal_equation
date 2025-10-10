@@ -749,6 +749,67 @@ std::vector<long double> UniversalEquation::computeVectorPotential(int vertexInd
     return result;
 }
 
+long double UniversalEquation::computeGravitationalPotential(int vertexIndex, int otherIndex) const {
+    validateVertexIndex(vertexIndex);
+    validateVertexIndex(otherIndex);
+    if (vertexIndex == otherIndex) {
+        return 0.0L; // No self-interaction
+    }
+    long double distance = 0.0L;
+    const auto& v1 = nCubeVertices_[vertexIndex];
+    const auto& v2 = nCubeVertices_[otherIndex];
+    for (size_t j = 0; j < static_cast<size_t>(getCurrentDimension()); ++j) {
+        long double diff = v1[j] - v2[j];
+        distance += diff * diff;
+    }
+    distance = std::sqrt(distance);
+    if (distance <= 0.0L || std::isnan(distance) || std::isinf(distance)) {
+        distance = 1e-10L;
+        if (debug_.load()) {
+            LOG_WARNING_CAT("Simulation", "Invalid distance between vertices {} and {}, using default={}",
+                            std::source_location::current(), vertexIndex, otherIndex, distance);
+        }
+    }
+    long double result = -getInfluence() * safe_div(1.0L, distance);
+    if (debug_.load()) {
+        LOG_DEBUG_CAT("Simulation", "Computed gravitational potential for vertices {} and {}: result={}",
+                      std::source_location::current(), vertexIndex, otherIndex, result);
+    }
+    return result;
+}
+
+std::vector<long double> UniversalEquation::computeGravitationalAcceleration(int vertexIndex) const {
+    validateVertexIndex(vertexIndex);
+    std::vector<long double> acceleration(getCurrentDimension(), 0.0L);
+    for (size_t i = 0; i < nCubeVertices_.size(); ++i) {
+        if (static_cast<int>(i) == vertexIndex) continue;
+        long double distance = 0.0L;
+        const auto& v1 = nCubeVertices_[vertexIndex];
+        const auto& v2 = nCubeVertices_[i];
+        for (size_t j = 0; j < static_cast<size_t>(getCurrentDimension()); ++j) {
+            long double diff = v1[j] - v2[j];
+            distance += diff * diff;
+        }
+        distance = std::sqrt(distance);
+        if (distance <= 0.0L || std::isnan(distance) || std::isinf(distance)) {
+            distance = 1e-10L;
+            if (debug_.load()) {
+                LOG_WARNING_CAT("Simulation", "Invalid distance for vertex {} and {}, using default={}",
+                                std::source_location::current(), vertexIndex, i, distance);
+            }
+        }
+        long double force = getInfluence() * safe_div(1.0L, distance * distance);
+        for (size_t j = 0; j < static_cast<size_t>(getCurrentDimension()); ++j) {
+            acceleration[j] += force * (v2[j] - v1[j]) / distance;
+        }
+    }
+    if (debug_.load()) {
+        LOG_DEBUG_CAT("Simulation", "Computed gravitational acceleration for vertex {}: result size={}",
+                      std::source_location::current(), vertexIndex, acceleration.size());
+    }
+    return acceleration;
+}
+
 long double UniversalEquation::safeExp(long double x) const {
     if (std::isnan(x) || std::isinf(x)) {
         if (debug_.load()) {
@@ -944,6 +1005,11 @@ void UniversalEquation::setNavigator(DimensionalNavigator* nav) {
 
 void UniversalEquation::setNCubeVertex(int vertexIndex, const std::vector<long double>& vertex) {
     validateVertexIndex(vertexIndex);
+    if (vertex.size() != static_cast<size_t>(getCurrentDimension())) {
+        LOG_ERROR_CAT("Simulation", "Vertex dimension mismatch: vertexIndex={}, expected size={}, actual size={}",
+                      std::source_location::current(), vertexIndex, getCurrentDimension(), vertex.size());
+        throw std::invalid_argument("Vertex dimension mismatch");
+    }
     nCubeVertices_[vertexIndex] = vertex;
     needsUpdate_.store(true);
     LOG_DEBUG_CAT("Simulation", "Set nCubeVertex for index {}: vertex size={}",
@@ -952,6 +1018,11 @@ void UniversalEquation::setNCubeVertex(int vertexIndex, const std::vector<long d
 
 void UniversalEquation::setVertexMomentum(int vertexIndex, const std::vector<long double>& momentum) {
     validateVertexIndex(vertexIndex);
+    if (momentum.size() != static_cast<size_t>(getCurrentDimension())) {
+        LOG_ERROR_CAT("Simulation", "Momentum dimension mismatch: vertexIndex={}, expected size={}, actual size={}",
+                      std::source_location::current(), vertexIndex, getCurrentDimension(), momentum.size());
+        throw std::invalid_argument("Momentum dimension mismatch");
+    }
     vertexMomenta_[vertexIndex] = momentum;
     needsUpdate_.store(true);
     LOG_DEBUG_CAT("Simulation", "Set vertexMomentum for index {}: momentum size={}",
@@ -983,12 +1054,26 @@ void UniversalEquation::setProjectedVertex(int vertexIndex, const glm::vec3& ver
 }
 
 void UniversalEquation::setNCubeVertices(const std::vector<std::vector<long double>>& vertices) {
+    for (size_t i = 0; i < vertices.size(); ++i) {
+        if (vertices[i].size() != static_cast<size_t>(getCurrentDimension())) {
+            LOG_ERROR_CAT("Simulation", "Vertex dimension mismatch at index {}: expected size={}, actual size={}",
+                          std::source_location::current(), i, getCurrentDimension(), vertices[i].size());
+            throw std::invalid_argument("Vertex dimension mismatch");
+        }
+    }
     nCubeVertices_ = vertices;
     needsUpdate_.store(true);
     LOG_DEBUG_CAT("Simulation", "Set nCubeVertices: size={}", std::source_location::current(), vertices.size());
 }
 
 void UniversalEquation::setVertexMomenta(const std::vector<std::vector<long double>>& momenta) {
+    for (size_t i = 0; i < momenta.size(); ++i) {
+        if (momenta[i].size() != static_cast<size_t>(getCurrentDimension())) {
+            LOG_ERROR_CAT("Simulation", "Momentum dimension mismatch at index {}: expected size={}, actual size={}",
+                          std::source_location::current(), i, getCurrentDimension(), momenta[i].size());
+            throw std::invalid_argument("Momentum dimension mismatch");
+        }
+    }
     vertexMomenta_ = momenta;
     needsUpdate_.store(true);
     LOG_DEBUG_CAT("Simulation", "Set vertexMomenta: size={}", std::source_location::current(), momenta.size());
@@ -1165,4 +1250,188 @@ long double UniversalEquation::getVertexWaveAmplitude(int vertexIndex) const {
 const glm::vec3& UniversalEquation::getProjectedVertex(int vertexIndex) const {
     validateVertexIndex(vertexIndex);
     return projectedVerts_[vertexIndex];
+}
+
+int UniversalEquation::getCurrentDimension() const {
+    return currentDimension_.load();
+}
+
+int UniversalEquation::getMode() const {
+    return mode_.load();
+}
+
+bool UniversalEquation::getDebug() const {
+    return debug_.load();
+}
+
+uint64_t UniversalEquation::getMaxVertices() const {
+    return maxVertices_;
+}
+
+int UniversalEquation::getMaxDimensions() const {
+    return maxDimensions_;
+}
+
+long double UniversalEquation::getGodWaveFreq() const {
+    return godWaveFreq_.load();
+}
+
+long double UniversalEquation::getInfluence() const {
+    return influence_.load();
+}
+
+long double UniversalEquation::getWeak() const {
+    return weak_.load();
+}
+
+long double UniversalEquation::getCollapse() const {
+    return collapse_.load();
+}
+
+long double UniversalEquation::getTwoD() const {
+    return twoD_.load();
+}
+
+long double UniversalEquation::getThreeDInfluence() const {
+    return threeDInfluence_.load();
+}
+
+long double UniversalEquation::getOneDPermeation() const {
+    return oneDPermeation_.load();
+}
+
+long double UniversalEquation::getNurbMatterStrength() const {
+    return nurbMatterStrength_.load();
+}
+
+long double UniversalEquation::getNurbEnergyStrength() const {
+    return nurbEnergyStrength_.load();
+}
+
+long double UniversalEquation::getAlpha() const {
+    return alpha_.load();
+}
+
+long double UniversalEquation::getBeta() const {
+    return beta_.load();
+}
+
+long double UniversalEquation::getCarrollFactor() const {
+    return carrollFactor_.load();
+}
+
+long double UniversalEquation::getMeanFieldApprox() const {
+    return meanFieldApprox_.load();
+}
+
+long double UniversalEquation::getAsymCollapse() const {
+    return asymCollapse_.load();
+}
+
+long double UniversalEquation::getPerspectiveTrans() const {
+    return perspectiveTrans_.load();
+}
+
+long double UniversalEquation::getPerspectiveFocal() const {
+    return perspectiveFocal_.load();
+}
+
+long double UniversalEquation::getSpinInteraction() const {
+    return spinInteraction_.load();
+}
+
+long double UniversalEquation::getEMFieldStrength() const {
+    return emFieldStrength_.load();
+}
+
+long double UniversalEquation::getRenormFactor() const {
+    return renormFactor_.load();
+}
+
+long double UniversalEquation::getVacuumEnergy() const {
+    return vacuumEnergy_.load();
+}
+
+bool UniversalEquation::getNeedsUpdate() const {
+    return needsUpdate_.load();
+}
+
+long double UniversalEquation::getTotalCharge() const {
+    return totalCharge_.load();
+}
+
+long double UniversalEquation::getAvgProjScale() const {
+    return avgProjScale_.load();
+}
+
+float UniversalEquation::getSimulationTime() const {
+    return simulationTime_.load();
+}
+
+long double UniversalEquation::getMaterialDensity() const {
+    return materialDensity_.load();
+}
+
+uint64_t UniversalEquation::getCurrentVertices() const {
+    return currentVertices_.load();
+}
+
+long double UniversalEquation::getOmega() const {
+    return omega_;
+}
+
+long double UniversalEquation::getInvMaxDim() const {
+    return invMaxDim_;
+}
+
+const std::vector<std::vector<long double>>& UniversalEquation::getNCubeVertices() const {
+    return nCubeVertices_;
+}
+
+const std::vector<std::vector<long double>>& UniversalEquation::getVertexMomenta() const {
+    return vertexMomenta_;
+}
+
+const std::vector<long double>& UniversalEquation::getVertexSpins() const {
+    return vertexSpins_;
+}
+
+const std::vector<long double>& UniversalEquation::getVertexWaveAmplitudes() const {
+    return vertexWaveAmplitudes_;
+}
+
+const std::vector<UniversalEquation::DimensionInteraction>& UniversalEquation::getInteractions() const {
+    return interactions_;
+}
+
+const std::vector<glm::vec3>& UniversalEquation::getProjectedVerts() const {
+    return projectedVerts_;
+}
+
+const std::vector<long double>& UniversalEquation::getCachedCos() const {
+    return cachedCos_;
+}
+
+const std::vector<long double>& UniversalEquation::getNurbMatterControlPoints() const {
+    return nurbMatterControlPoints_;
+}
+
+const std::vector<long double>& UniversalEquation::getNurbEnergyControlPoints() const {
+    return nurbEnergyControlPoints_;
+}
+
+const std::vector<long double>& UniversalEquation::getNurbKnots() const {
+    return nurbKnots_;
+}
+
+const std::vector<long double>& UniversalEquation::getNurbWeights() const {
+    return nurbWeights_;
+}
+
+const std::vector<UniversalEquation::DimensionData>& UniversalEquation::getDimensionData() const {
+    return dimensionData_;
+}
+
+DimensionalNavigator* UniversalEquation::getNavigator() const {
+    return navigator_;
 }
