@@ -1,9 +1,3 @@
-// AMOURANTH RTX Engine, October 2025 - Core simulation logic implementation.
-// Implements AMOURANTH and rendering modes.
-// Dependencies: Vulkan 1.3+, GLM, SDL3, C++20 standard library.
-// Supported platforms: Windows, Linux.
-// Zachary Geurts 2025
-
 #include "engine/core.hpp"
 #include "engine/Vulkan_init.hpp"
 #include <glm/gtc/matrix_transform.hpp>
@@ -15,7 +9,7 @@
 
 void renderMode1(const AMOURANTH* amouranth, uint32_t imageIndex, VkBuffer vertexBuffer, VkCommandBuffer commandBuffer,
                  VkBuffer indexBuffer, [[maybe_unused]] float zoomLevel, int width, int height,
-                 [[maybe_unused]] float wavePhase, [[maybe_unused]] std::span<const UniversalEquation::DimensionData> cache,
+                 [[maybe_unused]] float wavePhase, [[maybe_unused]] std::span<const UE::DimensionData> cache,
                  VkPipelineLayout pipelineLayout, VkDescriptorSet descriptorSet,
                  [[maybe_unused]] VkDevice device, [[maybe_unused]] VkDeviceMemory vertexBufferMemory,
                  VkPipeline pipeline, [[maybe_unused]] float deltaTime, VkRenderPass renderPass, VkFramebuffer framebuffer) {
@@ -39,14 +33,15 @@ void renderMode1(const AMOURANTH* amouranth, uint32_t imageIndex, VkBuffer verte
     vkCmdBindVertexBuffers(commandBuffer, 0, 1, &vertexBuffer, offsets);
     vkCmdBindIndexBuffer(commandBuffer, indexBuffer, 0, VK_INDEX_TYPE_UINT32);
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &descriptorSet, 0, nullptr);
-    vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(amouranth->getSphereIndices().size()), 1, 0, 0, 0);
+    // Will be fixed in the next step
+    vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(amouranth->getBalls().size()), 1, 0, 0, 0);
     vkCmdEndRenderPass(commandBuffer);
 }
 
 void renderMode2([[maybe_unused]] const AMOURANTH* amouranth, uint32_t imageIndex, [[maybe_unused]] VkBuffer vertexBuffer,
                  [[maybe_unused]] VkCommandBuffer commandBuffer, [[maybe_unused]] VkBuffer indexBuffer,
                  [[maybe_unused]] float zoomLevel, [[maybe_unused]] int width, [[maybe_unused]] int height,
-                 [[maybe_unused]] float wavePhase, [[maybe_unused]] std::span<const UniversalEquation::DimensionData> cache,
+                 [[maybe_unused]] float wavePhase, [[maybe_unused]] std::span<const UE::DimensionData> cache,
                  [[maybe_unused]] VkPipelineLayout pipelineLayout, [[maybe_unused]] VkDescriptorSet descriptorSet,
                  [[maybe_unused]] VkDevice device, [[maybe_unused]] VkDeviceMemory vertexBufferMemory,
                  [[maybe_unused]] VkPipeline pipeline, [[maybe_unused]] float deltaTime,
@@ -58,7 +53,7 @@ void renderMode2([[maybe_unused]] const AMOURANTH* amouranth, uint32_t imageInde
 void renderMode3([[maybe_unused]] const AMOURANTH* amouranth, uint32_t imageIndex, [[maybe_unused]] VkBuffer vertexBuffer,
                  [[maybe_unused]] VkCommandBuffer commandBuffer, [[maybe_unused]] VkBuffer indexBuffer,
                  [[maybe_unused]] float zoomLevel, [[maybe_unused]] int width, [[maybe_unused]] int height,
-                 [[maybe_unused]] float wavePhase, [[maybe_unused]] std::span<const UniversalEquation::DimensionData> cache,
+                 [[maybe_unused]] float wavePhase, [[maybe_unused]] std::span<const UE::DimensionData> cache,
                  [[maybe_unused]] VkPipelineLayout pipelineLayout, [[maybe_unused]] VkDescriptorSet descriptorSet,
                  [[maybe_unused]] VkDevice device, [[maybe_unused]] VkDeviceMemory vertexBufferMemory,
                  [[maybe_unused]] VkPipeline pipeline, [[maybe_unused]] float deltaTime,
@@ -70,7 +65,7 @@ void renderMode3([[maybe_unused]] const AMOURANTH* amouranth, uint32_t imageInde
 void renderMode4([[maybe_unused]] const AMOURANTH* amouranth, uint32_t imageIndex, [[maybe_unused]] VkBuffer vertexBuffer,
                  [[maybe_unused]] VkCommandBuffer commandBuffer, [[maybe_unused]] VkBuffer indexBuffer,
                  [[maybe_unused]] float zoomLevel, [[maybe_unused]] int width, [[maybe_unused]] int height,
-                 [[maybe_unused]] float wavePhase, [[maybe_unused]] std::span<const UniversalEquation::DimensionData> cache,
+                 [[maybe_unused]] float wavePhase, [[maybe_unused]] std::span<const UE::DimensionData> cache,
                  [[maybe_unused]] VkPipelineLayout pipelineLayout, [[maybe_unused]] VkDescriptorSet descriptorSet,
                  [[maybe_unused]] VkDevice device, [[maybe_unused]] VkDeviceMemory vertexBufferMemory,
                  [[maybe_unused]] VkPipeline pipeline, [[maybe_unused]] float deltaTime,
@@ -82,7 +77,7 @@ void renderMode4([[maybe_unused]] const AMOURANTH* amouranth, uint32_t imageInde
 void renderMode5([[maybe_unused]] const AMOURANTH* amouranth, uint32_t imageIndex, [[maybe_unused]] VkBuffer vertexBuffer,
                  [[maybe_unused]] VkCommandBuffer commandBuffer, [[maybe_unused]] VkBuffer indexBuffer,
                  [[maybe_unused]] float zoomLevel, [[maybe_unused]] int width, [[maybe_unused]] int height,
-                 [[maybe_unused]] float wavePhase, [[maybe_unused]] std::span<const UniversalEquation::DimensionData> cache,
+                 [[maybe_unused]] float wavePhase, [[maybe_unused]] std::span<const UE::DimensionData> cache,
                  [[maybe_unused]] VkPipelineLayout pipelineLayout, [[maybe_unused]] VkDescriptorSet descriptorSet,
                  [[maybe_unused]] VkDevice device, [[maybe_unused]] VkDeviceMemory vertexBufferMemory,
                  [[maybe_unused]] VkPipeline pipeline, [[maybe_unused]] float deltaTime,
@@ -94,7 +89,7 @@ void renderMode5([[maybe_unused]] const AMOURANTH* amouranth, uint32_t imageInde
 void renderMode6([[maybe_unused]] const AMOURANTH* amouranth, uint32_t imageIndex, [[maybe_unused]] VkBuffer vertexBuffer,
                  [[maybe_unused]] VkCommandBuffer commandBuffer, [[maybe_unused]] VkBuffer indexBuffer,
                  [[maybe_unused]] float zoomLevel, [[maybe_unused]] int width, [[maybe_unused]] int height,
-                 [[maybe_unused]] float wavePhase, [[maybe_unused]] std::span<const UniversalEquation::DimensionData> cache,
+                 [[maybe_unused]] float wavePhase, [[maybe_unused]] std::span<const UE::DimensionData> cache,
                  [[maybe_unused]] VkPipelineLayout pipelineLayout, [[maybe_unused]] VkDescriptorSet descriptorSet,
                  [[maybe_unused]] VkDevice device, [[maybe_unused]] VkDeviceMemory vertexBufferMemory,
                  [[maybe_unused]] VkPipeline pipeline, [[maybe_unused]] float deltaTime,
@@ -106,7 +101,7 @@ void renderMode6([[maybe_unused]] const AMOURANTH* amouranth, uint32_t imageInde
 void renderMode7([[maybe_unused]] const AMOURANTH* amouranth, uint32_t imageIndex, [[maybe_unused]] VkBuffer vertexBuffer,
                  [[maybe_unused]] VkCommandBuffer commandBuffer, [[maybe_unused]] VkBuffer indexBuffer,
                  [[maybe_unused]] float zoomLevel, [[maybe_unused]] int width, [[maybe_unused]] int height,
-                 [[maybe_unused]] float wavePhase, [[maybe_unused]] std::span<const UniversalEquation::DimensionData> cache,
+                 [[maybe_unused]] float wavePhase, [[maybe_unused]] std::span<const UE::DimensionData> cache,
                  [[maybe_unused]] VkPipelineLayout pipelineLayout, [[maybe_unused]] VkDescriptorSet descriptorSet,
                  [[maybe_unused]] VkDevice device, [[maybe_unused]] VkDeviceMemory vertexBufferMemory,
                  [[maybe_unused]] VkPipeline pipeline, [[maybe_unused]] float deltaTime,
@@ -118,7 +113,7 @@ void renderMode7([[maybe_unused]] const AMOURANTH* amouranth, uint32_t imageInde
 void renderMode8([[maybe_unused]] const AMOURANTH* amouranth, uint32_t imageIndex, [[maybe_unused]] VkBuffer vertexBuffer,
                  [[maybe_unused]] VkCommandBuffer commandBuffer, [[maybe_unused]] VkBuffer indexBuffer,
                  [[maybe_unused]] float zoomLevel, [[maybe_unused]] int width, [[maybe_unused]] int height,
-                 [[maybe_unused]] float wavePhase, [[maybe_unused]] std::span<const UniversalEquation::DimensionData> cache,
+                 [[maybe_unused]] float wavePhase, [[maybe_unused]] std::span<const UE::DimensionData> cache,
                  [[maybe_unused]] VkPipelineLayout pipelineLayout, [[maybe_unused]] VkDescriptorSet descriptorSet,
                  [[maybe_unused]] VkDevice device, [[maybe_unused]] VkDeviceMemory vertexBufferMemory,
                  [[maybe_unused]] VkPipeline pipeline, [[maybe_unused]] float deltaTime,
@@ -130,7 +125,7 @@ void renderMode8([[maybe_unused]] const AMOURANTH* amouranth, uint32_t imageInde
 void renderMode9([[maybe_unused]] const AMOURANTH* amouranth, uint32_t imageIndex, [[maybe_unused]] VkBuffer vertexBuffer,
                  [[maybe_unused]] VkCommandBuffer commandBuffer, [[maybe_unused]] VkBuffer indexBuffer,
                  [[maybe_unused]] float zoomLevel, [[maybe_unused]] int width, [[maybe_unused]] int height,
-                 [[maybe_unused]] float wavePhase, [[maybe_unused]] std::span<const UniversalEquation::DimensionData> cache,
+                 [[maybe_unused]] float wavePhase, [[maybe_unused]] std::span<const UE::DimensionData> cache,
                  [[maybe_unused]] VkPipelineLayout pipelineLayout, [[maybe_unused]] VkDescriptorSet descriptorSet,
                  [[maybe_unused]] VkDevice device, [[maybe_unused]] VkDeviceMemory vertexBufferMemory,
                  [[maybe_unused]] VkPipeline pipeline, [[maybe_unused]] float deltaTime,

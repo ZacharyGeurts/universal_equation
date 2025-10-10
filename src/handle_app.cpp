@@ -1,9 +1,4 @@
-// AMOURANTH RTX Engine, October 2025 - Application and input handling implementation.
-// Manages SDL3 input events, Vulkan rendering, audio, and application lifecycle.
-// Dependencies: SDL3, Vulkan, GLM, C++20 standard library.
-// Supported platforms: Windows, Linux.
-// Zachary Geurts 2025
-
+// handle_app.cpp
 #include "handle_app.hpp"
 #include "engine/SDL3/SDL3_audio.hpp"
 #include <stdexcept>
@@ -52,7 +47,8 @@ Application::Application(const char* title, int width, int height)
     LOG_DEBUG_CAT("Application", "DimensionalNavigator created successfully", std::source_location::current());
 
     amouranth_.emplace(navigator_.get(), renderer_->getDevice(),
-                       renderer_->getVertexBufferMemory(), renderer_->getGraphicsPipeline());
+                       renderer_->getVertexBufferMemory(), renderer_->getIndexBufferMemory(),
+                       renderer_->getGraphicsPipeline());
     LOG_DEBUG_CAT("Application", "AMOURANTH instance created successfully", std::source_location::current());
 
     inputHandler_ = std::make_unique<HandleInput>(amouranth_.value(), navigator_.get());
@@ -160,8 +156,8 @@ void Application::handleResize(int width, int height) {
     navigator_->setHeight(height);
     LOG_DEBUG_CAT("Application", "Navigator dimensions updated", std::source_location::current());
     if (amouranth_.has_value()) {
-        amouranth_.value().setWidth(width);
-        amouranth_.value().setHeight(height);
+        amouranth_.value().getUniversalEquation().getNavigator()->setWidth(width);
+        amouranth_.value().getUniversalEquation().getNavigator()->setHeight(height);
         LOG_DEBUG_CAT("Application", "AMOURANTH dimensions updated", std::source_location::current());
     }
     LOG_INFO_CAT("Application", "Application resized to width: {}, height: {}", std::source_location::current(), width, height);
