@@ -12,6 +12,7 @@
 
 // Forward declarations
 class AMOURANTH;
+class VulkanBufferManager;
 
 struct VulkanContext {
     VkInstance instance = VK_NULL_HANDLE;
@@ -52,37 +53,6 @@ struct VulkanContext {
     VkExtent2D swapchainExtent_ = {0, 0};
     VkBuffer vertexBuffer_ = VK_NULL_HANDLE; // Added for acceleration structure
     VkBuffer indexBuffer_ = VK_NULL_HANDLE;  // Added for acceleration structure
-};
-
-class VulkanBufferManager {
-public:
-    VulkanBufferManager(VulkanContext& context);
-    ~VulkanBufferManager();
-    void createVertexBuffer(std::span<const glm::vec3> vertices);
-    void createIndexBuffer(std::span<const uint32_t> indices);
-    void createUniformBuffers(uint32_t swapchainImageCount);
-    void initializeBuffers(std::span<const glm::vec3> vertices, std::span<const uint32_t> indices);
-    void cleanupBuffers();
-    void copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size);
-    VkBuffer getVertexBuffer() const;
-    VkBuffer getIndexBuffer() const;
-    VkBuffer getUniformBuffer(uint32_t index) const;
-    VkDeviceMemory getVertexBufferMemory() const;
-    VkDeviceMemory getIndexBufferMemory() const;
-    VkDeviceMemory getUniformBufferMemory() const;
-    uint32_t getIndexCount() const;
-
-private:
-    VulkanContext& context_;
-    VkDevice device_;
-    VkPhysicalDevice physicalDevice_;
-    VkBuffer vertexBuffer_ = VK_NULL_HANDLE;
-    VkDeviceMemory vertexBufferMemory_ = VK_NULL_HANDLE;
-    VkBuffer indexBuffer_ = VK_NULL_HANDLE;
-    VkDeviceMemory indexBufferMemory_ = VK_NULL_HANDLE;
-    std::vector<VkBuffer> uniformBuffers_;
-    std::vector<VkDeviceMemory> uniformBuffersMemory_;
-    uint32_t indexCount_ = 0;
 };
 
 class VulkanSwapchainManager {
@@ -170,8 +140,8 @@ public:
     void renderFrame(const AMOURANTH& camera);
     void handleResize(int width, int height);
     VkDevice getDevice() const { return context_.device; }
-    VkDeviceMemory getVertexBufferMemory() const { return bufferManager_->getVertexBufferMemory(); }
-    VkDeviceMemory getIndexBufferMemory() const { return bufferManager_->getIndexBufferMemory(); }
+    VkDeviceMemory getVertexBufferMemory() const;
+    VkDeviceMemory getIndexBufferMemory() const;
     VkPipeline getGraphicsPipeline() const { return pipelineManager_->getGraphicsPipeline(); }
     uint32_t getWidth() const { return width_; }
     uint32_t getHeight() const { return height_; }
