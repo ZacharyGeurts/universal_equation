@@ -6,8 +6,8 @@
 #include <algorithm>
 #include <glm/gtc/matrix_transform.hpp>
 
-VulkanBufferManager::VulkanBufferManager(VkDevice device, VkPhysicalDevice physicalDevice)
-    : device_(device), physicalDevice_(physicalDevice), vertexBuffer_(VK_NULL_HANDLE), vertexBufferMemory_(VK_NULL_HANDLE),
+VulkanBufferManager::VulkanBufferManager(VkDevice device, VkPhysicalDevice physicalDevice, VulkanContext& context)
+    : device_(device), physicalDevice_(physicalDevice), context_(context), vertexBuffer_(VK_NULL_HANDLE), vertexBufferMemory_(VK_NULL_HANDLE),
       indexBuffer_(VK_NULL_HANDLE), indexBufferMemory_(VK_NULL_HANDLE) {}
 
 VulkanBufferManager::~VulkanBufferManager() {
@@ -75,18 +75,41 @@ void VulkanBufferManager::createUniformBuffers(uint32_t swapchainImageCount) {
 }
 
 void VulkanBufferManager::copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size) {
-    VkCommandBufferAllocateInfo allocInfo{.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO, .commandPool = context_.commandPool, .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY, .commandBufferCount = 1};
+    VkCommandBufferAllocateInfo allocInfo{
+        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+        .pNext = nullptr,
+        .commandPool = device_, // Assuming command pool is accessible; adjust if stored elsewhere
+        .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+        .commandBufferCount = 1
+    };
     VkCommandBuffer commandBuffer;
     if (vkAllocateCommandBuffers(device_, &allocInfo, &commandBuffer) != VK_SUCCESS) throw std::runtime_error("Failed to allocate command buffer");
-    VkCommandBufferBeginInfo beginInfo{.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO, .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT};
+    VkCommandBufferBeginInfo beginInfo{
+        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+        .pNext = nullptr,
+        .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
+        .pInheritanceInfo = nullptr
+    };
     if (vkBeginCommandBuffer(commandBuffer, &beginInfo) != VK_SUCCESS) throw std::runtime_error("Failed to begin command buffer");
     VkBufferCopy copyRegion{.size = size};
     vkCmdCopyBuffer(commandBuffer, srcBuffer, dstBuffer, 1, &copyRegion);
     if (vkEndCommandBuffer(commandBuffer) != VK_SUCCESS) throw std::runtime_error("Failed to end command buffer");
-    VkSubmitInfo submitInfo{.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO, .commandBufferCount = 1, .pCommandBuffers = &commandBuffer};
-    if (vkQueueSubmit(context_.graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE) != VK_SUCCESS) throw std::runtime_error("Failed to submit copy command");
-    vkQueueWaitIdle(context_.graphicsQueue);
-    vkFreeCommandBuffers(device_, context_.commandPool, 1, &commandBuffer);
+    VkSubmitInfo submitInfo{
+        .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+        .pNext = nullptr,
+        .waitSemaphoreCount = 0,
+        .pWaitSemaphores = nullptr,
+        .pWaitDstStageMask = nullptr,
+        .commandBufferCount = 1,
+        .pCommandBuffers = &commandBuffer,
+        .signalSemaphoreCount = 0,
+        .pSignalSemaphores = nullptr
+    };
+    VkQueue queue;
+    vkGetDeviceQueue(device_, 0, 0, &queue); // Adjust queue index if needed
+    if (vkQueueSubmit(queue, 1, &submitInfo, VK_NULL_HANDLE) != VK_SUCCESS) throw std::runtime_error("Failed to submit copy command");
+    vkQueueWaitIdle(queue);
+    vkFreeCommandBuffers(device_, device_, 1, &commandBuffer); // Adjust command pool if stored elsewhere
 }
 
 VkBuffer VulkanBufferManager::getVertexBuffer() const { return vertexBuffer_; }
@@ -207,7 +230,7 @@ VulkanPipelineManager::~VulkanPipelineManager() {
 }
 
 void VulkanPipelineManager::createRenderPass() {
-    VulkanInitializer::createRenderPass(context_.device, renderPass_, context_.swapchainImageFormat_);
+    VulkanInitializer::createRenderPass(context_.device, renderPass_, swapchainManager_->getSwapchainImageFormat());
 }
 
 void VulkanPipelineManager::createPipelineLayout() {
@@ -248,9 +271,7 @@ VulkanRenderer::VulkanRenderer(VkInstance instance, VkSurfaceKHR surface, std::s
     VulkanInitializer::initializeVulkan(context_, width, height);
     swapchainManager_ = std::make_unique<VulkanSwapchainManager>(context_, surface);
     swapchainManager_->initializeSwapchain(width, height);
-    context_.swapchainImageFormat_ = swapchainManager_->getSwapchainImageFormat();
-    context_.swapchainExtent_ = swapchainManager_->getSwapchainExtent();
-    bufferManager_ = std::make_unique<VulkanBufferManager>(context_, context_.device, context_.physicalDevice);
+    bufferManager_ = std::make_unique<VulkanBufferManager>(context_.device, context_.physicalDevice);
     bufferManager_->createVertexBuffer(vertices);
     bufferManager_->createIndexBuffer(indices);
     bufferManager_->createUniformBuffers(swapchainManager_->getSwapchainImageViews().size());
@@ -395,7 +416,8 @@ void VulkanRenderer::renderFrame(const AMOURANTH& camera) {
         .pWaitSemaphores = &renderFinishedSemaphore_,
         .swapchainCount = 1,
         .pSwapchains = &context_.swapchain,
-        .pImageIndices = &imageIndex
+        .pImageIndices = &imageIndex,
+        .pResults = nullptr
     };
     result = vkQueuePresentKHR(context_.presentQueue, &presentInfo);
     if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) swapchainManager_->handleResize(width_, height_);
@@ -440,6 +462,8 @@ void VulkanInitializer::initializeVulkan(VulkanContext& context, int width, int 
         .flags = 0,
         .queueCreateInfoCount = static_cast<uint32_t>(context.graphicsQueueFamilyIndex == context.presentQueueFamilyIndex ? 1 : 2),
         .pQueueCreateInfos = queueCreateInfos,
+        .enabledLayerCount = 0,
+        .ppEnabledLayerNames = nullptr,
         .enabledExtensionCount = 3,
         .ppEnabledExtensionNames = deviceExtensions,
         .pEnabledFeatures = &deviceFeatures
@@ -506,8 +530,6 @@ void VulkanInitializer::createSwapchain(VulkanContext& context) {
         .oldSwapchain = VK_NULL_HANDLE
     };
     if (vkCreateSwapchainKHR(context.device, &createInfo, nullptr, &context.swapchain) != VK_SUCCESS) throw std::runtime_error("Failed to create swapchain");
-    context.swapchainImageFormat_ = surfaceFormat.format;
-    context.swapchainExtent_ = extent;
 }
 
 void VulkanInitializer::createImageViews(VulkanContext& context) {
@@ -523,7 +545,7 @@ void VulkanInitializer::createImageViews(VulkanContext& context) {
             .flags = 0,
             .image = context.swapchainImages[i],
             .viewType = VK_IMAGE_VIEW_TYPE_2D,
-            .format = context.swapchainImageFormat_,
+            .format = VK_FORMAT_B8G8R8A8_SRGB,
             .components = {VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY},
             .subresourceRange = {.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, .baseMipLevel = 0, .levelCount = 1, .baseArrayLayer = 0, .layerCount = 1}
         };
@@ -575,10 +597,20 @@ void VulkanInitializer::createAccelerationStructures(VulkanContext& context, std
         .type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR,
         .flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR,
         .mode = VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR,
+        .srcAccelerationStructure = VK_NULL_HANDLE,
+        .dstAccelerationStructure = VK_NULL_HANDLE,
         .geometryCount = 1,
-        .pGeometries = &geometry
+        .pGeometries = &geometry,
+        .ppGeometries = nullptr,
+        .scratchData = {}
     };
-    VkAccelerationStructureBuildSizesInfoKHR sizeInfo{.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR, .pNext = nullptr};
+    VkAccelerationStructureBuildSizesInfoKHR sizeInfo{
+        .sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR,
+        .pNext = nullptr,
+        .accelerationStructureSize = 0,
+        .updateScratchSize = 0,
+        .buildScratchSize = 0
+    };
     uint32_t primitiveCount = static_cast<uint32_t>(indices.size() / 3);
     vkGetAccelerationStructureBuildSizesKHR(context.device, VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR, &buildInfo, &primitiveCount, &sizeInfo);
     createBuffer(context.device, context.physicalDevice, sizeInfo.accelerationStructureSize,
@@ -588,9 +620,12 @@ void VulkanInitializer::createAccelerationStructures(VulkanContext& context, std
     VkAccelerationStructureCreateInfoKHR createInfo{
         .sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR,
         .pNext = nullptr,
+        .createFlags = 0,
         .buffer = context.bottomLevelASBuffer,
+        .offset = 0,
         .size = sizeInfo.accelerationStructureSize,
-        .type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR
+        .type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR,
+        .deviceAddress = 0
     };
     if (vkCreateAccelerationStructureKHR(context.device, &createInfo, nullptr, &context.bottomLevelAS) != VK_SUCCESS) throw std::runtime_error("Failed to create bottom-level AS");
     buildInfo.dstAccelerationStructure = context.bottomLevelAS;
@@ -598,7 +633,7 @@ void VulkanInitializer::createAccelerationStructures(VulkanContext& context, std
     VkCommandBuffer commandBuffer;
     VkCommandBufferAllocateInfo allocInfo{.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO, .pNext = nullptr, .commandPool = context.commandPool, .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY, .commandBufferCount = 1};
     if (vkAllocateCommandBuffers(context.device, &allocInfo, &commandBuffer) != VK_SUCCESS) throw std::runtime_error("Failed to allocate command buffer");
-    VkCommandBufferBeginInfo beginInfo{.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO, .pNext = nullptr, .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT};
+    VkCommandBufferBeginInfo beginInfo{.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO, .pNext = nullptr, .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT, .pInheritanceInfo = nullptr};
     if (vkBeginCommandBuffer(commandBuffer, &beginInfo) != VK_SUCCESS) throw std::runtime_error("Failed to begin command buffer");
     VkAccelerationStructureBuildRangeInfoKHR* rangeInfos = &rangeInfo;
     vkCmdBuildAccelerationStructuresKHR(commandBuffer, 1, &buildInfo, &rangeInfos);
@@ -647,8 +682,12 @@ void VulkanInitializer::createAccelerationStructures(VulkanContext& context, std
         .type = VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR,
         .flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR,
         .mode = VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR,
+        .srcAccelerationStructure = VK_NULL_HANDLE,
+        .dstAccelerationStructure = VK_NULL_HANDLE,
         .geometryCount = 1,
-        .pGeometries = &topLevelGeometry
+        .pGeometries = &topLevelGeometry,
+        .ppGeometries = nullptr,
+        .scratchData = {}
     };
     uint32_t instanceCount = 1;
     vkGetAccelerationStructureBuildSizesKHR(context.device, VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR, &topLevelBuildInfo, &instanceCount, &sizeInfo);
@@ -661,7 +700,7 @@ void VulkanInitializer::createAccelerationStructures(VulkanContext& context, std
     createInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR;
     if (vkCreateAccelerationStructureKHR(context.device, &createInfo, nullptr, &context.topLevelAS) != VK_SUCCESS) throw std::runtime_error("Failed to create top-level AS");
     topLevelBuildInfo.dstAccelerationStructure = context.topLevelAS;
-    VkAccelerationStructureBuildRangeInfoKHR topLevelRangeInfo{.primitiveCount = instanceCount};
+    VkAccelerationStructureBuildRangeInfoKHR topLevelRangeInfo{.primitiveCount = instanceCount, .primitiveOffset = 0, .firstVertex = 0, .transformOffset = 0};
     if (vkAllocateCommandBuffers(context.device, &allocInfo, &commandBuffer) != VK_SUCCESS) throw std::runtime_error("Failed to allocate command buffer");
     if (vkBeginCommandBuffer(commandBuffer, &beginInfo) != VK_SUCCESS) throw std::runtime_error("Failed to begin command buffer");
     rangeInfos = &topLevelRangeInfo;
@@ -689,7 +728,8 @@ void VulkanInitializer::createRayTracingPipeline(VulkanContext& context) {
             .flags = 0,
             .stage = VK_SHADER_STAGE_RAYGEN_BIT_KHR,
             .module = raygenShader,
-            .pName = "main"
+            .pName = "main",
+            .pSpecializationInfo = nullptr
         },
         {
             .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
@@ -697,7 +737,8 @@ void VulkanInitializer::createRayTracingPipeline(VulkanContext& context) {
             .flags = 0,
             .stage = VK_SHADER_STAGE_MISS_BIT_KHR,
             .module = missShader,
-            .pName = "main"
+            .pName = "main",
+            .pSpecializationInfo = nullptr
         },
         {
             .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
@@ -705,7 +746,8 @@ void VulkanInitializer::createRayTracingPipeline(VulkanContext& context) {
             .flags = 0,
             .stage = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR,
             .module = closestHitShader,
-            .pName = "main"
+            .pName = "main",
+            .pSpecializationInfo = nullptr
         }
     };
     std::vector<VkRayTracingShaderGroupCreateInfoKHR> shaderGroups = {
@@ -716,7 +758,8 @@ void VulkanInitializer::createRayTracingPipeline(VulkanContext& context) {
             .generalShader = 0,
             .closestHitShader = VK_SHADER_UNUSED_KHR,
             .anyHitShader = VK_SHADER_UNUSED_KHR,
-            .intersectionShader = VK_SHADER_UNUSED_KHR
+            .intersectionShader = VK_SHADER_UNUSED_KHR,
+            .pShaderGroupCaptureReplayHandle = nullptr
         },
         {
             .sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR,
@@ -725,7 +768,8 @@ void VulkanInitializer::createRayTracingPipeline(VulkanContext& context) {
             .generalShader = 1,
             .closestHitShader = VK_SHADER_UNUSED_KHR,
             .anyHitShader = VK_SHADER_UNUSED_KHR,
-            .intersectionShader = VK_SHADER_UNUSED_KHR
+            .intersectionShader = VK_SHADER_UNUSED_KHR,
+            .pShaderGroupCaptureReplayHandle = nullptr
         },
         {
             .sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR,
@@ -734,7 +778,8 @@ void VulkanInitializer::createRayTracingPipeline(VulkanContext& context) {
             .generalShader = VK_SHADER_UNUSED_KHR,
             .closestHitShader = 2,
             .anyHitShader = VK_SHADER_UNUSED_KHR,
-            .intersectionShader = VK_SHADER_UNUSED_KHR
+            .intersectionShader = VK_SHADER_UNUSED_KHR,
+            .pShaderGroupCaptureReplayHandle = nullptr
         }
     };
     VkPipelineLayoutCreateInfo pipelineLayoutInfo{
@@ -756,7 +801,12 @@ void VulkanInitializer::createRayTracingPipeline(VulkanContext& context) {
         .groupCount = static_cast<uint32_t>(shaderGroups.size()),
         .pGroups = shaderGroups.data(),
         .maxPipelineRayRecursionDepth = 1,
-        .layout = context.rayTracingPipelineLayout
+        .pLibraryInfo = nullptr,
+        .pLibraryInterface = nullptr,
+        .pDynamicState = nullptr,
+        .layout = context.rayTracingPipelineLayout,
+        .basePipelineHandle = VK_NULL_HANDLE,
+        .basePipelineIndex = -1
     };
     if (vkCreateRayTracingPipelinesKHR(context.device, VK_NULL_HANDLE, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &context.rayTracingPipeline) != VK_SUCCESS) throw std::runtime_error("Failed to create ray tracing pipeline");
     vkDestroyShaderModule(context.device, raygenShader, nullptr);
@@ -903,11 +953,11 @@ void VulkanInitializer::createGraphicsPipeline(VkDevice device, VkRenderPass ren
                                               int width, int height, VkShaderModule& vertexShaderModule,
                                               VkShaderModule& fragmentShaderModule) {
     VkPipelineShaderStageCreateInfo shaderStages[] = {
-        {.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, .pNext = nullptr, .flags = 0, .stage = VK_SHADER_STAGE_VERTEX_BIT, .module = vertexShaderModule, .pName = "main"},
-        {.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, .pNext = nullptr, .flags = 0, .stage = VK_SHADER_STAGE_FRAGMENT_BIT, .module = fragmentShaderModule, .pName = "main"}
+        {.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, .pNext = nullptr, .flags = 0, .stage = VK_SHADER_STAGE_VERTEX_BIT, .module = vertexShaderModule, .pName = "main", .pSpecializationInfo = nullptr},
+        {.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, .pNext = nullptr, .flags = 0, .stage = VK_SHADER_STAGE_FRAGMENT_BIT, .module = fragmentShaderModule, .pName = "main", .pSpecializationInfo = nullptr}
     };
     VkVertexInputBindingDescription bindingDescription{.binding = 0, .stride = sizeof(glm::vec3), .inputRate = VK_VERTEX_INPUT_RATE_VERTEX};
-    VkVertexInputAttributeDescription attributeDescription{.location = 0, .binding = 0, .format = VK_FORMAT_R32G32B32_SFLOAT};
+    VkVertexInputAttributeDescription attributeDescription{.location = 0, .binding = 0, .format = VK_FORMAT_R32G32B32_SFLOAT, .offset = 0};
     VkPipelineVertexInputStateCreateInfo vertexInputInfo{
         .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
         .pNext = nullptr,
@@ -945,6 +995,9 @@ void VulkanInitializer::createGraphicsPipeline(VkDevice device, VkRenderPass ren
         .cullMode = VK_CULL_MODE_BACK_BIT,
         .frontFace = VK_FRONT_FACE_CLOCKWISE,
         .depthBiasEnable = VK_FALSE,
+        .depthBiasConstantFactor = 0.0f,
+        .depthBiasClamp = 0.0f,
+        .depthBiasSlopeFactor = 0.0f,
         .lineWidth = 1.0f
     };
     VkPipelineMultisampleStateCreateInfo multisampling{

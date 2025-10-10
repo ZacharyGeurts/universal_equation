@@ -1,4 +1,3 @@
-// VulkanBufferManager.hpp
 #pragma once
 #ifndef VULKAN_BUFFER_MANAGER_HPP
 #define VULKAN_BUFFER_MANAGER_HPP

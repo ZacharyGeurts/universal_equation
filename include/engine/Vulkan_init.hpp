@@ -1,4 +1,3 @@
-// Vulkan_init.hpp
 #pragma once
 #ifndef VULKAN_INIT_HPP
 #define VULKAN_INIT_HPP
@@ -49,15 +48,20 @@ struct VulkanContext {
     VkSwapchainKHR swapchain = VK_NULL_HANDLE;
     std::vector<VkImage> swapchainImages;
     std::vector<VkImageView> swapchainImageViews;
+    VkFormat swapchainImageFormat_ = VK_FORMAT_UNDEFINED;
+    VkExtent2D swapchainExtent_ = {0, 0};
 };
 
 class VulkanBufferManager {
 public:
-    VulkanBufferManager(VkDevice device, VkPhysicalDevice physicalDevice);
+    VulkanBufferManager(VkDevice device, VkPhysicalDevice physicalDevice, VulkanContext& context);
     ~VulkanBufferManager();
     void createVertexBuffer(std::span<const glm::vec3> vertices);
     void createIndexBuffer(std::span<const uint32_t> indices);
     void createUniformBuffers(uint32_t swapchainImageCount);
+    void initializeBuffers(std::span<const glm::vec3> vertices, std::span<const uint32_t> indices); // Added
+    void cleanupBuffers(); // Added
+    void copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size);
     VkBuffer getVertexBuffer() const;
     VkBuffer getIndexBuffer() const;
     VkBuffer getUniformBuffer(uint32_t index) const;
@@ -76,6 +80,7 @@ private:
     std::vector<VkBuffer> uniformBuffers_;
     std::vector<VkDeviceMemory> uniformBuffersMemory_;
     uint32_t indexCount_ = 0;
+    VulkanContext& context_;
 };
 
 class VulkanSwapchainManager {
