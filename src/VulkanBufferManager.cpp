@@ -31,13 +31,13 @@ void VulkanBufferManager::initializeBuffers(std::span<const glm::vec3> vertices,
     vkUnmapMemory(context_.device, stagingBufferMemory);
 
     createBuffer(vertexBufferSize,
-                 VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+                 VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR,
                  VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
                  vertexBuffer_, vertexBufferMemory_);
     vertexBufferAddress_ = getBufferDeviceAddress(vertexBuffer_);
 
     createBuffer(indexBufferSize,
-                 VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+                 VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR,
                  VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
                  indexBuffer_, indexBufferMemory_);
     indexBufferAddress_ = getBufferDeviceAddress(indexBuffer_);

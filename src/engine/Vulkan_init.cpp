@@ -4,6 +4,12 @@
 #include <fstream>
 #include <algorithm>
 #include <glm/gtc/matrix_transform.hpp>
+#ifdef __linux__
+#include <X11/Xlib.h>
+#endif
+#ifdef _WIN32
+#include <windows.h>
+#endif
 
 VulkanSwapchainManager::VulkanSwapchainManager(VulkanContext& context, VkSurfaceKHR surface)
     : context_(context), swapchain_(VK_NULL_HANDLE), imageCount_(0), swapchainImageFormat_(VK_FORMAT_UNDEFINED), swapchainExtent_{0, 0} {
@@ -156,14 +162,19 @@ void VulkanPipelineManager::createRenderPass() {
 
 void VulkanPipelineManager::createPipelineLayout() {
     VulkanInitializer::createDescriptorSetLayout(context_.device, descriptorSetLayout_);
+    VkPushConstantRange pushConstantRange{
+        .stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+        .offset = 0,
+        .size = 128
+    };
     VkPipelineLayoutCreateInfo layoutInfo{
         .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
         .pNext = nullptr,
         .flags = 0,
         .setLayoutCount = 1,
         .pSetLayouts = &descriptorSetLayout_,
-        .pushConstantRangeCount = 0,
-        .pPushConstantRanges = nullptr
+        .pushConstantRangeCount = 1,
+        .pPushConstantRanges = &pushConstantRange
     };
     if (vkCreatePipelineLayout(context_.device, &layoutInfo, nullptr, &pipelineLayout_) != VK_SUCCESS) {
         LOG_ERROR_CAT("Vulkan", "Failed to create pipeline layout", std::source_location::current());
@@ -573,6 +584,13 @@ void VulkanInitializer::initializeVulkan(VulkanContext& context, int /*width*/, 
         }
     };
     VkPhysicalDeviceFeatures deviceFeatures{};
+    VkPhysicalDeviceBufferDeviceAddressFeaturesKHR bufferDeviceAddressFeatures{
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_BUFFER_DEVICE_ADDRESS_FEATURES_KHR,
+        .pNext = nullptr,
+        .bufferDeviceAddress = VK_TRUE,
+        .bufferDeviceAddressCaptureReplay = VK_FALSE,
+        .bufferDeviceAddressMultiDevice = VK_FALSE
+    };
     VkPhysicalDeviceAccelerationStructureFeaturesKHR accelFeatures{
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR,
         .pNext = nullptr,
@@ -584,18 +602,20 @@ void VulkanInitializer::initializeVulkan(VulkanContext& context, int /*width*/, 
     };
     VkPhysicalDeviceRayTracingPipelineFeaturesKHR rtPipelineFeatures{
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_FEATURES_KHR,
-        .pNext = &accelFeatures,
+        .pNext = &bufferDeviceAddressFeatures,
         .rayTracingPipeline = VK_TRUE,
         .rayTracingPipelineShaderGroupHandleCaptureReplay = VK_FALSE,
         .rayTracingPipelineShaderGroupHandleCaptureReplayMixed = VK_FALSE,
         .rayTracingPipelineTraceRaysIndirect = VK_FALSE,
         .rayTraversalPrimitiveCulling = VK_FALSE
     };
+    bufferDeviceAddressFeatures.pNext = &accelFeatures;
     const char* deviceExtensions[] = {
         VK_KHR_SWAPCHAIN_EXTENSION_NAME,
         VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,
         VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME,
-        VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME
+        VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME,
+        VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME
     };
     VkDeviceCreateInfo deviceCreateInfo{
         .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
@@ -605,7 +625,7 @@ void VulkanInitializer::initializeVulkan(VulkanContext& context, int /*width*/, 
         .pQueueCreateInfos = queueCreateInfos,
         .enabledLayerCount = 0,
         .ppEnabledLayerNames = nullptr,
-        .enabledExtensionCount = 4,
+        .enabledExtensionCount = 5,
         .ppEnabledExtensionNames = deviceExtensions,
         .pEnabledFeatures = &deviceFeatures
     };
@@ -786,9 +806,15 @@ void VulkanInitializer::createBuffer(VkDevice device, VkPhysicalDevice physicalD
     LOG_INFO_CAT("Vulkan", buffer, "buffer", std::source_location::current());
     VkMemoryRequirements memRequirements;
     vkGetBufferMemoryRequirements(device, buffer, &memRequirements);
+    VkMemoryAllocateFlagsInfoKHR allocFlagsInfo{
+        .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_FLAGS_INFO_KHR,
+        .pNext = nullptr,
+        .flags = static_cast<VkMemoryAllocateFlags>((usage & VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT) ? VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT_KHR : 0),
+        .deviceMask = 0
+    };
     VkMemoryAllocateInfo allocInfo{
         .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
-        .pNext = nullptr,
+        .pNext = (usage & VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT) ? &allocFlagsInfo : nullptr,
         .allocationSize = memRequirements.size,
         .memoryTypeIndex = findMemoryType(physicalDevice, memRequirements.memoryTypeBits, properties)
     };
@@ -1037,14 +1063,19 @@ void VulkanInitializer::createGraphicsPipeline(VkDevice device, VkRenderPass ren
         .pAttachments = &colorBlendAttachment,
         .blendConstants = {0.0f, 0.0f, 0.0f, 0.0f}
     };
+    VkPushConstantRange pushConstantRange{
+        .stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+        .offset = 0,
+        .size = 128
+    };
     VkPipelineLayoutCreateInfo pipelineLayoutInfo{
         .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
         .pNext = nullptr,
         .flags = 0,
         .setLayoutCount = 1,
         .pSetLayouts = &descriptorSetLayout,
-        .pushConstantRangeCount = 0,
-        .pPushConstantRanges = nullptr
+        .pushConstantRangeCount = 1,
+        .pPushConstantRanges = &pushConstantRange
     };
     if (vkCreatePipelineLayout(device, &pipelineLayoutInfo, nullptr, &pipelineLayout) != VK_SUCCESS) {
         LOG_ERROR_CAT("Vulkan", "Failed to create pipeline layout", std::source_location::current());
@@ -1146,7 +1177,7 @@ void VulkanInitializer::createDescriptorPoolAndSet(VkDevice device, VkDescriptor
     VkDescriptorImageInfo imageInfo{
         .sampler = sampler,
         .imageView = storageImageView,
-        .imageLayout = VK_IMAGE_LAYOUT_GENERAL
+        .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
     };
     VkWriteDescriptorSetAccelerationStructureKHR accelInfo{
         .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR,
@@ -1210,7 +1241,7 @@ void VulkanInitializer::createStorageImage(VkDevice device, VkPhysicalDevice phy
         .arrayLayers = 1,
         .samples = VK_SAMPLE_COUNT_1_BIT,
         .tiling = VK_IMAGE_TILING_OPTIMAL,
-        .usage = VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+        .usage = VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
         .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
         .queueFamilyIndexCount = 0,
         .pQueueFamilyIndices = nullptr,
@@ -1407,7 +1438,7 @@ void VulkanInitializer::createAccelerationStructures(VulkanContext& context, std
         .mask = 0xFF,
         .instanceShaderBindingTableRecordOffset = 0,
         .flags = VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR,
-        .accelerationStructureReference = getBufferDeviceAddress(context.device, context.bottomLevelASBuffer)
+		.accelerationStructureReference = getBufferDeviceAddress(context.device, context.bottomLevelASBuffer)
     };
     VkBuffer instanceBuffer;
     VkDeviceMemory instanceBufferMemory;
@@ -1431,7 +1462,7 @@ void VulkanInitializer::createAccelerationStructures(VulkanContext& context, std
         .geometryType = VK_GEOMETRY_TYPE_INSTANCES_KHR,
         .geometry = {.instances = instancesData},
         .flags = VK_GEOMETRY_OPAQUE_BIT_KHR
-	    };
+    };
     VkAccelerationStructureBuildGeometryInfoKHR topLevelBuildInfo{
         .sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR,
         .pNext = nullptr,
@@ -1616,21 +1647,21 @@ void VulkanInitializer::createRayTracingPipeline(VulkanContext& context) {
     VkDescriptorSetLayoutBinding bindings[] = {
         {
             .binding = 0,
-            .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+            .descriptorType = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR,
             .descriptorCount = 1,
             .stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR,
             .pImmutableSamplers = nullptr
         },
         {
             .binding = 1,
-            .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+            .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
             .descriptorCount = 1,
-            .stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR,
+            .stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR,
             .pImmutableSamplers = nullptr
         },
         {
             .binding = 2,
-            .descriptorType = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR,
+            .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
             .descriptorCount = 1,
             .stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR,
             .pImmutableSamplers = nullptr
@@ -1651,14 +1682,19 @@ void VulkanInitializer::createRayTracingPipeline(VulkanContext& context) {
         return;
     }
     LOG_INFO_CAT("Vulkan", context.rayTracingDescriptorSetLayout, "rayTracingDescriptorSetLayout", std::source_location::current());
+    VkPushConstantRange pushConstantRange{
+        .stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_MISS_BIT_KHR,
+        .offset = 0,
+        .size = 256
+    };
     VkPipelineLayoutCreateInfo pipelineLayoutInfo{
         .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
         .pNext = nullptr,
         .flags = 0,
         .setLayoutCount = 1,
         .pSetLayouts = &context.rayTracingDescriptorSetLayout,
-        .pushConstantRangeCount = 0,
-        .pPushConstantRanges = nullptr
+        .pushConstantRangeCount = 1,
+        .pPushConstantRanges = &pushConstantRange
     };
     if (vkCreatePipelineLayout(context.device, &pipelineLayoutInfo, nullptr, &context.rayTracingPipelineLayout) != VK_SUCCESS) {
         LOG_ERROR_CAT("Vulkan", "Failed to create ray-tracing pipeline layout", std::source_location::current());
