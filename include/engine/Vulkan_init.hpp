@@ -7,7 +7,10 @@
 #include <vulkan/vulkan.h>
 #include <memory>
 #include <vector>
+#include <span>
 #include <glm/glm.hpp>
+
+class AMOURANTH; // Forward declaration for VulkanRenderer
 
 struct VulkanContext {
     VkInstance instance = VK_NULL_HANDLE;
@@ -41,10 +44,16 @@ struct VulkanContext {
     VkDescriptorSet rayTracingDescriptorSet = VK_NULL_HANDLE;
     VkBuffer shaderBindingTable = VK_NULL_HANDLE;
     VkDeviceMemory shaderBindingTableMemory = VK_NULL_HANDLE;
+    VkSwapchainKHR swapchain = VK_NULL_HANDLE;
+    std::vector<VkImage> swapchainImages;
+    std::vector<VkImageView> swapchainImageViews;
 };
 
 class VulkanInitializer {
 public:
+    static void initializeVulkan(VulkanContext& context, int width, int height);
+    static void createSwapchain(VulkanContext& context);
+    static void createImageViews(VulkanContext& context);
     static VkDeviceAddress getBufferDeviceAddress(VkDevice device, VkBuffer buffer);
     static uint32_t findMemoryType(VkPhysicalDevice physicalDevice, uint32_t typeFilter, VkMemoryPropertyFlags properties);
     static void createBuffer(VkDevice device, VkPhysicalDevice physicalDevice, VkDeviceSize size,
@@ -62,7 +71,6 @@ public:
                                           VkSampler& sampler, VkBuffer uniformBuffer, VkImageView storageImageView,
                                           VkAccelerationStructureKHR topLevelAS);
     static void createAccelerationStructures(VulkanContext& context, std::span<const glm::vec3> vertices, std::span<const uint32_t> indices);
-    static void createStorageImage(VulkanContext& context, uint32_t width, uint32_t height);
     static void createRayTracingPipeline(VulkanContext& context);
     static void createShaderBindingTable(VulkanContext& context);
 };
@@ -100,6 +108,7 @@ public:
     VkBuffer getIndexBuffer() const { return indexBuffer_; }
     VkBuffer getUniformBuffer() const { return uniformBuffer_; }
     VkDeviceMemory getUniformBufferMemory() const { return uniformBufferMemory_; }
+    VkDeviceMemory getVertexBufferMemory() const { return vertexBufferMemory_; }
 
 private:
     VulkanContext& context_;
@@ -144,6 +153,9 @@ public:
     ~VulkanRenderer();
     void renderFrame(const AMOURANTH& camera);
     void handleResize(int width, int height);
+    VkDevice getDevice() const { return context_.device; }
+    VkDeviceMemory getVertexBufferMemory() const { return bufferManager_->getVertexBufferMemory(); }
+    VkPipeline getGraphicsPipeline() const { return pipelineManager_->getGraphicsPipeline(); }
 
 private:
     VulkanContext context_;

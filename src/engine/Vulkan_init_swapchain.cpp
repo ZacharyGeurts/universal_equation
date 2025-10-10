@@ -1,11 +1,12 @@
+// src/engine/Vulkan_init_swapchain.cpp
 #include "engine/Vulkan_init.hpp"
 #include <stdexcept>
 #include <algorithm>
 
 VulkanSwapchainManager::VulkanSwapchainManager(VulkanContext& context, VkSurfaceKHR surface)
     : context_(context), swapchain_(VK_NULL_HANDLE), imageCount_(0), swapchainImageFormat_(VK_FORMAT_UNDEFINED), swapchainExtent_{0, 0} {
-    LOG_INFO_CAT("VulkanSwapchain", "Constructing VulkanSwapchainManager with surface={:p}",
-                 std::source_location::current(), surface);
+    LOG_INFO_CAT("VulkanSwapchain", "Constructing VulkanSwapchainManager with context.device={:p}, surface={:p}",
+                 std::source_location::current(), reinterpret_cast<void*>(context_.device), reinterpret_cast<void*>(surface));
     context_.surface = surface;
 }
 
@@ -94,7 +95,7 @@ void VulkanSwapchainManager::initializeSwapchain(int width, int height) {
         throw std::runtime_error("Failed to create swapchain");
     }
     LOG_DEBUG_CAT("VulkanSwapchain", "Created swapchain: swapchain={:p}",
-                  std::source_location::current(), swapchain_);
+                  std::source_location::current(), reinterpret_cast<void*>(swapchain_));
 
     vkGetSwapchainImagesKHR(context_.device, swapchain_, &imageCount_, nullptr);
     swapchainImages_.resize(imageCount_);
@@ -125,8 +126,11 @@ void VulkanSwapchainManager::initializeSwapchain(int width, int height) {
             throw std::runtime_error("Failed to create image view");
         }
         LOG_DEBUG_CAT("VulkanSwapchain", "Created image view {}: imageView={:p}",
-                      std::source_location::current(), i, swapchainImageViews_[i]);
+                      std::source_location::current(), i, reinterpret_cast<void*>(swapchainImageViews_[i]));
     }
+
+    LOG_DEBUG_CAT("VulkanSwapchain", "Created image view {:p}",
+                  std::source_location::current(), reinterpret_cast<void*>(swapchainImageViews_.back()));
 
     swapchainExtent_ = extent;
     swapchainImageFormat_ = surfaceFormat.format;
@@ -143,7 +147,7 @@ void VulkanSwapchainManager::cleanupSwapchain() {
 
     for (auto imageView : swapchainImageViews_) {
         if (imageView != VK_NULL_HANDLE) {
-            LOG_DEBUG_CAT("VulkanSwapchain", "Destroying imageView={:p}", std::source_location::current(), imageView);
+            LOG_DEBUG_CAT("VulkanSwapchain", "Destroying imageView={:p}", std::source_location::current(), reinterpret_cast<void*>(imageView));
             vkDestroyImageView(context_.device, imageView, nullptr);
         }
     }
@@ -151,7 +155,7 @@ void VulkanSwapchainManager::cleanupSwapchain() {
     swapchainImages_.clear();
 
     if (swapchain_ != VK_NULL_HANDLE) {
-        LOG_DEBUG_CAT("VulkanSwapchain", "Destroying swapchain={:p}", std::source_location::current(), swapchain_);
+        LOG_DEBUG_CAT("VulkanSwapchain", "Destroying swapchain={:p}", std::source_location::current(), reinterpret_cast<void*>(swapchain_));
         vkDestroySwapchainKHR(context_.device, swapchain_, nullptr);
         swapchain_ = VK_NULL_HANDLE;
     }
