@@ -1,22 +1,12 @@
 // src/engine/Vulkan_init_buffers.cpp
+#include "engine/Vulkan_types.hpp"
 #include "engine/Vulkan_init_buffers.hpp"
 #include "engine/Vulkan_init.hpp"
+#include "engine/Vulkan_utils.hpp"
 #include "engine/logging.hpp"
 #include <stdexcept>
 #include <source_location>
 #include <glm/glm.hpp>
-
-std::string vkResultToString(VkResult result) {
-    switch (result) {
-        case VK_SUCCESS: return "VK_SUCCESS";
-        case VK_NOT_READY: return "VK_NOT_READY";
-        case VK_TIMEOUT: return "VK_TIMEOUT";
-        case VK_ERROR_OUT_OF_HOST_MEMORY: return "VK_ERROR_OUT_OF_HOST_MEMORY";
-        case VK_ERROR_OUT_OF_DEVICE_MEMORY: return "VK_ERROR_OUT_OF_DEVICE_MEMORY";
-        case VK_ERROR_INITIALIZATION_FAILED: return "VK_ERROR_INITIALIZATION_FAILED";
-        default: return "Unknown VkResult (" + std::to_string(result) + ")";
-    }
-}
 
 VulkanBufferManager::VulkanBufferManager(VulkanContext& context)
     : context_(context) {
@@ -48,7 +38,7 @@ void VulkanBufferManager::initializeBuffers(std::span<const glm::vec3> vertices,
     VkResult result = vkMapMemory(context_.device, context_.sphereStagingBufferMemory, 0, vertexBufferSize, 0, &vertexData);
     if (result != VK_SUCCESS) {
         LOG_ERROR_CAT("VulkanBuffer", "Failed to map vertex staging buffer memory: result={}",
-                      std::source_location::current(), vkResultToString(result));
+                      std::source_location::current(), VulkanInitializer::vkResultToString(result));
         throw std::runtime_error("Failed to map vertex staging buffer memory");
     }
     memcpy(vertexData, vertices.data(), vertexBufferSize);
@@ -75,7 +65,7 @@ void VulkanBufferManager::initializeBuffers(std::span<const glm::vec3> vertices,
         result = vkMapMemory(context_.device, context_.indexStagingBufferMemory, 0, indexBufferSize, 0, &indexData);
         if (result != VK_SUCCESS) {
             LOG_ERROR_CAT("VulkanBuffer", "Failed to map index staging buffer memory: result={}",
-                          std::source_location::current(), vkResultToString(result));
+                          std::source_location::current(), VulkanInitializer::vkResultToString(result));
             throw std::runtime_error("Failed to map index staging buffer memory");
         }
         memcpy(indexData, indices.data(), indexBufferSize);
@@ -172,7 +162,7 @@ void VulkanBufferManager::copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkD
     VkResult result = vkAllocateCommandBuffers(context_.device, &allocInfo, &commandBuffer);
     if (result != VK_SUCCESS) {
         LOG_ERROR_CAT("VulkanBuffer", "Failed to allocate command buffer for copy: result={}",
-                      std::source_location::current(), vkResultToString(result));
+                      std::source_location::current(), VulkanInitializer::vkResultToString(result));
         throw std::runtime_error("Failed to allocate command buffer for copy");
     }
     LOG_DEBUG_CAT("VulkanBuffer", "Allocated command buffer for copy: commandBuffer={:p}", std::source_location::current(), static_cast<void*>(commandBuffer));
@@ -187,7 +177,7 @@ void VulkanBufferManager::copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkD
     result = vkBeginCommandBuffer(commandBuffer, &beginInfo);
     if (result != VK_SUCCESS) {
         LOG_ERROR_CAT("VulkanBuffer", "Failed to begin command buffer for copy: result={}",
-                      std::source_location::current(), vkResultToString(result));
+                      std::source_location::current(), VulkanInitializer::vkResultToString(result));
         throw std::runtime_error("Failed to begin command buffer for copy");
     }
 
@@ -202,7 +192,7 @@ void VulkanBufferManager::copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkD
     result = vkEndCommandBuffer(commandBuffer);
     if (result != VK_SUCCESS) {
         LOG_ERROR_CAT("VulkanBuffer", "Failed to end command buffer for copy: result={}",
-                      std::source_location::current(), vkResultToString(result));
+                      std::source_location::current(), VulkanInitializer::vkResultToString(result));
         throw std::runtime_error("Failed to end command buffer for copy");
     }
 
@@ -221,7 +211,7 @@ void VulkanBufferManager::copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkD
     result = vkQueueSubmit(context_.graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE);
     if (result != VK_SUCCESS) {
         LOG_ERROR_CAT("VulkanBuffer", "Failed to submit copy command buffer: result={}",
-                      std::source_location::current(), vkResultToString(result));
+                      std::source_location::current(), VulkanInitializer::vkResultToString(result));
         throw std::runtime_error("Failed to submit copy command buffer");
     }
 

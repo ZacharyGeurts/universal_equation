@@ -9,6 +9,7 @@ VulkanSwapchainManager::VulkanSwapchainManager(VulkanContext& context, VkSurface
     : context_(context), swapchain_(VK_NULL_HANDLE), imageCount_(0) {
     LOG_INFO_CAT("VulkanSwapchain", "Constructing VulkanSwapchainManager with context.device={:p}, surface={:p}",
                  std::source_location::current(), static_cast<void*>(context_.device), static_cast<void*>(surface));
+    context_.surface = surface;
 }
 
 VulkanSwapchainManager::~VulkanSwapchainManager() {

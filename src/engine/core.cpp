@@ -1,3 +1,4 @@
+// src/engine/core.cpp
 // AMOURANTH RTX Engine, October 2025 - Core simulation logic implementation.
 // Implements AMOURANTH, DimensionalNavigator, and rendering modes.
 // Dependencies: Vulkan 1.3+, GLM, SDL3, C++20 standard library.
@@ -35,6 +36,10 @@ void DimensionalNavigator::initializeCache() {
         cache_[i].potential = 0.0;
         cache_[i].nurbMatter = 0.0;
         cache_[i].nurbEnergy = 0.0;
+        cache_[i].spinEnergy = 0.0L;
+        cache_[i].momentumEnergy = 0.0L;
+        cache_[i].fieldEnergy = 0.0L;
+        cache_[i].GodWaveEnergy = 0.0L;
     }
     LOG_DEBUG_CAT("Simulation", "DimensionalNavigator cache initialized with {} entries", 
                   std::source_location::current(), cache_.size());
@@ -98,7 +103,7 @@ AMOURANTH::AMOURANTH(DimensionalNavigator* navigator, VkDevice device, VkDeviceM
 
 AMOURANTH::AMOURANTH(AMOURANTH&& other) noexcept
     : simulator_(other.simulator_),
-      logger_(Logging::Logger::get()),
+      logger_(other.logger_),
       mode_(other.mode_),
       wavePhase_(other.wavePhase_),
       waveSpeed_(other.waveSpeed_),
@@ -131,6 +136,7 @@ AMOURANTH::AMOURANTH(AMOURANTH&& other) noexcept
 AMOURANTH& AMOURANTH::operator=(AMOURANTH&& other) noexcept {
     if (this != &other) {
         simulator_ = other.simulator_;
+        logger_ = other.logger_;
         mode_ = other.mode_;
         wavePhase_ = other.wavePhase_;
         waveSpeed_ = other.waveSpeed_;
@@ -174,36 +180,36 @@ void AMOURANTH::render(uint32_t imageIndex, VkBuffer vertexBuffer, VkCommandBuff
                       static_cast<void*>(renderPass), static_cast<void*>(framebuffer));
         throw std::runtime_error("Invalid Vulkan resources in render");
     }
-    switch (simulator_->getMode()) {
-        case 1: renderMode1(this, imageIndex, vertexBuffer, commandBuffer, indexBuffer, simulator_->getZoomLevel(),
-                           width_, height_, simulator_->getWavePhase(), simulator_->getCache(), pipelineLayout, descriptorSet,
+    switch (mode_) { // Use AMOURANTH's mode_ instead of simulator_->getMode()
+        case 1: renderMode1(this, imageIndex, vertexBuffer, commandBuffer, indexBuffer, zoomLevel_,
+                           width_, height_, wavePhase_, cache_, pipelineLayout, descriptorSet,
                            device_, vertexBufferMemory_, pipeline_, deltaTime, renderPass, framebuffer); break;
-        case 2: renderMode2(this, imageIndex, vertexBuffer, commandBuffer, indexBuffer, simulator_->getZoomLevel(),
-                           width_, height_, simulator_->getWavePhase(), simulator_->getCache(), pipelineLayout, descriptorSet,
+        case 2: renderMode2(this, imageIndex, vertexBuffer, commandBuffer, indexBuffer, zoomLevel_,
+                           width_, height_, wavePhase_, cache_, pipelineLayout, descriptorSet,
                            device_, vertexBufferMemory_, pipeline_, deltaTime, renderPass, framebuffer); break;
-        case 3: renderMode3(this, imageIndex, vertexBuffer, commandBuffer, indexBuffer, simulator_->getZoomLevel(),
-                           width_, height_, simulator_->getWavePhase(), simulator_->getCache(), pipelineLayout, descriptorSet,
+        case 3: renderMode3(this, imageIndex, vertexBuffer, commandBuffer, indexBuffer, zoomLevel_,
+                           width_, height_, wavePhase_, cache_, pipelineLayout, descriptorSet,
                            device_, vertexBufferMemory_, pipeline_, deltaTime, renderPass, framebuffer); break;
-        case 4: renderMode4(this, imageIndex, vertexBuffer, commandBuffer, indexBuffer, simulator_->getZoomLevel(),
-                           width_, height_, simulator_->getWavePhase(), simulator_->getCache(), pipelineLayout, descriptorSet,
+        case 4: renderMode4(this, imageIndex, vertexBuffer, commandBuffer, indexBuffer, zoomLevel_,
+                           width_, height_, wavePhase_, cache_, pipelineLayout, descriptorSet,
                            device_, vertexBufferMemory_, pipeline_, deltaTime, renderPass, framebuffer); break;
-        case 5: renderMode5(this, imageIndex, vertexBuffer, commandBuffer, indexBuffer, simulator_->getZoomLevel(),
-                           width_, height_, simulator_->getWavePhase(), simulator_->getCache(), pipelineLayout, descriptorSet,
+        case 5: renderMode5(this, imageIndex, vertexBuffer, commandBuffer, indexBuffer, zoomLevel_,
+                           width_, height_, wavePhase_, cache_, pipelineLayout, descriptorSet,
                            device_, vertexBufferMemory_, pipeline_, deltaTime, renderPass, framebuffer); break;
-        case 6: renderMode6(this, imageIndex, vertexBuffer, commandBuffer, indexBuffer, simulator_->getZoomLevel(),
-                           width_, height_, simulator_->getWavePhase(), simulator_->getCache(), pipelineLayout, descriptorSet,
+        case 6: renderMode6(this, imageIndex, vertexBuffer, commandBuffer, indexBuffer, zoomLevel_,
+                           width_, height_, wavePhase_, cache_, pipelineLayout, descriptorSet,
                            device_, vertexBufferMemory_, pipeline_, deltaTime, renderPass, framebuffer); break;
-        case 7: renderMode7(this, imageIndex, vertexBuffer, commandBuffer, indexBuffer, simulator_->getZoomLevel(),
-                           width_, height_, simulator_->getWavePhase(), simulator_->getCache(), pipelineLayout, descriptorSet,
+        case 7: renderMode7(this, imageIndex, vertexBuffer, commandBuffer, indexBuffer, zoomLevel_,
+                           width_, height_, wavePhase_, cache_, pipelineLayout, descriptorSet,
                            device_, vertexBufferMemory_, pipeline_, deltaTime, renderPass, framebuffer); break;
-        case 8: renderMode8(this, imageIndex, vertexBuffer, commandBuffer, indexBuffer, simulator_->getZoomLevel(),
-                           width_, height_, simulator_->getWavePhase(), simulator_->getCache(), pipelineLayout, descriptorSet,
+        case 8: renderMode8(this, imageIndex, vertexBuffer, commandBuffer, indexBuffer, zoomLevel_,
+                           width_, height_, wavePhase_, cache_, pipelineLayout, descriptorSet,
                            device_, vertexBufferMemory_, pipeline_, deltaTime, renderPass, framebuffer); break;
-        case 9: renderMode9(this, imageIndex, vertexBuffer, commandBuffer, indexBuffer, simulator_->getZoomLevel(),
-                           width_, height_, simulator_->getWavePhase(), simulator_->getCache(), pipelineLayout, descriptorSet,
+        case 9: renderMode9(this, imageIndex, vertexBuffer, commandBuffer, indexBuffer, zoomLevel_,
+                           width_, height_, wavePhase_, cache_, pipelineLayout, descriptorSet,
                            device_, vertexBufferMemory_, pipeline_, deltaTime, renderPass, framebuffer); break;
-        default: renderMode1(this, imageIndex, vertexBuffer, commandBuffer, indexBuffer, simulator_->getZoomLevel(),
-                            width_, height_, simulator_->getWavePhase(), simulator_->getCache(), pipelineLayout, descriptorSet,
+        default: renderMode1(this, imageIndex, vertexBuffer, commandBuffer, indexBuffer, zoomLevel_,
+                            width_, height_, wavePhase_, cache_, pipelineLayout, descriptorSet,
                             device_, vertexBufferMemory_, pipeline_, deltaTime, renderPass, framebuffer); break;
     }
 }
@@ -233,7 +239,8 @@ void AMOURANTH::adjustInfluence(double delta) {
 
 void AMOURANTH::adjustNurbMatter(double delta) {
     std::latch latch(1);
-    for (auto& cache : cache_) cache.nurbMatter += delta;
+    ue_.setNurbMatterStrength(ue_.getNurbMatterStrength() + delta);
+    updateCache();
     LOG_DEBUG_CAT("Simulation", "Adjusted nurbMatter by {}", 
                   std::source_location::current(), delta);
     latch.count_down();
@@ -242,7 +249,8 @@ void AMOURANTH::adjustNurbMatter(double delta) {
 
 void AMOURANTH::adjustNurbEnergy(double delta) {
     std::latch latch(1);
-    for (auto& cache : cache_) cache.nurbEnergy += delta;
+    ue_.setNurbEnergyStrength(ue_.getNurbEnergyStrength() + delta);
+    updateCache();
     LOG_DEBUG_CAT("Simulation", "Adjusted nurbEnergy by {}", 
                   std::source_location::current(), delta);
     latch.count_down();
@@ -429,8 +437,8 @@ void AMOURANTH::updateCache() {
         cache_[i].potential = ue_.getPotential(i + 1);
         cache_[i].nurbMatter = ue_.getNurbMatter(i + 1);
         cache_[i].nurbEnergy = ue_.getNurbEnergy(i + 1);
-        cache_[i].spinEnergy = 0.0L; 
-        cache_[i].momentumEnergy = 0.0L; 
+        cache_[i].spinEnergy = 0.0L;
+        cache_[i].momentumEnergy = 0.0L;
         cache_[i].fieldEnergy = 0.0L;
         cache_[i].GodWaveEnergy = 0.0L;
     }
