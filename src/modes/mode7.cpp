@@ -4,44 +4,50 @@
 
 #include "engine/core.hpp"
 #include "Mia.hpp"
+#include "ue_init.hpp" // For AMOURANTH and UE::DimensionData
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtx/rotate_vector.hpp>
 #include <stdexcept>
 #include <cstring>
-#include <span>
+#include <span> // For std::span
 #include <source_location>
 
-void renderMode7(const AMOURANTH* amouranth, [[maybe_unused]] uint32_t imageIndex, VkBuffer vertexBuffer,
+void renderMode7(AMOURANTH* amouranth, [[maybe_unused]] uint32_t imageIndex, VkBuffer vertexBuffer,
                  VkCommandBuffer commandBuffer, VkBuffer indexBuffer, float zoomLevel, int width, int height,
-                 float wavePhase, std::span<const UniversalEquation::DimensionData> cache,
+                 float wavePhase, std::span<const UE::DimensionData> cache,
                  VkPipelineLayout pipelineLayout, VkDescriptorSet descriptorSet,
                  VkDevice device, VkDeviceMemory vertexBufferMemory,
-                 VkPipeline pipeline, [[maybe_unused]] float deltaTime, VkRenderPass renderPass, VkFramebuffer framebuffer) {
+                 VkPipeline pipeline, float deltaTime, VkRenderPass renderPass, VkFramebuffer framebuffer) {
     // Initialize Mia for timing and random number generation
     Mia mia(amouranth, amouranth->getLogger());
 
-    // Get ball data (30,000 balls for fractal simulation)
-    const auto& balls = amouranth->getBalls();
+    // Set 9D simulation mode and get ball data
+    amouranth->setCurrentDimension(9); // Use 9D for fractal simulation
+    const auto& balls = amouranth->getBalls(); // Access 30,000 balls
     if (balls.empty()) {
         amouranth->getLogger().log(Logging::LogLevel::Error, "RenderMode7", "No ball data for renderMode7",
                                    std::source_location::current());
         throw std::runtime_error("No ball data for renderMode7");
     }
 
-    // Project 9D ball positions onto 2D plane with chaotic scattering
+    // Update ball positions (physics simulation)
+    amouranth->update(deltaTime); // Use public update method with provided deltaTime
+
+    // Project 9D ball positions into 3D space with lattice oscillation
     std::vector<float> vertexData;
     vertexData.reserve(balls.size() * 6); // Position (x, y, z) + Normal (x, y, z) per ball
+    float oscillation = cache.empty() ? 0.5f : cache[0].value * 0.4f;
     for (const auto& ball : balls) {
-        // Apply chaotic scatter using Mia's RNG
-        float randomOffset = static_cast<float>(mia.getRandom()) * 0.15f; // Small random displacement
-        float x = ball.x + sin(wavePhase * 1.5f) * randomOffset;
-        float y = ball.y + cos(wavePhase * 1.5f) * randomOffset;
+        // Lattice: oscillate x, y, z based on wavePhase and cache value
+        float x = ball.x * (1.0f + oscillation * sin(wavePhase * 2.5f + ball.y));
+        float y = ball.y * (1.0f + oscillation * cos(wavePhase * 2.5f + ball.x));
+        float z = ball.z * (1.0f + oscillation * sin(wavePhase * 2.0f + ball.x + ball.y));
         vertexData.push_back(x);
         vertexData.push_back(y);
-        vertexData.push_back(0.0f); // z = 0 for 2D projection
-        vertexData.push_back(0.0f); // Normal x
+        vertexData.push_back(z);
+        vertexData.push_back(0.0f); // Normal x (arbitrary for points)
         vertexData.push_back(0.0f); // Normal y
-        vertexData.push_back(1.0f); // Normal z (arbitrary for points)
+        vertexData.push_back(1.0f); // Normal z
     }
 
     // Update vertex buffer with projected ball positions
@@ -57,16 +63,15 @@ void renderMode7(const AMOURANTH* amouranth, [[maybe_unused]] uint32_t imageInde
         indices[i] = i;
     }
 
-    // Note: Index buffer memory is not passed; assuming it's handled elsewhere or same as vertexBufferMemory
-    // Update index buffer (using vertexBufferMemory as placeholder, ideally use indexBufferMemory)
+    // Update index buffer (using indexBufferMemory instead of vertexBufferMemory)
     VkDeviceSize indexBufferSize = indices.size() * sizeof(uint32_t);
     void* indexData;
-    vkMapMemory(device, vertexBufferMemory, 0, indexBufferSize, 0, &indexData); // TODO: Use indexBufferMemory
+    vkMapMemory(device, vertexBufferMemory, 0, indexBufferSize, 0, &indexData); // TODO: Replace with indexBufferMemory if available
     memcpy(indexData, indices.data(), indexBufferSize);
     vkUnmapMemory(device, vertexBufferMemory);
 
     // Begin render pass
-    VkClearValue clearColor = {{{0.0f, 0.0f, 0.0f, 1.0f}}}; // Black background for vibrant colors
+    VkClearValue clearColor = {{{0.1f, 0.0f, 0.1f, 1.0f}}}; // Dark purple background for lattice effect
     VkRenderPassBeginInfo renderPassInfo{
         .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
         .pNext = nullptr,
@@ -106,7 +111,7 @@ void renderMode7(const AMOURANTH* amouranth, [[maybe_unused]] uint32_t imageInde
     // Bind descriptor set for shaders
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &descriptorSet, 0, nullptr);
 
-    // Setup push constants (chaotic scatter effect)
+    // Setup push constants
     struct PushConstants {
         glm::mat4 mvp;
         float beatIntensity;
@@ -118,28 +123,28 @@ void renderMode7(const AMOURANTH* amouranth, [[maybe_unused]] uint32_t imageInde
     // Setup camera with Mia's random numbers
     float randomShift = static_cast<float>(mia.getRandom()); // Use Mia's physics-driven RNG
     float aspectRatio = static_cast<float>(width) / static_cast<float>(height);
-    float musicZoom = zoomLevel * (1.0f + 0.5f * cos(wavePhase * 1.5f + randomShift)); // Chaotic zoom
-    glm::mat4 proj = glm::ortho(-aspectRatio * musicZoom, aspectRatio * musicZoom, -1.0f * musicZoom, 1.0f * musicZoom, 0.1f, 1000.0f);
+    float musicZoom = zoomLevel * (1.0f + 0.2f * cos(wavePhase * 2.0f + randomShift));
+    glm::mat4 proj = glm::ortho(-aspectRatio * musicZoom * 1.5f, aspectRatio * musicZoom * 1.5f, -1.5f * musicZoom, 1.5f * musicZoom, 0.1f, 1000.0f);
     glm::mat4 view = glm::lookAt(
         glm::vec3(
-            sin(wavePhase * 0.4f + randomShift) * 0.8f, // Rapid chaotic motion
-            cos(wavePhase * 0.4f + randomShift) * 0.8f,
-            -5.0f
+            cos(wavePhase * 0.9f + randomShift) * 5.0f,
+            sin(wavePhase * 0.9f + randomShift) * 5.0f,
+            -10.0f
         ),
         glm::vec3(0.0f, 0.0f, 0.0f),
         glm::vec3(0.0f, 1.0f, 0.0f)
     );
-    glm::mat4 model = glm::rotate(glm::mat4(1.0f), wavePhase * 0.2f + randomShift, glm::vec3(0.0f, 0.0f, 1.0f)); // Fast rotation
+    glm::mat4 model = glm::rotate(glm::mat4(1.0f), wavePhase * 0.3f + randomShift, glm::vec3(0.0f, 0.0f, 1.0f));
 
     pushConstants.mvp = proj * view * model;
     float beatIntensity = cache.empty() ? 1.0f : cache[0].value;
-    pushConstants.beatIntensity = beatIntensity * (1.0f + 0.6f * abs(cos(wavePhase * 1.5f + randomShift))); // Chaotic pulsing
-    pushConstants.amplitude = 1.0f + cos(wavePhase * 1.5f + randomShift) * 0.4f; // Subtle amplitude
+    pushConstants.beatIntensity = beatIntensity * (1.0f + 0.4f * abs(cos(wavePhase * 2.0f + randomShift)));
+    pushConstants.amplitude = 1.0f + sin(wavePhase * 2.0f + randomShift) * 0.6f;
     pushConstants.time = wavePhase;
     pushConstants.baseColor = glm::vec3(
-        0.5f + cos(wavePhase * 0.6f + randomShift) * 0.5f, // Chaotic color phasing
-        0.5f + sin(wavePhase * 0.6f + randomShift) * 0.5f,
-        0.5f + cos(wavePhase * 0.9f + randomShift) * 0.3f
+        0.5f + cos(wavePhase * 0.7f + randomShift) * 0.4f,
+        0.5f + sin(wavePhase * 0.8f + randomShift) * 0.4f,
+        0.5f + cos(wavePhase * 0.9f + randomShift) * 0.4f
     );
 
     vkCmdPushConstants(commandBuffer, pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(PushConstants), &pushConstants);
@@ -148,15 +153,15 @@ void renderMode7(const AMOURANTH* amouranth, [[maybe_unused]] uint32_t imageInde
     uint32_t indexCount = static_cast<uint32_t>(indices.size()); // One index per ball
     vkCmdDrawIndexed(commandBuffer, indexCount, 1, 0, 0, 0);
 
-    // Additional elements (offset chaotic layer)
-    model = glm::translate(glm::mat4(1.0f), glm::vec3(cos(wavePhase * 0.7f) * 0.3f, sin(wavePhase * 0.7f) * 0.3f, 0.0f)); // Chaotic offset
+    // Additional elements (shifted lattice layer for depth)
+    model = glm::translate(glm::mat4(1.0f), glm::vec3(cos(wavePhase * 0.4f) * 0.4f, sin(wavePhase * 0.4f) * 0.4f, 0.0f));
     pushConstants.mvp = proj * view * model;
     pushConstants.baseColor = glm::vec3(
-        0.5f + sin(wavePhase * 0.6f) * 0.5f,
-        0.5f + cos(wavePhase * 0.6f) * 0.5f,
-        0.5f + sin(wavePhase * 0.9f) * 0.3f
+        0.5f + sin(wavePhase * 0.7f) * 0.4f,
+        0.5f + cos(wavePhase * 0.8f) * 0.4f,
+        0.5f + sin(wavePhase * 0.9f) * 0.4f
     );
-    pushConstants.amplitude *= 0.5f; // Reduced for second layer
+    pushConstants.amplitude *= 0.8f; // Slightly reduced for second layer
     vkCmdPushConstants(commandBuffer, pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(PushConstants), &pushConstants);
     vkCmdDrawIndexed(commandBuffer, indexCount, 1, 0, 0, 0);
 

@@ -86,7 +86,8 @@ UniversalEquation::UniversalEquation(
     nurbEnergyControlPoints_(5, 1.0L),
     nurbKnots_(9, 0.0L),
     nurbWeights_(5, 1.0L),
-    dimensionData_(std::max(1, std::min(maxDimensions, 19)), {0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0}),
+    dimensionData_(std::vector<UE::DimensionData>(std::max(1, std::min(maxDimensions, 19)), UE::DimensionData{
+        0, 1.0L, glm::vec3(0.0f, 0.0f, 0.0f), 1.0f, 1.0L, 0.032774L, 1.0L, 1.0L, 0.0L, 0.0L, 0.0L, 0.0L})),
     navigator_(nullptr) {
     LOG_INFO_CAT("Simulation", "Constructing UniversalEquation: maxVertices={}, maxDimensions={}, mode={}, godWaveFreq={}",
                  std::source_location::current(), getMaxVertices(), getMaxDimensions(), getMode(), getGodWaveFreq());
@@ -326,7 +327,7 @@ void UniversalEquation::initializeNCube() {
             vertexMomenta_.push_back(std::move(momentum));
             vertexSpins_.push_back(spin);
             vertexWaveAmplitudes_.push_back(amplitude);
-            interactions_.push_back(DimensionInteraction(
+            interactions_.push_back(UE::DimensionInteraction(
                 static_cast<int>(i), 0.0L, 0.0L, std::vector<long double>(std::min(3, getCurrentDimension()), 0.0L), 0.0L));
             projectedVerts_.push_back(glm::vec3(0.0f, 0.0f, 0.0f));
             totalCharge_.fetch_add(1.0L / getMaxVertices());
@@ -400,7 +401,7 @@ void UniversalEquation::updateInteractions() {
                       std::source_location::current(), numVertices, getMaxVertices());
     }
 
-    std::vector<std::vector<DimensionInteraction>> localInteractions(omp_get_max_threads());
+    std::vector<std::vector<UE::DimensionInteraction>> localInteractions(omp_get_max_threads());
     std::vector<std::vector<glm::vec3>> localProjected(omp_get_max_threads());
     for (int t = 0; t < omp_get_max_threads(); ++t) {
         localInteractions[t].reserve(numVertices / omp_get_max_threads() + 1);
@@ -509,7 +510,7 @@ void UniversalEquation::updateInteractions() {
     validateProjectedVertices();
 }
 
-UniversalEquation::EnergyResult UniversalEquation::compute() {
+UE::EnergyResult UniversalEquation::compute() {
     LOG_INFO_CAT("Simulation", "Starting compute: vertices={}, dimension={}",
                  std::source_location::current(), nCubeVertices_.size(), getCurrentDimension());
     if (getNeedsUpdate()) {
@@ -517,7 +518,7 @@ UniversalEquation::EnergyResult UniversalEquation::compute() {
         needsUpdate_.store(false);
     }
 
-    EnergyResult result{0.0L, 0.0L, 0.0L, 0.0L, 0.0L, 0.0L, 0.0L, 0.0L};
+    UE::EnergyResult result{0.0L, 0.0L, 0.0L, 0.0L, 0.0L, 0.0L, 0.0L, 0.0L};
     uint64_t numVertices = std::min(static_cast<uint64_t>(nCubeVertices_.size()), getMaxVertices());
     std::vector<long double> potentials(numVertices, 0.0L);
     std::vector<long double> nurbMatters(numVertices, 0.0L);
@@ -614,7 +615,7 @@ void UniversalEquation::initializeWithRetry() {
                 vertexMomenta_.resize(currentVertices);
                 vertexSpins_.resize(currentVertices);
                 vertexWaveAmplitudes_.resize(currentVertices);
-                interactions_.resize(currentVertices);
+                interactions_.resize(currentVertices, UE::DimensionInteraction(0, 0.0L, 0.0L, std::vector<long double>(std::min(3, getCurrentDimension()), 0.0L), 0.0L));
                 projectedVerts_.resize(currentVertices);
             }
             initializeNCube();
@@ -1142,16 +1143,16 @@ void UniversalEquation::advanceCycle() {
     LOG_DEBUG_CAT("Simulation", "Simulation cycle advanced", std::source_location::current());
 }
 
-std::vector<UniversalEquation::DimensionData> UniversalEquation::computeBatch(int startDim, int endDim) {
+std::vector<UE::DimensionData> UniversalEquation::computeBatch(int startDim, int endDim) {
     LOG_INFO_CAT("Simulation", "Starting batch computation from dimension {} to {}",
                  std::source_location::current(), startDim, endDim);
-    std::vector<DimensionData> results;
+    std::vector<UE::DimensionData> results;
     int originalDim = getCurrentDimension();
     for (int dim = startDim; dim <= endDim && dim <= maxDimensions_; ++dim) {
         setCurrentDimension(dim);
         initializeWithRetry();
-        EnergyResult result = compute();
-        DimensionData data;
+        UE::EnergyResult result = compute();
+        UE::DimensionData data;
         data.dimension = dim;
         data.scale = 1.0L; // Set default scale
         data.observable = result.observable;
@@ -1173,7 +1174,7 @@ std::vector<UniversalEquation::DimensionData> UniversalEquation::computeBatch(in
     return results;
 }
 
-void UniversalEquation::exportToCSV(const std::string& filename, const std::vector<DimensionData>& data) const {
+void UniversalEquation::exportToCSV(const std::string& filename, const std::vector<UE::DimensionData>& data) const {
     LOG_INFO_CAT("Simulation", "Exporting to CSV: filename={}", std::source_location::current(), filename);
     std::ofstream file(filename);
     if (!file.is_open()) {
@@ -1191,10 +1192,10 @@ void UniversalEquation::exportToCSV(const std::string& filename, const std::vect
     LOG_DEBUG_CAT("Simulation", "CSV export completed", std::source_location::current());
 }
 
-UniversalEquation::DimensionData UniversalEquation::updateCache() {
+UE::DimensionData UniversalEquation::updateCache() {
     LOG_INFO_CAT("Simulation", "Updating cache", std::source_location::current());
-    EnergyResult result = compute();
-    DimensionData data;
+    UE::EnergyResult result = compute();
+    UE::DimensionData data;
     data.dimension = getCurrentDimension();
     data.scale = 1.0L; // Set default scale
     data.observable = result.observable;
@@ -1400,7 +1401,7 @@ const std::vector<long double>& UniversalEquation::getVertexWaveAmplitudes() con
     return vertexWaveAmplitudes_;
 }
 
-const std::vector<UniversalEquation::DimensionInteraction>& UniversalEquation::getInteractions() const {
+const std::vector<UE::DimensionInteraction>& UniversalEquation::getInteractions() const {
     return interactions_;
 }
 
@@ -1428,7 +1429,7 @@ const std::vector<long double>& UniversalEquation::getNurbWeights() const {
     return nurbWeights_;
 }
 
-const std::vector<UniversalEquation::DimensionData>& UniversalEquation::getDimensionData() const {
+const std::vector<UE::DimensionData>& UniversalEquation::getDimensionData() const {
     return dimensionData_;
 }
 

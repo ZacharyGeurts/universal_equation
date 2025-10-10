@@ -54,13 +54,13 @@ struct VulkanContext {
 
 class VulkanBufferManager {
 public:
-    VulkanBufferManager(VkDevice device, VkPhysicalDevice physicalDevice, VulkanContext& context);
+    VulkanBufferManager(VulkanContext& context); // Updated constructor
     ~VulkanBufferManager();
     void createVertexBuffer(std::span<const glm::vec3> vertices);
     void createIndexBuffer(std::span<const uint32_t> indices);
     void createUniformBuffers(uint32_t swapchainImageCount);
-    void initializeBuffers(std::span<const glm::vec3> vertices, std::span<const uint32_t> indices); // Added
-    void cleanupBuffers(); // Added
+    void initializeBuffers(std::span<const glm::vec3> vertices, std::span<const uint32_t> indices);
+    void cleanupBuffers();
     void copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size);
     VkBuffer getVertexBuffer() const;
     VkBuffer getIndexBuffer() const;
@@ -71,6 +71,7 @@ public:
     uint32_t getIndexCount() const;
 
 private:
+    VulkanContext& context_; // Moved to top to avoid -Wreorder
     VkDevice device_;
     VkPhysicalDevice physicalDevice_;
     VkBuffer vertexBuffer_ = VK_NULL_HANDLE;
@@ -80,7 +81,6 @@ private:
     std::vector<VkBuffer> uniformBuffers_;
     std::vector<VkDeviceMemory> uniformBuffersMemory_;
     uint32_t indexCount_ = 0;
-    VulkanContext& context_;
 };
 
 class VulkanSwapchainManager {

@@ -12,11 +12,11 @@
 #include <vector>
 #include <vulkan/vulkan.h>
 #include "engine/logging.hpp"
+#include "engine/Vulkan_init.hpp" // Include Vulkan_init.hpp for VulkanContext and VulkanInitializer
 #include <atomic>
 #include <mutex>
 #include <thread>
 #include <latch>
-#include <omp.h>
 #include <numbers>
 #include <cmath>
 #include <stdexcept>
@@ -46,19 +46,21 @@ namespace UE {
         long double GodWaveEnergy = 0.0L;
 
         std::string toString() const {
-            return "DimensionData{dimension=" + std::to_string(dimension) +
-                   ", scale=" + std::to_string(scale) +
-                   ", position=(" + std::to_string(position.x) + "," +
-                   std::to_string(position.y) + "," + std::to_string(position.z) + ")" +
-                   ", value=" + std::to_string(value) +
-                   ", nurbEnergy=" + std::to_string(nurbEnergy) +
-                   ", nurbMatter=" + std::to_string(nurbMatter) +
-                   ", potential=" + std::to_string(potential) +
-                   ", observable=" + std::to_string(observable) +
-                   ", spinEnergy=" + std::to_string(spinEnergy) +
-                   ", momentumEnergy=" + std::to_string(momentumEnergy) +
-                   ", fieldEnergy=" + std::to_string(fieldEnergy) +
-                   ", GodWaveEnergy=" + std::to_string(GodWaveEnergy) + "}";
+            std::stringstream ss;
+            ss << std::fixed << std::setprecision(6);
+            ss << "DimensionData{dimension=" << dimension
+               << ", scale=" << scale
+               << ", position=(" << position.x << "," << position.y << "," << position.z << ")"
+               << ", value=" << value
+               << ", nurbEnergy=" << nurbEnergy
+               << ", nurbMatter=" << nurbMatter
+               << ", potential=" << potential
+               << ", observable=" << observable
+               << ", spinEnergy=" << spinEnergy
+               << ", momentumEnergy=" << momentumEnergy
+               << ", fieldEnergy=" << fieldEnergy
+               << ", GodWaveEnergy=" << GodWaveEnergy << "}";
+            return ss.str();
         }
     };
 
@@ -73,14 +75,17 @@ namespace UE {
         long double GodWaveEnergy = 0.0L;
 
         std::string toString() const {
-            return "EnergyResult{observable=" + std::to_string(observable) +
-                   ", potential=" + std::to_string(potential) +
-                   ", nurbMatter=" + std::to_string(nurbMatter) +
-                   ", nurbEnergy=" + std::to_string(nurbEnergy) +
-                   ", spinEnergy=" + std::to_string(spinEnergy) +
-                   ", momentumEnergy=" + std::to_string(momentumEnergy) +
-                   ", fieldEnergy=" + std::to_string(fieldEnergy) +
-                   ", GodWaveEnergy=" + std::to_string(GodWaveEnergy) + "}";
+            std::stringstream ss;
+            ss << std::fixed << std::setprecision(6);
+            ss << "EnergyResult{observable=" << observable
+               << ", potential=" << potential
+               << ", nurbMatter=" << nurbMatter
+               << ", nurbEnergy=" << nurbEnergy
+               << ", spinEnergy=" << spinEnergy
+               << ", momentumEnergy=" << momentumEnergy
+               << ", fieldEnergy=" << fieldEnergy
+               << ", GodWaveEnergy=" << GodWaveEnergy << "}";
+            return ss.str();
         }
     };
 
@@ -191,6 +196,11 @@ public:
     const std::vector<long double>& getNurbWeights() const;
     const std::vector<UE::DimensionData>& getDimensionData() const;
     DimensionalNavigator* getNavigator() const;
+    const std::vector<long double>& getNCubeVertex(int vertexIndex) const;
+    const std::vector<long double>& getVertexMomentum(int vertexIndex) const;
+    long double getVertexSpin(int vertexIndex) const;
+    long double getVertexWaveAmplitude(int vertexIndex) const;
+    const glm::vec3& getProjectedVertex(int vertexIndex) const;
 
     // Setters
     void setCurrentDimension(int dimension);
@@ -253,6 +263,7 @@ public:
     std::vector<long double> computeVectorPotential(int vertexIndex) const;
     long double computeGravitationalPotential(int vertexIndex, int otherIndex) const;
     std::vector<long double> computeGravitationalAcceleration(int vertexIndex) const;
+    long double computeKineticEnergy(int vertexIndex) const;
 
     // Utility Methods
     long double safeExp(long double x) const;
@@ -322,14 +333,27 @@ public:
           currentDimension_(3),
           nurbMatter_(0.5f),
           nurbEnergy_(1.0f),
-          universalEquation_(9, 1, 1.0L, 0.1L, false, 30000) {
+          universalEquation_(9, 1, 1.0L, 0.1L, false, 30000),
+          position_(glm::vec3(0.0f, 0.0f, -5.0f)),
+          target_(glm::vec3(0.0f)),
+          up_(glm::vec3(0.0f, 1.0f, 0.0f)),
+          fov_(45.0f),
+          aspectRatio_(static_cast<float>(navigator->getWidth()) / navigator->getHeight()),
+          nearPlane_(0.1f),
+          farPlane_(100.0f),
+          isPaused_(false),
+          isUserCamActive_(false) {
+        if (!navigator) {
+            LOG_ERROR("AMOURANTH constructor: Null navigator provided", std::source_location::current());
+            throw std::runtime_error("AMOURANTH: Null navigator provided");
+        }
         universalEquation_.setNavigator(navigator_);
         universalEquation_.initializeCalculator(this);
-        LOG_INFO("AMOURANTH initialized with dimension=3, vertices=30000");
+        LOG_INFO("AMOURANTH initialized with dimension=3, vertices=30000", std::source_location::current());
     }
 
     ~AMOURANTH() {
-        LOG_DEBUG("Destroying AMOURANTH");
+        LOG_DEBUG("Destroying AMOURANTH", std::source_location::current());
     }
 
     const std::vector<glm::vec3>& getBalls() const {
@@ -341,41 +365,117 @@ public:
     float getNurbMatter() const { return nurbMatter_; }
     float getNurbEnergy() const { return nurbEnergy_; }
     const UniversalEquation& getUniversalEquation() const { return universalEquation_; }
+    bool isPaused() const { return isPaused_; }
+    bool isUserCamActive() const { return isUserCamActive_; }
 
-    void setMode(int mode) {
-        mode_ = mode;
-        universalEquation_.setMode(mode);
+    glm::mat4 getViewMatrix() const {
+        return glm::lookAt(position_, target_, up_);
     }
 
-    void setCurrentDimension(int dimension) {
-        currentDimension_ = dimension;
-        universalEquation_.setCurrentDimension(dimension);
+    glm::mat4 getProjectionMatrix() const {
+        return glm::perspective(glm::radians(fov_), aspectRatio_, nearPlane_, farPlane_);
     }
 
-    void setNurbMatter(float matter) {
+    const std::vector<UE::DimensionData>& getCache() const {
+        return universalEquation_.getDimensionData();
+    }
+
+    Logging::Logger& getLogger() const {
+        return Logging::Logger::get();
+    }
+
+    void setMode(int mode, const std::source_location& loc = std::source_location::current()) {
+        if (mode >= 1 && mode <= 9) {
+            mode_ = mode;
+            universalEquation_.setMode(mode);
+            LOG_DEBUG("AMOURANTH: Set mode to {}", loc, mode);
+        } else {
+            LOG_WARNING("AMOURANTH: Invalid mode {}, keeping mode {}", loc, mode, mode_);
+        }
+    }
+
+    void setCurrentDimension(int dimension, const std::source_location& loc = std::source_location::current()) {
+        if (dimension >= 1 && dimension <= universalEquation_.getMaxDimensions()) {
+            currentDimension_ = dimension;
+            universalEquation_.setCurrentDimension(dimension);
+            LOG_DEBUG("AMOURANTH: Set dimension to {}", loc, dimension);
+        } else {
+            LOG_WARNING("AMOURANTH: Invalid dimension {}, keeping dimension {}", loc, dimension, currentDimension_);
+        }
+    }
+
+    void setNurbMatter(float matter, const std::source_location& loc = std::source_location::current()) {
         nurbMatter_ = std::max(0.0f, matter);
-        universalEquation_.setNurbMatterStrength(matter);
-    }
-
-    void setNurbEnergy(float energy) {
-        nurbEnergy_ = std::max(0.0f, energy);
-        universalEquation_.setNurbEnergyStrength(energy);
-    }
-
-    void adjustNurbMatter(float delta) {
-        nurbMatter_ += delta;
-        nurbMatter_ = std::max(0.0f, nurbMatter_);
         universalEquation_.setNurbMatterStrength(nurbMatter_);
+        LOG_DEBUG("AMOURANTH: Set nurb matter to {:.3f}", loc, nurbMatter_);
     }
 
-    void adjustNurbEnergy(float delta) {
-        nurbEnergy_ += delta;
-        nurbEnergy_ = std::max(0.0f, nurbEnergy_);
+    void setNurbEnergy(float energy, const std::source_location& loc = std::source_location::current()) {
+        nurbEnergy_ = std::max(0.0f, energy);
         universalEquation_.setNurbEnergyStrength(nurbEnergy_);
+        LOG_DEBUG("AMOURANTH: Set nurb energy to {:.3f}", loc, nurbEnergy_);
     }
 
-    void update(float deltaTime) {
-        universalEquation_.evolveTimeStep(deltaTime);
+    void adjustNurbMatter(float delta, const std::source_location& loc = std::source_location::current()) {
+        nurbMatter_ = std::max(0.0f, nurbMatter_ + delta);
+        universalEquation_.setNurbMatterStrength(nurbMatter_);
+        LOG_DEBUG("AMOURANTH: Adjusted nurb matter by {:.3f} to {:.3f}", loc, delta, nurbMatter_);
+    }
+
+    void adjustNurbEnergy(float delta, const std::source_location& loc = std::source_location::current()) {
+        nurbEnergy_ = std::max(0.0f, nurbEnergy_ + delta);
+        universalEquation_.setNurbEnergyStrength(nurbEnergy_);
+        LOG_DEBUG("AMOURANTH: Adjusted nurb energy by {:.3f} to {:.3f}", loc, delta, nurbEnergy_);
+    }
+
+    void adjustInfluence(float delta, const std::source_location& loc = std::source_location::current()) {
+        long double current = universalEquation_.getInfluence();
+        long double newInfluence = std::max(0.0L, current + static_cast<long double>(delta));
+        universalEquation_.setInfluence(newInfluence);
+        LOG_DEBUG("AMOURANTH: Adjusted influence by {:.3f} to {:.3f}", loc, delta, static_cast<float>(newInfluence));
+    }
+
+    void updateZoom(bool zoomIn, const std::source_location& loc = std::source_location::current()) {
+        const float zoomSpeed = 5.0f;
+        fov_ += zoomIn ? -zoomSpeed : zoomSpeed;
+        fov_ = std::clamp(fov_, 10.0f, 120.0f);
+        LOG_DEBUG("AMOURANTH: {} zoom, fov set to {:.3f}", loc, zoomIn ? "Increased" : "Decreased", fov_);
+    }
+
+    void togglePause(const std::source_location& loc = std::source_location::current()) {
+        isPaused_ = !isPaused_;
+        LOG_DEBUG("AMOURANTH: Simulation {}", loc, isPaused_ ? "paused" : "resumed");
+    }
+
+    void toggleUserCam(const std::source_location& loc = std::source_location::current()) {
+        isUserCamActive_ = !isUserCamActive_;
+        LOG_DEBUG("AMOURANTH: User camera {}", loc, isUserCamActive_ ? "activated" : "deactivated");
+    }
+
+    void moveUserCam(float dx, float dy, float dz, const std::source_location& loc = std::source_location::current()) {
+        if (!isUserCamActive_) {
+            LOG_WARNING("AMOURANTH: Attempted to move user camera while inactive", loc);
+            return;
+        }
+
+        // Update position based on input
+        glm::vec3 forward = glm::normalize(target_ - position_);
+        glm::vec3 right = glm::normalize(glm::cross(forward, up_));
+        glm::vec3 moveDir = right * dx + up_ * dy + forward * dz;
+        position_ += moveDir * 0.1f;
+
+        // Update target to maintain view direction
+        target_ = position_ + forward;
+
+        LOG_DEBUG("AMOURANTH: Moved user camera to position {}", loc, position_);
+    }
+
+    void update(float deltaTime, const std::source_location& loc = std::source_location::current()) {
+        if (!isPaused_) {
+            universalEquation_.evolveTimeStep(deltaTime);
+            LOG_DEBUG("AMOURANTH: Updated simulation with deltaTime {:.3f}", loc, deltaTime);
+        }
+        aspectRatio_ = static_cast<float>(navigator_->getWidth()) / navigator_->getHeight();
     }
 
 private:
@@ -389,6 +489,15 @@ private:
     float nurbMatter_;
     float nurbEnergy_;
     UniversalEquation universalEquation_;
+    glm::vec3 position_;
+    glm::vec3 target_;
+    glm::vec3 up_;
+    float fov_;
+    float aspectRatio_;
+    float nearPlane_;
+    float farPlane_;
+    bool isPaused_;
+    bool isUserCamActive_;
 };
 
 #endif // UE_INIT_HPP

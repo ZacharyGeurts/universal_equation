@@ -2,10 +2,11 @@
 #include <stdexcept>
 #include <cstring>
 
-VulkanBufferManager::VulkanBufferManager(VkDevice device, VkPhysicalDevice physicalDevice, VulkanContext& context)
-    : device_(device), physicalDevice_(physicalDevice), vertexBuffer_(VK_NULL_HANDLE),
-      vertexBufferMemory_(VK_NULL_HANDLE), indexBuffer_(VK_NULL_HANDLE), indexBufferMemory_(VK_NULL_HANDLE),
-      uniformBuffers_(), uniformBuffersMemory_(), indexCount_(0), context_(context) {}
+VulkanBufferManager::VulkanBufferManager(VulkanContext& context)
+    : context_(context), device_(context.device), physicalDevice_(context.physicalDevice),
+      vertexBuffer_(VK_NULL_HANDLE), vertexBufferMemory_(VK_NULL_HANDLE),
+      indexBuffer_(VK_NULL_HANDLE), indexBufferMemory_(VK_NULL_HANDLE),
+      uniformBuffers_(), uniformBuffersMemory_(), indexCount_(0) {}
 
 VulkanBufferManager::~VulkanBufferManager() {
     cleanupBuffers();

@@ -6,17 +6,56 @@
 #include <algorithm>
 #include <glm/gtc/matrix_transform.hpp>
 
-VulkanBufferManager::VulkanBufferManager(VkDevice device, VkPhysicalDevice physicalDevice, VulkanContext& context)
-    : device_(device), physicalDevice_(physicalDevice), context_(context), vertexBuffer_(VK_NULL_HANDLE), vertexBufferMemory_(VK_NULL_HANDLE),
-      indexBuffer_(VK_NULL_HANDLE), indexBufferMemory_(VK_NULL_HANDLE) {}
+VulkanBufferManager::VulkanBufferManager(VulkanContext& context)
+    : context_(context), device_(context.device), physicalDevice_(context.physicalDevice),
+      vertexBuffer_(VK_NULL_HANDLE), vertexBufferMemory_(VK_NULL_HANDLE),
+      indexBuffer_(VK_NULL_HANDLE), indexBufferMemory_(VK_NULL_HANDLE),
+      uniformBuffers_(), uniformBuffersMemory_(), indexCount_(0) {}
 
 VulkanBufferManager::~VulkanBufferManager() {
-    if (vertexBuffer_ != VK_NULL_HANDLE) vkDestroyBuffer(device_, vertexBuffer_, nullptr);
-    if (vertexBufferMemory_ != VK_NULL_HANDLE) vkFreeMemory(device_, vertexBufferMemory_, nullptr);
-    if (indexBuffer_ != VK_NULL_HANDLE) vkDestroyBuffer(device_, indexBuffer_, nullptr);
-    if (indexBufferMemory_ != VK_NULL_HANDLE) vkFreeMemory(device_, indexBufferMemory_, nullptr);
-    for (auto buffer : uniformBuffers_) vkDestroyBuffer(device_, buffer, nullptr);
-    for (auto memory : uniformBuffersMemory_) vkFreeMemory(device_, memory, nullptr);
+    cleanupBuffers();
+}
+
+void VulkanBufferManager::initializeBuffers(std::span<const glm::vec3> vertices, std::span<const uint32_t> indices) {
+    // Create vertex buffer
+    VkDeviceSize vertexSize = sizeof(glm::vec3) * vertices.size();
+    VkBuffer stagingVertexBuffer;
+    VkDeviceMemory stagingVertexBufferMemory;
+    VulkanInitializer::createBuffer(device_, physicalDevice_, vertexSize,
+                                   VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                                   VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                                   stagingVertexBuffer, stagingVertexBufferMemory);
+    void* data;
+    vkMapMemory(device_, stagingVertexBufferMemory, 0, vertexSize, 0, &data);
+    memcpy(data, vertices.data(), vertexSize);
+    vkUnmapMemory(device_, stagingVertexBufferMemory);
+    VulkanInitializer::createBuffer(device_, physicalDevice_, vertexSize,
+                                   VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                                   VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                                   vertexBuffer_, vertexBufferMemory_);
+    copyBuffer(stagingVertexBuffer, vertexBuffer_, vertexSize);
+    vkDestroyBuffer(device_, stagingVertexBuffer, nullptr);
+    vkFreeMemory(device_, stagingVertexBufferMemory, nullptr);
+
+    // Create index buffer
+    indexCount_ = static_cast<uint32_t>(indices.size());
+    VkDeviceSize indexSize = sizeof(uint32_t) * indices.size();
+    VkBuffer stagingIndexBuffer;
+    VkDeviceMemory stagingIndexBufferMemory;
+    VulkanInitializer::createBuffer(device_, physicalDevice_, indexSize,
+                                   VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                                   VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                                   stagingIndexBuffer, stagingIndexBufferMemory);
+    vkMapMemory(device_, stagingIndexBufferMemory, 0, indexSize, 0, &data);
+    memcpy(data, indices.data(), indexSize);
+    vkUnmapMemory(device_, stagingIndexBufferMemory);
+    VulkanInitializer::createBuffer(device_, physicalDevice_, indexSize,
+                                   VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                                   VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                                   indexBuffer_, indexBufferMemory_);
+    copyBuffer(stagingIndexBuffer, indexBuffer_, indexSize);
+    vkDestroyBuffer(device_, stagingIndexBuffer, nullptr);
+    vkFreeMemory(device_, stagingIndexBufferMemory, nullptr);
 }
 
 void VulkanBufferManager::createVertexBuffer(std::span<const glm::vec3> vertices) {
@@ -74,11 +113,42 @@ void VulkanBufferManager::createUniformBuffers(uint32_t swapchainImageCount) {
     }
 }
 
+void VulkanBufferManager::cleanupBuffers() {
+    if (vertexBuffer_ != VK_NULL_HANDLE) {
+        vkDestroyBuffer(device_, vertexBuffer_, nullptr);
+        vertexBuffer_ = VK_NULL_HANDLE;
+    }
+    if (vertexBufferMemory_ != VK_NULL_HANDLE) {
+        vkFreeMemory(device_, vertexBufferMemory_, nullptr);
+        vertexBufferMemory_ = VK_NULL_HANDLE;
+    }
+    if (indexBuffer_ != VK_NULL_HANDLE) {
+        vkDestroyBuffer(device_, indexBuffer_, nullptr);
+        indexBuffer_ = VK_NULL_HANDLE;
+    }
+    if (indexBufferMemory_ != VK_NULL_HANDLE) {
+        vkFreeMemory(device_, indexBufferMemory_, nullptr);
+        indexBufferMemory_ = VK_NULL_HANDLE;
+    }
+    for (auto buffer : uniformBuffers_) {
+        if (buffer != VK_NULL_HANDLE) {
+            vkDestroyBuffer(device_, buffer, nullptr);
+        }
+    }
+    uniformBuffers_.clear();
+    for (auto memory : uniformBuffersMemory_) {
+        if (memory != VK_NULL_HANDLE) {
+            vkFreeMemory(device_, memory, nullptr);
+        }
+    }
+    uniformBuffersMemory_.clear();
+}
+
 void VulkanBufferManager::copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size) {
     VkCommandBufferAllocateInfo allocInfo{
         .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
         .pNext = nullptr,
-        .commandPool = device_, // Assuming command pool is accessible; adjust if stored elsewhere
+        .commandPool = context_.commandPool,
         .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
         .commandBufferCount = 1
     };
@@ -91,7 +161,11 @@ void VulkanBufferManager::copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkD
         .pInheritanceInfo = nullptr
     };
     if (vkBeginCommandBuffer(commandBuffer, &beginInfo) != VK_SUCCESS) throw std::runtime_error("Failed to begin command buffer");
-    VkBufferCopy copyRegion{.size = size};
+    VkBufferCopy copyRegion{
+        .srcOffset = 0,
+        .dstOffset = 0,
+        .size = size
+    };
     vkCmdCopyBuffer(commandBuffer, srcBuffer, dstBuffer, 1, &copyRegion);
     if (vkEndCommandBuffer(commandBuffer) != VK_SUCCESS) throw std::runtime_error("Failed to end command buffer");
     VkSubmitInfo submitInfo{
@@ -105,11 +179,9 @@ void VulkanBufferManager::copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkD
         .signalSemaphoreCount = 0,
         .pSignalSemaphores = nullptr
     };
-    VkQueue queue;
-    vkGetDeviceQueue(device_, 0, 0, &queue); // Adjust queue index if needed
-    if (vkQueueSubmit(queue, 1, &submitInfo, VK_NULL_HANDLE) != VK_SUCCESS) throw std::runtime_error("Failed to submit copy command");
-    vkQueueWaitIdle(queue);
-    vkFreeCommandBuffers(device_, device_, 1, &commandBuffer); // Adjust command pool if stored elsewhere
+    if (vkQueueSubmit(context_.graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE) != VK_SUCCESS) throw std::runtime_error("Failed to submit copy command");
+    vkQueueWaitIdle(context_.graphicsQueue);
+    vkFreeCommandBuffers(device_, context_.commandPool, 1, &commandBuffer);
 }
 
 VkBuffer VulkanBufferManager::getVertexBuffer() const { return vertexBuffer_; }
@@ -230,7 +302,7 @@ VulkanPipelineManager::~VulkanPipelineManager() {
 }
 
 void VulkanPipelineManager::createRenderPass() {
-    VulkanInitializer::createRenderPass(context_.device, renderPass_, swapchainManager_->getSwapchainImageFormat());
+    VulkanInitializer::createRenderPass(context_.device, renderPass_, context_.swapchainImageFormat_);
 }
 
 void VulkanPipelineManager::createPipelineLayout() {
@@ -271,9 +343,8 @@ VulkanRenderer::VulkanRenderer(VkInstance instance, VkSurfaceKHR surface, std::s
     VulkanInitializer::initializeVulkan(context_, width, height);
     swapchainManager_ = std::make_unique<VulkanSwapchainManager>(context_, surface);
     swapchainManager_->initializeSwapchain(width, height);
-    bufferManager_ = std::make_unique<VulkanBufferManager>(context_.device, context_.physicalDevice);
-    bufferManager_->createVertexBuffer(vertices);
-    bufferManager_->createIndexBuffer(indices);
+    bufferManager_ = std::make_unique<VulkanBufferManager>(context_);
+    bufferManager_->initializeBuffers(vertices, indices);
     bufferManager_->createUniformBuffers(swapchainManager_->getSwapchainImageViews().size());
     pipelineManager_ = std::make_unique<VulkanPipelineManager>(context_, width, height);
     VulkanInitializer::createStorageImage(context_.device, context_.physicalDevice, context_.storageImage,
@@ -433,7 +504,7 @@ void VulkanRenderer::handleResize(int width, int height) {
     createCommandBuffers();
 }
 
-void VulkanInitializer::initializeVulkan(VulkanContext& context, int width, int height) {
+void VulkanInitializer::initializeVulkan(VulkanContext& context, [[maybe_unused]] int width, [[maybe_unused]] int height) {
     uint32_t deviceCount = 0;
     vkEnumeratePhysicalDevices(context.instance, &deviceCount, nullptr);
     std::vector<VkPhysicalDevice> devices(deviceCount);
@@ -530,6 +601,8 @@ void VulkanInitializer::createSwapchain(VulkanContext& context) {
         .oldSwapchain = VK_NULL_HANDLE
     };
     if (vkCreateSwapchainKHR(context.device, &createInfo, nullptr, &context.swapchain) != VK_SUCCESS) throw std::runtime_error("Failed to create swapchain");
+    context.swapchainImageFormat_ = surfaceFormat.format;
+    context.swapchainExtent_ = extent;
 }
 
 void VulkanInitializer::createImageViews(VulkanContext& context) {
@@ -545,7 +618,7 @@ void VulkanInitializer::createImageViews(VulkanContext& context) {
             .flags = 0,
             .image = context.swapchainImages[i],
             .viewType = VK_IMAGE_VIEW_TYPE_2D,
-            .format = VK_FORMAT_B8G8R8A8_SRGB,
+            .format = context.swapchainImageFormat_,
             .components = {VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY},
             .subresourceRange = {.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, .baseMipLevel = 0, .levelCount = 1, .baseArrayLayer = 0, .layerCount = 1}
         };
@@ -638,7 +711,17 @@ void VulkanInitializer::createAccelerationStructures(VulkanContext& context, std
     VkAccelerationStructureBuildRangeInfoKHR* rangeInfos = &rangeInfo;
     vkCmdBuildAccelerationStructuresKHR(commandBuffer, 1, &buildInfo, &rangeInfos);
     if (vkEndCommandBuffer(commandBuffer) != VK_SUCCESS) throw std::runtime_error("Failed to end command buffer");
-    VkSubmitInfo submitInfo{.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO, .pNext = nullptr, .commandBufferCount = 1, .pCommandBuffers = &commandBuffer};
+    VkSubmitInfo submitInfo{
+        .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+        .pNext = nullptr,
+        .waitSemaphoreCount = 0,
+        .pWaitSemaphores = nullptr,
+        .pWaitDstStageMask = nullptr,
+        .commandBufferCount = 1,
+        .pCommandBuffers = &commandBuffer,
+        .signalSemaphoreCount = 0,
+        .pSignalSemaphores = nullptr
+    };
     if (vkQueueSubmit(context.graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE) != VK_SUCCESS) throw std::runtime_error("Failed to submit AS build command");
     vkQueueWaitIdle(context.graphicsQueue);
     vkFreeCommandBuffers(context.device, context.commandPool, 1, &commandBuffer);
@@ -1049,6 +1132,7 @@ void VulkanInitializer::createGraphicsPipeline(VkDevice device, VkRenderPass ren
         .pStages = shaderStages,
         .pVertexInputState = &vertexInputInfo,
         .pInputAssemblyState = &inputAssembly,
+        .pTessellationState = nullptr,
         .pViewportState = &viewportState,
         .pRasterizationState = &rasterizer,
         .pMultisampleState = &multisampling,

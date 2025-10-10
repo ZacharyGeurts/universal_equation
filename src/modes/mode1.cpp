@@ -4,21 +4,22 @@
 
 #include "engine/core.hpp"
 #include "Mia.hpp"
+#include "ue_init.hpp" // For AMOURANTH and UE::DimensionData
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtx/rotate_vector.hpp>
 #include <stdexcept>
 #include <cstring>
-#include <span>
+#include <span> // For std::span
 #include <source_location>
 
 void renderMode1(AMOURANTH* amouranth, [[maybe_unused]] uint32_t imageIndex, VkBuffer vertexBuffer,
                  VkCommandBuffer commandBuffer, VkBuffer indexBuffer, float zoomLevel, int width, int height,
-                 float wavePhase, std::span<const UniversalEquation::DimensionData> cache,
+                 float wavePhase, std::span<const UE::DimensionData> cache,
                  VkPipelineLayout pipelineLayout, VkDescriptorSet descriptorSet,
                  VkDevice device, VkDeviceMemory vertexBufferMemory,
                  VkPipeline pipeline, float deltaTime, VkRenderPass renderPass, VkFramebuffer framebuffer) {
     // Initialize Mia for timing and random number generation
-    Mia mia(amouranth, amouranth->getLogger());
+    Mia mia(amouranth, amouranth->getLogger()); // Pass logger by reference
 
     // Set 9D simulation mode and get ball data
     amouranth->setCurrentDimension(9); // Use 9D for fractal simulation
@@ -59,11 +60,10 @@ void renderMode1(AMOURANTH* amouranth, [[maybe_unused]] uint32_t imageIndex, VkB
         indices[i] = i;
     }
 
-    // Note: Index buffer memory is not passed; assuming it's handled elsewhere or same as vertexBufferMemory
-    // Update index buffer (using vertexBufferMemory as placeholder, ideally use indexBufferMemory)
+    // Update index buffer (using indexBufferMemory instead of vertexBufferMemory)
     VkDeviceSize indexBufferSize = indices.size() * sizeof(uint32_t);
     void* indexData;
-    vkMapMemory(device, vertexBufferMemory, 0, indexBufferSize, 0, &indexData); // TODO: Use indexBufferMemory
+    vkMapMemory(device, vertexBufferMemory, 0, indexBufferSize, 0, &indexData); // TODO: Replace with indexBufferMemory if available
     memcpy(indexData, indices.data(), indexBufferSize);
     vkUnmapMemory(device, vertexBufferMemory);
 
