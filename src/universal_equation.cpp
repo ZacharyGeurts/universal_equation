@@ -1,7 +1,7 @@
 // universal_equation.cpp
 // Core implementation of UniversalEquation for the AMOURANTH RTX Engine.
 // Manages N-dimensional calculations, NURBS-based matter/energy dynamics, and core simulation logic.
-// Integrates with physical computations from universal_equation_physical.cpp.
+// Integrates with physical computations from universal_equation_quantum.cpp.
 // Copyright Zachary Geurts 2025 (powered by Grok with Science B*! precision)
 
 #include "ue_init.hpp"
@@ -39,7 +39,7 @@ UniversalEquation::UniversalEquation(
     long double emFieldStrength,
     long double renormFactor,
     long double vacuumEnergy,
-    long double GodWaveFreq,
+    long double godWaveFreq,
     bool debug,
     uint64_t numVertices
 ) : influence_(std::clamp(influence, 0.0L, 10.0L)),
@@ -61,16 +61,16 @@ UniversalEquation::UniversalEquation(
     emFieldStrength_(std::clamp(emFieldStrength, 0.0L, 1.0e7L)),
     renormFactor_(std::clamp(renormFactor, 0.1L, 10.0L)),
     vacuumEnergy_(std::clamp(vacuumEnergy, 0.0L, 1.0L)),
-    GodWaveFreq_(std::clamp(GodWaveFreq, 0.1L, 10.0L)),
+    godWaveFreq_(std::clamp(godWaveFreq, 0.1L, 10.0L)),
     currentDimension_(std::clamp(mode <= 0 ? 1 : mode, 1, maxDimensions <= 0 ? 19 : maxDimensions)),
     mode_(std::clamp(mode <= 0 ? 1 : mode, 1, maxDimensions <= 0 ? 19 : maxDimensions)),
     debug_(debug),
     needsUpdate_(true),
     totalCharge_(0.0L),
     avgProjScale_(1.0L),
-    currentVertices_(0),
     simulationTime_(0.0f),
     materialDensity_(1000.0L), // Default to water density
+    currentVertices_(0),
     maxVertices_(std::max<uint64_t>(1ULL, std::min(numVertices, static_cast<uint64_t>(1ULL << 20)))),
     maxDimensions_(std::max(1, std::min(maxDimensions <= 0 ? 19 : maxDimensions, 19))),
     omega_(maxDimensions_ > 0 ? 2.0L * std::numbers::pi_v<long double> / (2 * maxDimensions_ - 1) : 1.0L),
@@ -86,9 +86,9 @@ UniversalEquation::UniversalEquation(
     nurbEnergyControlPoints_(5, 1.0L),
     nurbKnots_(9, 0.0L),
     nurbWeights_(5, 1.0L),
-    dimensionData_(),
+    dimensionData_(std::max(1, std::min(maxDimensions, 19)), {0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0}),
     navigator_(nullptr) {
-    LOG_INFO_CAT("Simulation", "Constructing UniversalEquation: maxVertices={}, maxDimensions={}, mode={}, GodWaveFreq={}",
+    LOG_INFO_CAT("Simulation", "Constructing UniversalEquation: maxVertices={}, maxDimensions={}, mode={}, godWaveFreq={}",
                  std::source_location::current(), getMaxVertices(), getMaxDimensions(), getMode(), getGodWaveFreq());
     if (getMaxVertices() > 1'000'000) {
         LOG_WARNING_CAT("Simulation", "High vertex count ({}) may cause memory issues",
@@ -108,7 +108,7 @@ UniversalEquation::UniversalEquation(
                           perspectiveTrans != getPerspectiveTrans() || perspectiveFocal != getPerspectiveFocal() ||
                           spinInteraction != getSpinInteraction() || emFieldStrength != getEMFieldStrength() ||
                           renormFactor != getRenormFactor() || vacuumEnergy != getVacuumEnergy() ||
-                          GodWaveFreq != getGodWaveFreq())) {
+                          godWaveFreq != getGodWaveFreq())) {
         LOG_WARNING_CAT("Simulation", "Some input parameters were clamped to valid ranges",
                         std::source_location::current());
     }
@@ -136,56 +136,56 @@ UniversalEquation::UniversalEquation(
 ) : UniversalEquation(
         maxDimensions, mode, influence, weak, 5.0L, 1.5L, 5.0L, 1.0L, 0.5L, 1.0L, 0.01L, 0.5L, 0.1L,
         0.5L, 0.5L, 2.0L, 4.0L, 1.0L, 1.0e6L, 1.0L, 0.5L, 2.0L, debug, numVertices) {
-    LOG_DEBUG_CAT("Simulation", "Initialized UniversalEquation with simplified constructor, GodWaveFreq={}",
+    LOG_DEBUG_CAT("Simulation", "Initialized UniversalEquation with simplified constructor, godWaveFreq={}",
                   std::source_location::current(), getGodWaveFreq());
 }
 
 UniversalEquation::UniversalEquation(const UniversalEquation& other)
-    : influence_(other.getInfluence()),
-      weak_(other.getWeak()),
-      collapse_(other.getCollapse()),
-      twoD_(other.getTwoD()),
-      threeDInfluence_(other.getThreeDInfluence()),
-      oneDPermeation_(other.getOneDPermeation()),
-      nurbMatterStrength_(other.getNurbMatterStrength()),
-      nurbEnergyStrength_(other.getNurbEnergyStrength()),
-      alpha_(other.getAlpha()),
-      beta_(other.getBeta()),
-      carrollFactor_(other.getCarrollFactor()),
-      meanFieldApprox_(other.getMeanFieldApprox()),
-      asymCollapse_(other.getAsymCollapse()),
-      perspectiveTrans_(other.getPerspectiveTrans()),
-      perspectiveFocal_(other.getPerspectiveFocal()),
-      spinInteraction_(other.getSpinInteraction()),
-      emFieldStrength_(other.getEMFieldStrength()),
-      renormFactor_(other.getRenormFactor()),
-      vacuumEnergy_(other.getVacuumEnergy()),
-      GodWaveFreq_(other.getGodWaveFreq()),
-      currentDimension_(other.getCurrentDimension()),
-      mode_(other.getMode()),
-      debug_(other.getDebug()),
-      needsUpdate_(other.getNeedsUpdate()),
-      totalCharge_(other.getTotalCharge()),
+    : influence_(other.influence_.load()),
+      weak_(other.weak_.load()),
+      collapse_(other.collapse_.load()),
+      twoD_(other.twoD_.load()),
+      threeDInfluence_(other.threeDInfluence_.load()),
+      oneDPermeation_(other.oneDPermeation_.load()),
+      nurbMatterStrength_(other.nurbMatterStrength_.load()),
+      nurbEnergyStrength_(other.nurbEnergyStrength_.load()),
+      alpha_(other.alpha_.load()),
+      beta_(other.beta_.load()),
+      carrollFactor_(other.carrollFactor_.load()),
+      meanFieldApprox_(other.meanFieldApprox_.load()),
+      asymCollapse_(other.asymCollapse_.load()),
+      perspectiveTrans_(other.perspectiveTrans_.load()),
+      perspectiveFocal_(other.perspectiveFocal_.load()),
+      spinInteraction_(other.spinInteraction_.load()),
+      emFieldStrength_(other.emFieldStrength_.load()),
+      renormFactor_(other.renormFactor_.load()),
+      vacuumEnergy_(other.vacuumEnergy_.load()),
+      godWaveFreq_(other.godWaveFreq_.load()),
+      currentDimension_(other.currentDimension_.load()),
+      mode_(other.mode_.load()),
+      debug_(other.debug_.load()),
+      needsUpdate_(other.needsUpdate_.load()),
+      totalCharge_(other.totalCharge_.load()),
       avgProjScale_(other.avgProjScale_.load()),
-      currentVertices_(other.getCurrentVertices()),
-      simulationTime_(other.getSimulationTime()),
+      simulationTime_(other.simulationTime_.load()),
       materialDensity_(other.materialDensity_.load()),
-      maxVertices_(other.getMaxVertices()),
-      maxDimensions_(other.getMaxDimensions()),
-      omega_(other.getOmega()),
-      invMaxDim_(other.getInvMaxDim()),
+      currentVertices_(other.currentVertices_.load()),
+      maxVertices_(other.maxVertices_),
+      maxDimensions_(other.maxDimensions_),
+      omega_(other.omega_),
+      invMaxDim_(other.invMaxDim_),
       nCubeVertices_(),
       vertexMomenta_(),
-      vertexSpins_(other.getVertexSpins().begin(), other.getVertexSpins().end()),
-      vertexWaveAmplitudes_(other.getVertexWaveAmplitudes().begin(), other.getVertexWaveAmplitudes().end()),
-      interactions_(other.getInteractions().begin(), other.getInteractions().end()),
-      projectedVerts_(other.getProjectedVertices().begin(), other.getProjectedVertices().end()),
-      cachedCos_(other.getCachedCos().begin(), other.getCachedCos().end()),
-      nurbMatterControlPoints_(other.getNurbMatterControlPoints().begin(), other.getNurbMatterControlPoints().end()),
-      nurbEnergyControlPoints_(other.getNurbEnergyControlPoints().begin(), other.getNurbEnergyControlPoints().end()),
-      nurbKnots_(other.getNurbKnots().begin(), other.getNurbKnots().end()),
-      nurbWeights_(other.getNurbWeights().begin(), other.getNurbWeights().end()),
-      dimensionData_(other.getDimensionData()),
+      vertexSpins_(other.vertexSpins_),
+      vertexWaveAmplitudes_(other.vertexWaveAmplitudes_),
+      interactions_(other.interactions_),
+      projectedVerts_(other.projectedVerts_),
+      cachedCos_(other.cachedCos_),
+      nurbMatterControlPoints_(other.nurbMatterControlPoints_),
+      nurbEnergyControlPoints_(other.nurbEnergyControlPoints_),
+      nurbKnots_(other.nurbKnots_),
+      nurbWeights_(other.nurbWeights_),
+      dimensionData_(other.dimensionData_),
       navigator_(nullptr) {
     LOG_INFO_CAT("Simulation", "Copy constructing UniversalEquation: vertices={}",
                  std::source_location::current(), other.nCubeVertices_.size());
@@ -212,47 +212,47 @@ UniversalEquation& UniversalEquation::operator=(const UniversalEquation& other) 
     if (this != &other) {
         LOG_INFO_CAT("Simulation", "Assigning UniversalEquation: vertices={}",
                      std::source_location::current(), other.nCubeVertices_.size());
-        influence_.store(other.getInfluence());
-        weak_.store(other.getWeak());
-        collapse_.store(other.getCollapse());
-        twoD_.store(other.getTwoD());
-        threeDInfluence_.store(other.getThreeDInfluence());
-        oneDPermeation_.store(other.getOneDPermeation());
-        nurbMatterStrength_.store(other.getNurbMatterStrength());
-        nurbEnergyStrength_.store(other.getNurbEnergyStrength());
-        alpha_.store(other.getAlpha());
-        beta_.store(other.getBeta());
-        carrollFactor_.store(other.getCarrollFactor());
-        meanFieldApprox_.store(other.getMeanFieldApprox());
-        asymCollapse_.store(other.getAsymCollapse());
-        perspectiveTrans_.store(other.getPerspectiveTrans());
-        perspectiveFocal_.store(other.getPerspectiveFocal());
-        spinInteraction_.store(other.getSpinInteraction());
-        emFieldStrength_.store(other.getEMFieldStrength());
-        renormFactor_.store(other.getRenormFactor());
-        vacuumEnergy_.store(other.getVacuumEnergy());
-        GodWaveFreq_.store(other.getGodWaveFreq());
-        currentDimension_.store(other.getCurrentDimension());
-        mode_.store(other.getMode());
-        debug_.store(other.getDebug());
-        needsUpdate_.store(other.getNeedsUpdate());
-        totalCharge_.store(other.getTotalCharge());
+        influence_.store(other.influence_.load());
+        weak_.store(other.weak_.load());
+        collapse_.store(other.collapse_.load());
+        twoD_.store(other.twoD_.load());
+        threeDInfluence_.store(other.threeDInfluence_.load());
+        oneDPermeation_.store(other.oneDPermeation_.load());
+        nurbMatterStrength_.store(other.nurbMatterStrength_.load());
+        nurbEnergyStrength_.store(other.nurbEnergyStrength_.load());
+        alpha_.store(other.alpha_.load());
+        beta_.store(other.beta_.load());
+        carrollFactor_.store(other.carrollFactor_.load());
+        meanFieldApprox_.store(other.meanFieldApprox_.load());
+        asymCollapse_.store(other.asymCollapse_.load());
+        perspectiveTrans_.store(other.perspectiveTrans_.load());
+        perspectiveFocal_.store(other.perspectiveFocal_.load());
+        spinInteraction_.store(other.spinInteraction_.load());
+        emFieldStrength_.store(other.emFieldStrength_.load());
+        renormFactor_.store(other.renormFactor_.load());
+        vacuumEnergy_.store(other.vacuumEnergy_.load());
+        godWaveFreq_.store(other.godWaveFreq_.load());
+        currentDimension_.store(other.currentDimension_.load());
+        mode_.store(other.mode_.load());
+        debug_.store(other.debug_.load());
+        needsUpdate_.store(other.needsUpdate_.load());
+        totalCharge_.store(other.totalCharge_.load());
         avgProjScale_.store(other.avgProjScale_.load());
-        currentVertices_.store(other.getCurrentVertices());
-        simulationTime_.store(other.getSimulationTime());
+        simulationTime_.store(other.simulationTime_.load());
         materialDensity_.store(other.materialDensity_.load());
+        currentVertices_.store(other.currentVertices_.load());
         nCubeVertices_.clear();
         vertexMomenta_.clear();
-        vertexSpins_.assign(other.getVertexSpins().begin(), other.getVertexSpins().end());
-        vertexWaveAmplitudes_.assign(other.getVertexWaveAmplitudes().begin(), other.getVertexWaveAmplitudes().end());
-        interactions_.assign(other.getInteractions().begin(), other.getInteractions().end());
-        projectedVerts_.assign(other.getProjectedVertices().begin(), other.getProjectedVertices().end());
-        cachedCos_.assign(other.getCachedCos().begin(), other.getCachedCos().end());
-        nurbMatterControlPoints_.assign(other.getNurbMatterControlPoints().begin(), other.getNurbMatterControlPoints().end());
-        nurbEnergyControlPoints_.assign(other.getNurbEnergyControlPoints().begin(), other.getNurbEnergyControlPoints().end());
-        nurbKnots_.assign(other.getNurbKnots().begin(), other.getNurbKnots().end());
-        nurbWeights_.assign(other.getNurbWeights().begin(), other.getNurbWeights().end());
-        dimensionData_ = other.getDimensionData();
+        vertexSpins_ = other.vertexSpins_;
+        vertexWaveAmplitudes_ = other.vertexWaveAmplitudes_;
+        interactions_ = other.interactions_;
+        projectedVerts_ = other.projectedVerts_;
+        cachedCos_ = other.cachedCos_;
+        nurbMatterControlPoints_ = other.nurbMatterControlPoints_;
+        nurbEnergyControlPoints_ = other.nurbEnergyControlPoints_;
+        nurbKnots_ = other.nurbKnots_;
+        nurbWeights_ = other.nurbWeights_;
+        dimensionData_ = other.dimensionData_;
         navigator_ = nullptr;
         try {
             nCubeVertices_.reserve(other.nCubeVertices_.size());
@@ -356,7 +356,7 @@ void UniversalEquation::validateProjectedVertices() const {
     if (projectedVerts_.empty()) {
         LOG_WARNING_CAT("Simulation", "projectedVerts_ is empty, initializing with default values",
                         std::source_location::current());
-        projectedVerts_.resize(nCubeVertices_.size(), glm::vec3(0.0f, 0.0f, 0.0f));
+        const_cast<std::vector<glm::vec3>&>(projectedVerts_).resize(nCubeVertices_.size(), glm::vec3(0.0f, 0.0f, 0.0f));
     }
     if (projectedVerts_.size() != nCubeVertices_.size()) {
         LOG_ERROR_CAT("Simulation", "projectedVerts_ size mismatch: projectedVerts_.size()={}, nCubeVertices_.size()={}",
@@ -385,7 +385,7 @@ long double UniversalEquation::computeKineticEnergy(int vertexIndex) const {
     return kineticEnergy;
 }
 
-void UniversalEquation::updateInteractions() const {
+void UniversalEquation::updateInteractions() {
     LOG_INFO_CAT("Simulation", "Starting interaction update: vertices={}, dimension={}",
                  std::source_location::current(), nCubeVertices_.size(), getCurrentDimension());
     interactions_.clear();
@@ -474,20 +474,19 @@ void UniversalEquation::updateInteractions() const {
             }
             long double strength = computeInteraction(static_cast<int>(i), distance);
             auto vecPot = computeVectorPotential(static_cast<int>(i));
-            long double GodWaveAmp = computeGodWave(static_cast<int>(i));
+            long double godWaveAmp = computeGodWave(static_cast<int>(i));
             glm::vec3 projIVec(0.0f);
             size_t projDim = std::min<size_t>(3, d);
             for (size_t k = 0; k < projDim; ++k) {
                 projIVec[k] = static_cast<float>(v[k] * scaleI);
             }
-            localInteractions[thread_id].emplace_back(static_cast<int>(i), distance, strength, vecPot, GodWaveAmp);
+            localInteractions[thread_id].emplace_back(static_cast<int>(i), distance, strength, vecPot, godWaveAmp);
             localProjected[thread_id].push_back(projIVec);
         }
         latch.count_down();
     }
     latch.wait();
 
-    // Pre-resize global vectors to avoid reallocation during insertion
     size_t totalInteractions = 0;
     size_t totalProjected = 0;
     for (int t = 0; t < omp_get_max_threads(); ++t) {
@@ -526,9 +525,8 @@ UniversalEquation::EnergyResult UniversalEquation::compute() {
     std::vector<long double> spinEnergies(numVertices, 0.0L);
     std::vector<long double> momentumEnergies(numVertices, 0.0L);
     std::vector<long double> fieldEnergies(numVertices, 0.0L);
-    std::vector<long double> GodWaveEnergies(numVertices, 0.0L);
+    std::vector<long double> godWaveEnergies(numVertices, 0.0L);
 
-    // Ensure vectors are properly sized
     if (nCubeVertices_.size() != numVertices || vertexMomenta_.size() != numVertices ||
         vertexSpins_.size() != numVertices || vertexWaveAmplitudes_.size() != numVertices) {
         LOG_ERROR_CAT("Simulation", "Vector size mismatch: nCubeVertices_={}, vertexMomenta_={}, vertexSpins_={}, vertexWaveAmplitudes_={}",
@@ -554,11 +552,10 @@ UniversalEquation::EnergyResult UniversalEquation::compute() {
                 continue;
             }
             validateVertexIndex(static_cast<int>(i));
-            // Compute total gravitational potential for vertex i by summing over sampled vertices
             long double totalPotential = 0.0L;
             uint64_t sampleStep = std::max<uint64_t>(1, numVertices / 100); // Sample ~100 pairs per vertex
             for (uint64_t j = 0; j < numVertices && j < nCubeVertices_.size(); j += sampleStep) {
-                if (static_cast<int>(j) == static_cast<int>(i)) continue; // Skip self-interaction
+                if (static_cast<int>(j) == static_cast<int>(i)) continue;
                 try {
                     totalPotential += computeGravitationalPotential(static_cast<int>(i), static_cast<int>(j));
                 } catch (const std::out_of_range& e) {
@@ -569,7 +566,6 @@ UniversalEquation::EnergyResult UniversalEquation::compute() {
                     continue;
                 }
             }
-            // Scale up the sampled potential to approximate full sum
             totalPotential *= static_cast<long double>(sampleStep);
             if (std::isnan(totalPotential) || std::isinf(totalPotential)) {
                 if (debug_.load()) {
@@ -585,21 +581,21 @@ UniversalEquation::EnergyResult UniversalEquation::compute() {
             spinEnergies[i] = computeSpinEnergy(static_cast<int>(i));
             momentumEnergies[i] = computeKineticEnergy(static_cast<int>(i));
             fieldEnergies[i] = computeEMField(static_cast<int>(i));
-            GodWaveEnergies[i] = computeGodWave(static_cast<int>(i));
+            godWaveEnergies[i] = computeGodWave(static_cast<int>(i));
         }
         latch.count_down();
     }
     latch.wait();
 
     for (uint64_t i = 0; i < numVertices && i < nCubeVertices_.size(); ++i) {
-        result.observable += potentials[i] + nurbMatters[i] + nurbEnergies[i] + spinEnergies[i] + momentumEnergies[i] + fieldEnergies[i] + GodWaveEnergies[i];
+        result.observable += potentials[i] + nurbMatters[i] + nurbEnergies[i] + spinEnergies[i] + momentumEnergies[i] + fieldEnergies[i] + godWaveEnergies[i];
         result.potential += potentials[i];
         result.nurbMatter += nurbMatters[i];
         result.nurbEnergy += nurbEnergies[i];
         result.spinEnergy += spinEnergies[i];
         result.momentumEnergy += momentumEnergies[i];
         result.fieldEnergy += fieldEnergies[i];
-        result.GodWaveEnergy += GodWaveEnergies[i];
+        result.GodWaveEnergy += godWaveEnergies[i];
     }
     result.observable = safe_div(result.observable, static_cast<long double>(numVertices));
     LOG_INFO_CAT("Simulation", "Compute completed: {}", std::source_location::current(), result.toString());
@@ -675,9 +671,9 @@ void UniversalEquation::initializeCalculator(AMOURANTH* amouranth) {
 }
 
 void UniversalEquation::setGodWaveFreq(long double value) {
-    GodWaveFreq_.store(std::clamp(value, 0.1L, 10.0L));
+    godWaveFreq_.store(std::clamp(value, 0.1L, 10.0L));
     needsUpdate_.store(true);
-    LOG_DEBUG_CAT("Simulation", "Set GodWaveFreq: value={}", std::source_location::current(), GodWaveFreq_.load());
+    LOG_DEBUG_CAT("Simulation", "Set godWaveFreq: value={}", std::source_location::current(), godWaveFreq_.load());
 }
 
 long double UniversalEquation::computeNurbMatter(int vertexIndex) const {
@@ -795,10 +791,10 @@ long double UniversalEquation::safe_div(long double a, long double b) const {
     return result;
 }
 
-void UniversalEquation::validateVertexIndex(int vertexIndex, [[maybe_unused]] const std::source_location& loc) const {
+void UniversalEquation::validateVertexIndex(int vertexIndex, const std::source_location& loc) const {
     if (vertexIndex < 0 || static_cast<size_t>(vertexIndex) >= nCubeVertices_.size()) {
         LOG_ERROR_CAT("Simulation", "Invalid vertexIndex: vertexIndex={}, size={}",
-                      std::source_location::current(), vertexIndex, nCubeVertices_.size());
+                      loc, vertexIndex, nCubeVertices_.size());
         throw std::out_of_range("Invalid vertex index");
     }
 }
@@ -818,115 +814,115 @@ void UniversalEquation::setMode(int mode) {
 void UniversalEquation::setInfluence(long double value) {
     influence_.store(std::clamp(value, 0.0L, 10.0L));
     needsUpdate_.store(true);
-    LOG_DEBUG_CAT("Simulation", "Set influence: value={}", std::source_location::current(), value);
+    LOG_DEBUG_CAT("Simulation", "Set influence: value={}", std::source_location::current(), influence_.load());
 }
 
 void UniversalEquation::setWeak(long double value) {
     weak_.store(std::clamp(value, 0.0L, 1.0L));
     needsUpdate_.store(true);
-    LOG_DEBUG_CAT("Simulation", "Set weak: value={}", std::source_location::current(), value);
+    LOG_DEBUG_CAT("Simulation", "Set weak: value={}", std::source_location::current(), weak_.load());
 }
 
 void UniversalEquation::setCollapse(long double value) {
     collapse_.store(std::clamp(value, 0.0L, 5.0L));
     needsUpdate_.store(true);
-    LOG_DEBUG_CAT("Simulation", "Set collapse: value={}", std::source_location::current(), value);
+    LOG_DEBUG_CAT("Simulation", "Set collapse: value={}", std::source_location::current(), collapse_.load());
 }
 
 void UniversalEquation::setTwoD(long double value) {
     twoD_.store(std::clamp(value, 0.0L, 5.0L));
     needsUpdate_.store(true);
-    LOG_DEBUG_CAT("Simulation", "Set twoD: value={}", std::source_location::current(), value);
+    LOG_DEBUG_CAT("Simulation", "Set twoD: value={}", std::source_location::current(), twoD_.load());
 }
 
 void UniversalEquation::setThreeDInfluence(long double value) {
     threeDInfluence_.store(std::clamp(value, 0.0L, 5.0L));
     needsUpdate_.store(true);
-    LOG_DEBUG_CAT("Simulation", "Set threeDInfluence: value={}", std::source_location::current(), value);
+    LOG_DEBUG_CAT("Simulation", "Set threeDInfluence: value={}", std::source_location::current(), threeDInfluence_.load());
 }
 
 void UniversalEquation::setOneDPermeation(long double value) {
     oneDPermeation_.store(std::clamp(value, 0.0L, 5.0L));
     needsUpdate_.store(true);
-    LOG_DEBUG_CAT("Simulation", "Set oneDPermeation: value={}", std::source_location::current(), value);
+    LOG_DEBUG_CAT("Simulation", "Set oneDPermeation: value={}", std::source_location::current(), oneDPermeation_.load());
 }
 
 void UniversalEquation::setNurbMatterStrength(long double value) {
     nurbMatterStrength_.store(std::clamp(value, 0.0L, 1.0L));
     needsUpdate_.store(true);
-    LOG_DEBUG_CAT("Simulation", "Set nurbMatterStrength: value={}", std::source_location::current(), value);
+    LOG_DEBUG_CAT("Simulation", "Set nurbMatterStrength: value={}", std::source_location::current(), nurbMatterStrength_.load());
 }
 
 void UniversalEquation::setNurbEnergyStrength(long double value) {
     nurbEnergyStrength_.store(std::clamp(value, 0.0L, 2.0L));
     needsUpdate_.store(true);
-    LOG_DEBUG_CAT("Simulation", "Set nurbEnergyStrength: value={}", std::source_location::current(), value);
+    LOG_DEBUG_CAT("Simulation", "Set nurbEnergyStrength: value={}", std::source_location::current(), nurbEnergyStrength_.load());
 }
 
 void UniversalEquation::setAlpha(long double value) {
     alpha_.store(std::clamp(value, 0.01L, 10.0L));
     needsUpdate_.store(true);
-    LOG_DEBUG_CAT("Simulation", "Set alpha: value={}", std::source_location::current(), value);
+    LOG_DEBUG_CAT("Simulation", "Set alpha: value={}", std::source_location::current(), alpha_.load());
 }
 
 void UniversalEquation::setBeta(long double value) {
     beta_.store(std::clamp(value, 0.0L, 1.0L));
     needsUpdate_.store(true);
-    LOG_DEBUG_CAT("Simulation", "Set beta: value={}", std::source_location::current(), value);
+    LOG_DEBUG_CAT("Simulation", "Set beta: value={}", std::source_location::current(), beta_.load());
 }
 
 void UniversalEquation::setCarrollFactor(long double value) {
     carrollFactor_.store(std::clamp(value, 0.0L, 1.0L));
     needsUpdate_.store(true);
-    LOG_DEBUG_CAT("Simulation", "Set carrollFactor: value={}", std::source_location::current(), value);
+    LOG_DEBUG_CAT("Simulation", "Set carrollFactor: value={}", std::source_location::current(), carrollFactor_.load());
 }
 
 void UniversalEquation::setMeanFieldApprox(long double value) {
     meanFieldApprox_.store(std::clamp(value, 0.0L, 1.0L));
     needsUpdate_.store(true);
-    LOG_DEBUG_CAT("Simulation", "Set meanFieldApprox: value={}", std::source_location::current(), value);
+    LOG_DEBUG_CAT("Simulation", "Set meanFieldApprox: value={}", std::source_location::current(), meanFieldApprox_.load());
 }
 
 void UniversalEquation::setAsymCollapse(long double value) {
     asymCollapse_.store(std::clamp(value, 0.0L, 1.0L));
     needsUpdate_.store(true);
-    LOG_DEBUG_CAT("Simulation", "Set asymCollapse: value={}", std::source_location::current(), value);
+    LOG_DEBUG_CAT("Simulation", "Set asymCollapse: value={}", std::source_location::current(), asymCollapse_.load());
 }
 
 void UniversalEquation::setPerspectiveTrans(long double value) {
     perspectiveTrans_.store(std::clamp(value, 0.0L, 10.0L));
     needsUpdate_.store(true);
-    LOG_DEBUG_CAT("Simulation", "Set perspectiveTrans: value={}", std::source_location::current(), value);
+    LOG_DEBUG_CAT("Simulation", "Set perspectiveTrans: value={}", std::source_location::current(), perspectiveTrans_.load());
 }
 
 void UniversalEquation::setPerspectiveFocal(long double value) {
     perspectiveFocal_.store(std::clamp(value, 1.0L, 20.0L));
     needsUpdate_.store(true);
-    LOG_DEBUG_CAT("Simulation", "Set perspectiveFocal: value={}", std::source_location::current(), value);
+    LOG_DEBUG_CAT("Simulation", "Set perspectiveFocal: value={}", std::source_location::current(), perspectiveFocal_.load());
 }
 
 void UniversalEquation::setSpinInteraction(long double value) {
     spinInteraction_.store(std::clamp(value, 0.0L, 1.0L));
     needsUpdate_.store(true);
-    LOG_DEBUG_CAT("Simulation", "Set spinInteraction: value={}", std::source_location::current(), value);
+    LOG_DEBUG_CAT("Simulation", "Set spinInteraction: value={}", std::source_location::current(), spinInteraction_.load());
 }
 
 void UniversalEquation::setEMFieldStrength(long double value) {
     emFieldStrength_.store(std::clamp(value, 0.0L, 1.0e7L));
     needsUpdate_.store(true);
-    LOG_DEBUG_CAT("Simulation", "Set emFieldStrength: value={}", std::source_location::current(), value);
+    LOG_DEBUG_CAT("Simulation", "Set emFieldStrength: value={}", std::source_location::current(), emFieldStrength_.load());
 }
 
 void UniversalEquation::setRenormFactor(long double value) {
     renormFactor_.store(std::clamp(value, 0.1L, 10.0L));
     needsUpdate_.store(true);
-    LOG_DEBUG_CAT("Simulation", "Set renormFactor: value={}", std::source_location::current(), value);
+    LOG_DEBUG_CAT("Simulation", "Set renormFactor: value={}", std::source_location::current(), renormFactor_.load());
 }
 
 void UniversalEquation::setVacuumEnergy(long double value) {
     vacuumEnergy_.store(std::clamp(value, 0.0L, 1.0L));
     needsUpdate_.store(true);
-    LOG_DEBUG_CAT("Simulation", "Set vacuumEnergy: value={}", std::source_location::current(), value);
+    LOG_DEBUG_CAT("Simulation", "Set vacuumEnergy: value={}", std::source_location::current(), vacuumEnergy_.load());
 }
 
 void UniversalEquation::setDebug(bool value) {
@@ -1023,7 +1019,7 @@ void UniversalEquation::setTotalCharge(long double value) {
 }
 
 void UniversalEquation::setMaterialDensity(long double density) {
-    materialDensity_.store(std::clamp(density, 0.0L, 1.0e6L)); // Reasonable range for density
+    materialDensity_.store(std::clamp(density, 0.0L, 1.0e6L));
     needsUpdate_.store(true);
     LOG_DEBUG_CAT("Simulation", "Set materialDensity: value={}", std::source_location::current(), materialDensity_.load());
 }
@@ -1072,6 +1068,7 @@ std::vector<UniversalEquation::DimensionData> UniversalEquation::computeBatch(in
         EnergyResult result = compute();
         DimensionData data;
         data.dimension = dim;
+        data.scale = 1.0L; // Set default scale
         data.observable = result.observable;
         data.potential = result.potential;
         data.nurbMatter = result.nurbMatter;
@@ -1098,10 +1095,10 @@ void UniversalEquation::exportToCSV(const std::string& filename, const std::vect
         LOG_ERROR_CAT("Simulation", "Failed to open file for CSV export: {}", std::source_location::current(), filename);
         throw std::runtime_error("Failed to open CSV file");
     }
-    file << "Dimension,Observable,Potential,NURB_Matter,NURB_Energy,Spin_Energy,Momentum_Energy,Field_Energy,God_Wave_Energy\n";
+    file << "Dimension,Scale,Observable,Potential,NURB_Matter,NURB_Energy,Spin_Energy,Momentum_Energy,Field_Energy,God_Wave_Energy\n";
     for (const auto& d : data) {
         file << std::fixed << std::setprecision(10)
-             << d.dimension << "," << d.observable << "," << d.potential << ","
+             << d.dimension << "," << d.scale << "," << d.observable << "," << d.potential << ","
              << d.nurbMatter << "," << d.nurbEnergy << "," << d.spinEnergy << ","
              << d.momentumEnergy << "," << d.fieldEnergy << "," << d.GodWaveEnergy << "\n";
     }
@@ -1112,19 +1109,27 @@ void UniversalEquation::exportToCSV(const std::string& filename, const std::vect
 UniversalEquation::DimensionData UniversalEquation::updateCache() {
     LOG_INFO_CAT("Simulation", "Updating cache", std::source_location::current());
     EnergyResult result = compute();
-    dimensionData_.dimension = getCurrentDimension();
-    dimensionData_.observable = result.observable;
-    dimensionData_.potential = result.potential;
-    dimensionData_.nurbMatter = result.nurbMatter;
-    dimensionData_.nurbEnergy = result.nurbEnergy;
-    dimensionData_.spinEnergy = result.spinEnergy;
-    dimensionData_.momentumEnergy = result.momentumEnergy;
-    dimensionData_.fieldEnergy = result.fieldEnergy;
-    dimensionData_.GodWaveEnergy = result.GodWaveEnergy;
-    if (debug_.load()) {
-        LOG_DEBUG_CAT("Simulation", "Cache updated: {}", std::source_location::current(), dimensionData_.toString());
+    DimensionData data;
+    data.dimension = getCurrentDimension();
+    data.scale = 1.0L; // Set default scale
+    data.observable = result.observable;
+    data.potential = result.potential;
+    data.nurbMatter = result.nurbMatter;
+    data.nurbEnergy = result.nurbEnergy;
+    data.spinEnergy = result.spinEnergy;
+    data.momentumEnergy = result.momentumEnergy;
+    data.fieldEnergy = result.fieldEnergy;
+    data.GodWaveEnergy = result.GodWaveEnergy;
+    if (getCurrentDimension() > 0 && static_cast<size_t>(getCurrentDimension()) <= dimensionData_.size()) {
+        dimensionData_[getCurrentDimension() - 1] = data;
+    } else {
+        LOG_WARNING_CAT("Simulation", "Invalid dimension for cache update: dimension={}, dimensionData_.size()={}",
+                        std::source_location::current(), getCurrentDimension(), dimensionData_.size());
     }
-    return dimensionData_;
+    if (debug_.load()) {
+        LOG_DEBUG_CAT("Simulation", "Cache updated: {}", std::source_location::current(), data.toString());
+    }
+    return data;
 }
 
 long double UniversalEquation::computeGodWaveAmplitude(int vertexIndex, long double time) const {
