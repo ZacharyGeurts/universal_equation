@@ -4,15 +4,15 @@
 #define VULKAN_INIT_HPP
 
 #include "engine/Vulkan_types.hpp"
+#include "engine/Vulkan/Vulkan_func_swapchain.hpp"
+#include "engine/Vulkan/Vulkan_func_pipe.hpp"
+#include "engine/Vulkan_init_pipeline.hpp"
+#include "engine/Vulkan_init_buffers.hpp"
+#include "universal_equation.hpp"
 #include <vulkan/vulkan.h>
 #include <span>
 #include <memory>
 #include <glm/glm.hpp>
-#include "universal_equation.hpp" // For AMOURANTH
-
-class VulkanSwapchainManager;
-class VulkanPipelineManager;
-class VulkanBufferManager;
 
 namespace VulkanInitializer {
     void createBuffer(VkDevice device, VkPhysicalDevice physicalDevice, VkDeviceSize size,
@@ -21,7 +21,10 @@ namespace VulkanInitializer {
     void createDescriptorPoolAndSet(VkDevice device, VkDescriptorSetLayout descriptorSetLayout,
                                     VkDescriptorPool& descriptorPool, VkDescriptorSet& descriptorSet,
                                     VkSampler& sampler, VkBuffer uniformBuffer);
-    // Other declarations as needed
+    void createRayTracingPipeline(VulkanContext& context);
+    void createAccelerationStructures(VulkanContext& context, std::span<const glm::vec3> vertices, std::span<const uint32_t> indices);
+    void createShaderBindingTable(VulkanContext& context);
+    void createStorageImage(VulkanContext& context, uint32_t width, uint32_t height);
 }
 
 class VulkanRenderer {
@@ -31,9 +34,9 @@ public:
                   int width, int height);
     ~VulkanRenderer();
     void renderFrame(const AMOURANTH& amouranth);
-    VkDevice getDevice() const { return context_.device; }
-    VkDeviceMemory getVertexBufferMemory() const { return context_.vertexBufferMemory; }
-    VkPipeline getGraphicsPipeline() const { return context_.pipeline; }
+    VkDevice getDevice() const;
+    VkDeviceMemory getVertexBufferMemory() const;
+    VkPipeline getGraphicsPipeline() const;
     void handleResize(int width, int height);
 
 private:

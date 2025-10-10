@@ -4,28 +4,7 @@
 #define VULKAN_INIT_PIPELINE_HPP
 
 #include "engine/Vulkan_types.hpp"
-#include "engine/logging.hpp"
-#include <vector>
-#include <string>
-
-class VulkanPipelineManager {
-public:
-    VulkanPipelineManager(VulkanContext& context);
-    ~VulkanPipelineManager() noexcept;
-
-private:
-    void createRenderPass();
-    void createPipelineLayout();
-    void createGraphicsPipeline();
-    void cleanupPipeline();
-    std::vector<char> readFile(const std::string& filename);
-    VkShaderModule createShaderModule(const std::vector<char>& code);
-
-    VulkanContext& context_;
-};
-
-// Utility functions for logging Vulkan types
-std::string vkFormatToString(VkFormat format);
-std::string vkResultToString(VkResult result);
+#include "engine/Vulkan/Vulkan_func_pipe.hpp"
+#include <vulkan/vulkan.h>
 
 #endif // VULKAN_INIT_PIPELINE_HPP

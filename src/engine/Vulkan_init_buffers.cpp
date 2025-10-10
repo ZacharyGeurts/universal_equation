@@ -1,7 +1,6 @@
 // src/engine/Vulkan_init_buffers.cpp
 #include "engine/Vulkan_init_buffers.hpp"
 #include "engine/Vulkan_init.hpp"
-#include "engine/Vulkan_init_pipeline.hpp"
 #include "engine/logging.hpp"
 #include <stdexcept>
 #include <source_location>
@@ -57,7 +56,7 @@ void VulkanBufferManager::initializeBuffers(std::span<const glm::vec3> vertices,
     LOG_DEBUG_CAT("VulkanBuffer", "Copied {} bytes to vertex staging buffer", std::source_location::current(), vertexBufferSize);
 
     VulkanInitializer::createBuffer(context_.device, context_.physicalDevice, vertexBufferSize,
-                                   VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+                                   VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR,
                                    VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
                                    context_.vertexBuffer, context_.vertexBufferMemory);
     LOG_DEBUG_CAT("VulkanBuffer", "Created vertex buffer: vertexBuffer={:p}", std::source_location::current(), static_cast<void*>(context_.vertexBuffer));
@@ -84,7 +83,7 @@ void VulkanBufferManager::initializeBuffers(std::span<const glm::vec3> vertices,
         LOG_DEBUG_CAT("VulkanBuffer", "Copied {} bytes to index staging buffer", std::source_location::current(), indexBufferSize);
 
         VulkanInitializer::createBuffer(context_.device, context_.physicalDevice, indexBufferSize,
-                                       VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+                                       VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR,
                                        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
                                        context_.indexBuffer, context_.indexBufferMemory);
         LOG_DEBUG_CAT("VulkanBuffer", "Created index buffer: indexBuffer={:p}", std::source_location::current(), static_cast<void*>(context_.indexBuffer));

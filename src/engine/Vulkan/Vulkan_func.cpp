@@ -3,7 +3,7 @@
 // AMOURANTH RTX Engine, October 2025
 // Zachary Geurts 2025
 
-#include "engine/Vulkan_init.hpp" // For VulkanInitializer declarations
+//#include "engine/Vulkan_init.hpp" // For VulkanInitializer declarations
 #include "engine/Vulkan/Vulkan_func_pipe.hpp"
 #include "engine/Vulkan/Vulkan_func_swapchain.hpp"
 #include "engine/logging.hpp"

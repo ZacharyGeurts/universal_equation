@@ -13,7 +13,12 @@ public:
     ~VulkanSwapchainManager();
     void initializeSwapchain(int width, int height);
     void cleanupSwapchain();
-    void handleResize(int width, int height); // Added
+    void handleResize(int width, int height);
+
+    // Public accessors
+    VkSwapchainKHR swapchain() const { return swapchain_; }
+    const std::vector<VkImage>& swapchainImages() const { return swapchainImages_; }
+    VkExtent2D swapchainExtent() const { return swapchainExtent_; }
 
 private:
     VulkanContext& context_;

@@ -1,20 +1,9 @@
 // src/engine/Vulkan/Vulkan_func_swapchain.cpp
 #include "engine/Vulkan/Vulkan_func_swapchain.hpp"
+#include "engine/Vulkan_utils.hpp"
 #include "engine/logging.hpp"
 #include <stdexcept>
 #include <source_location>
-
-std::string vkResultToString(VkResult result) {
-    switch (result) {
-        case VK_SUCCESS: return "VK_SUCCESS";
-        case VK_NOT_READY: return "VK_NOT_READY";
-        case VK_TIMEOUT: return "VK_TIMEOUT";
-        case VK_ERROR_OUT_OF_HOST_MEMORY: return "VK_ERROR_OUT_OF_HOST_MEMORY";
-        case VK_ERROR_OUT_OF_DEVICE_MEMORY: return "VK_ERROR_OUT_OF_DEVICE_MEMORY";
-        case VK_ERROR_INITIALIZATION_FAILED: return "VK_ERROR_INITIALIZATION_FAILED";
-        default: return "Unknown VkResult (" + std::to_string(result) + ")";
-    }
-}
 
 VulkanSwapchainManager::VulkanSwapchainManager(VulkanContext& context, VkSurfaceKHR surface)
     : context_(context), swapchain_(VK_NULL_HANDLE), imageCount_(0) {
@@ -32,7 +21,12 @@ void VulkanSwapchainManager::initializeSwapchain(int width, int height) {
                   std::source_location::current(), width, height);
 
     VkSurfaceCapabilitiesKHR capabilities;
-    vkGetPhysicalDeviceSurfaceCapabilitiesKHR(context_.physicalDevice, context_.surface, &capabilities);
+    VkResult result = vkGetPhysicalDeviceSurfaceCapabilitiesKHR(context_.physicalDevice, context_.surface, &capabilities);
+    if (result != VK_SUCCESS) {
+        LOG_ERROR_CAT("VulkanSwapchain", "Failed to get surface capabilities: result={}",
+                      std::source_location::current(), VulkanInitializer::vkResultToString(result));
+        throw std::runtime_error("Failed to get surface capabilities");
+    }
 
     uint32_t formatCount;
     vkGetPhysicalDeviceSurfaceFormatsKHR(context_.physicalDevice, context_.surface, &formatCount, nullptr);
@@ -84,7 +78,7 @@ void VulkanSwapchainManager::initializeSwapchain(int width, int height) {
         .imageColorSpace = surfaceFormat.colorSpace,
         .imageExtent = extent,
         .imageArrayLayers = 1,
-        .imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+        .imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
         .imageSharingMode = VK_SHARING_MODE_EXCLUSIVE,
         .queueFamilyIndexCount = 0,
         .pQueueFamilyIndices = nullptr,
@@ -95,10 +89,10 @@ void VulkanSwapchainManager::initializeSwapchain(int width, int height) {
         .oldSwapchain = swapchain_
     };
 
-    VkResult result = vkCreateSwapchainKHR(context_.device, &createInfo, nullptr, &swapchain_);
+    result = vkCreateSwapchainKHR(context_.device, &createInfo, nullptr, &swapchain_);
     if (result != VK_SUCCESS) {
         LOG_ERROR_CAT("VulkanSwapchain", "Failed to create swapchain: result={}",
-                      std::source_location::current(), vkResultToString(result));
+                      std::source_location::current(), VulkanInitializer::vkResultToString(result));
         throw std::runtime_error("Failed to create swapchain");
     }
     LOG_DEBUG_CAT("VulkanSwapchain", "Created swapchain: swapchain={:p}", std::source_location::current(), static_cast<void*>(swapchain_));
@@ -128,7 +122,7 @@ void VulkanSwapchainManager::initializeSwapchain(int width, int height) {
         result = vkCreateImageView(context_.device, &viewInfo, nullptr, &swapchainImageViews_[i]);
         if (result != VK_SUCCESS) {
             LOG_ERROR_CAT("VulkanSwapchain", "Failed to create image view {}: result={}",
-                          std::source_location::current(), i, vkResultToString(result));
+                          std::source_location::current(), i, VulkanInitializer::vkResultToString(result));
             throw std::runtime_error("Failed to create image view");
         }
         LOG_DEBUG_CAT("VulkanSwapchain", "Created image view {}: imageView={:p}",
@@ -161,4 +155,11 @@ void VulkanSwapchainManager::cleanupSwapchain() {
         vkDestroySwapchainKHR(context_.device, swapchain_, nullptr);
         swapchain_ = VK_NULL_HANDLE;
     }
+}
+
+void VulkanSwapchainManager::handleResize(int width, int height) {
+    LOG_DEBUG_CAT("VulkanSwapchain", "Handling resize to width={}, height={}",
+                  std::source_location::current(), width, height);
+    cleanupSwapchain();
+    initializeSwapchain(width, height);
 }

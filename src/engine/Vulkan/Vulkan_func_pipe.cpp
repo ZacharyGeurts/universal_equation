@@ -1,29 +1,19 @@
 // src/engine/Vulkan/Vulkan_func_pipe.cpp
-// AMOURANTH RTX Engine, October 2025 - Vulkan pipeline utilities implementation.
-// Supports Windows/Linux; no mutexes; voxel geometry via glm::vec3 vertices.
-// Dependencies: Vulkan 1.3+, GLM, C++20 standard library.
-// Integrates with VulkanRTX and SwapchainManager for rendering voxel scenes.
-// Manages graphics pipeline, render pass, descriptor sets, and samplers.
-// Zachary Geurts 2025
-
 #include "engine/Vulkan/Vulkan_func_pipe.hpp"
-#include "engine/Vulkan_init_pipeline.hpp" // For vkFormatToString, vkResultToString
-#include "engine/Vulkan_init.hpp" // For PushConstants and VulkanContext
-#include "engine/logging.hpp" // For LOG_*_CAT macros
+#include "engine/Vulkan_utils.hpp"
+#include "engine/logging.hpp"
 #include <stdexcept>
 #include <fstream>
-#include <glm/glm.hpp>
 #include <source_location>
+#include <glm/glm.hpp>
 
 // Define VK_CHECK for consistent error handling
-#ifndef VK_CHECK
 #define VK_CHECK(result, msg) do { \
     if ((result) != VK_SUCCESS) { \
-        LOG_ERROR_CAT("Vulkan", "{} (VkResult: {})", std::source_location::current(), (msg), vkResultToString(result)); \
+        LOG_ERROR_CAT("Vulkan", "{} (VkResult: {})", std::source_location::current(), (msg), VulkanInitializer::vkResultToString(result)); \
         throw std::runtime_error((msg)); \
     } \
 } while (0)
-#endif
 
 namespace VulkanInitializer {
 
@@ -64,7 +54,7 @@ VkShaderModule createShaderModule(VkDevice device, const std::string& filename) 
 }
 
 void createRenderPass(VkDevice device, VkRenderPass& renderPass, VkFormat format) {
-    LOG_INFO_CAT("Vulkan", "Creating render pass with format: {}", std::source_location::current(), vkFormatToString(format));
+    LOG_INFO_CAT("Vulkan", "Creating render pass with format: {}", std::source_location::current(), VulkanInitializer::vkFormatToString(format));
 
     VkAttachmentDescription colorAttachment{
         .flags = 0,
@@ -136,7 +126,7 @@ void createDescriptorSetLayout(VkDevice device, VkDescriptorSetLayout& descripto
         },
         {
             .binding = 1,
-            .descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER,
+            .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
             .descriptorCount = 1,
             .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
             .pImmutableSamplers = nullptr
@@ -158,7 +148,7 @@ void createDescriptorSetLayout(VkDevice device, VkDescriptorSetLayout& descripto
 
 void createDescriptorPoolAndSet(VkDevice device, VkDescriptorSetLayout descriptorSetLayout,
                                VkDescriptorPool& descriptorPool, VkDescriptorSet& descriptorSet,
-                               VkSampler sampler, VkBuffer uniformBuffer) {
+                               VkSampler& sampler, VkBuffer uniformBuffer) {
     LOG_INFO_CAT("Vulkan", "Creating descriptor pool and set for uniform buffer and sampler", std::source_location::current());
 
     VkDescriptorPoolSize poolSizes[2] = {
@@ -167,7 +157,7 @@ void createDescriptorPoolAndSet(VkDevice device, VkDescriptorSetLayout descripto
             .descriptorCount = 1
         },
         {
-            .type = VK_DESCRIPTOR_TYPE_SAMPLER,
+            .type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
             .descriptorCount = 1
         }
     };
@@ -195,6 +185,30 @@ void createDescriptorPoolAndSet(VkDevice device, VkDescriptorSetLayout descripto
     VK_CHECK(vkAllocateDescriptorSets(device, &allocInfo, &descriptorSet), "Failed to allocate descriptor set");
     LOG_DEBUG_CAT("Vulkan", "Allocated descriptor set", std::source_location::current());
 
+    VkSamplerCreateInfo samplerInfo{
+        .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+        .pNext = nullptr,
+        .flags = 0,
+        .magFilter = VK_FILTER_LINEAR,
+        .minFilter = VK_FILTER_LINEAR,
+        .mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR,
+        .addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+        .addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+        .addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+        .mipLodBias = 0.0f,
+        .anisotropyEnable = VK_TRUE,
+        .maxAnisotropy = 16.0f,
+        .compareEnable = VK_FALSE,
+        .compareOp = VK_COMPARE_OP_ALWAYS,
+        .minLod = 0.0f,
+        .maxLod = 0.0f,
+        .borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK,
+        .unnormalizedCoordinates = VK_FALSE
+    };
+
+    VK_CHECK(vkCreateSampler(device, &samplerInfo, nullptr, &sampler), "Failed to create sampler");
+    LOG_DEBUG_CAT("Vulkan", "Created sampler", std::source_location::current());
+
     VkDescriptorBufferInfo bufferInfo{
         .buffer = uniformBuffer,
         .offset = 0,
@@ -204,7 +218,7 @@ void createDescriptorPoolAndSet(VkDevice device, VkDescriptorSetLayout descripto
     VkDescriptorImageInfo imageInfo{
         .sampler = sampler,
         .imageView = VK_NULL_HANDLE,
-        .imageLayout = VK_IMAGE_LAYOUT_UNDEFINED
+        .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
     };
 
     VkWriteDescriptorSet descriptorWrites[2] = {
@@ -227,9 +241,8 @@ void createDescriptorPoolAndSet(VkDevice device, VkDescriptorSetLayout descripto
             .dstBinding = 1,
             .dstArrayElement = 0,
             .descriptorCount = 1,
-            .descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER,
+            .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
             .pImageInfo = &imageInfo,
-            .pBufferInfo = nullptr,
             .pTexelBufferView = nullptr
         }
     };
