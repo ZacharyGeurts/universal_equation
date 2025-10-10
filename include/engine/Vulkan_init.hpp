@@ -10,7 +10,7 @@
 #include <span>
 #include <glm/glm.hpp>
 
-class AMOURANTH; // Forward declaration for VulkanRenderer
+class AMOURANTH;
 
 struct VulkanContext {
     VkInstance instance = VK_NULL_HANDLE;
@@ -70,6 +70,9 @@ public:
                                           VkDescriptorPool& descriptorPool, VkDescriptorSet& descriptorSet,
                                           VkSampler& sampler, VkBuffer uniformBuffer, VkImageView storageImageView,
                                           VkAccelerationStructureKHR topLevelAS);
+    static void createStorageImage(VkDevice device, VkPhysicalDevice physicalDevice, VkImage& storageImage,
+                                  VkDeviceMemory& storageImageMemory, VkImageView& storageImageView,
+                                  uint32_t width, uint32_t height);
     static void createAccelerationStructures(VulkanContext& context, std::span<const glm::vec3> vertices, std::span<const uint32_t> indices);
     static void createRayTracingPipeline(VulkanContext& context);
     static void createShaderBindingTable(VulkanContext& context);
