@@ -50,11 +50,13 @@ struct VulkanContext {
     std::vector<VkImageView> swapchainImageViews;
     VkFormat swapchainImageFormat_ = VK_FORMAT_UNDEFINED;
     VkExtent2D swapchainExtent_ = {0, 0};
+    VkBuffer vertexBuffer_ = VK_NULL_HANDLE; // Added for acceleration structure
+    VkBuffer indexBuffer_ = VK_NULL_HANDLE;  // Added for acceleration structure
 };
 
 class VulkanBufferManager {
 public:
-    VulkanBufferManager(VulkanContext& context); // Updated constructor
+    VulkanBufferManager(VulkanContext& context);
     ~VulkanBufferManager();
     void createVertexBuffer(std::span<const glm::vec3> vertices);
     void createIndexBuffer(std::span<const uint32_t> indices);
@@ -71,7 +73,7 @@ public:
     uint32_t getIndexCount() const;
 
 private:
-    VulkanContext& context_; // Moved to top to avoid -Wreorder
+    VulkanContext& context_;
     VkDevice device_;
     VkPhysicalDevice physicalDevice_;
     VkBuffer vertexBuffer_ = VK_NULL_HANDLE;
