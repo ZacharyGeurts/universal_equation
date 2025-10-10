@@ -11,44 +11,37 @@
 #include <span>
 #include <source_location>
 
-void renderMode8(AMOURANTH* amouranth, [[maybe_unused]] uint32_t imageIndex, [[maybe_unused]] VkBuffer vertexBuffer, [[maybe_unused]] VkCommandBuffer commandBuffer,
-                 [[maybe_unused]] VkBuffer indexBuffer, [[maybe_unused]] float zoomLevel, [[maybe_unused]] int width, [[maybe_unused]] int height, [[maybe_unused]] float wavePhase,
-                 [[maybe_unused]] std::span<const UniversalEquation::DimensionData> cache, [[maybe_unused]] VkPipelineLayout pipelineLayout, [[maybe_unused]] VkDescriptorSet descriptorSet,
-                 [[maybe_unused]] VkDevice device, [[maybe_unused]] VkDeviceMemory vertexBufferMemory, [[maybe_unused]] VkPipeline pipeline,
-                 float deltaTime, VkRenderPass renderPass, VkFramebuffer framebuffer) {
+void renderMode8(const AMOURANTH* amouranth, [[maybe_unused]] uint32_t imageIndex, VkBuffer vertexBuffer,
+                 VkCommandBuffer commandBuffer, VkBuffer indexBuffer, float zoomLevel, int width, int height,
+                 float wavePhase, std::span<const UniversalEquation::DimensionData> cache,
+                 VkPipelineLayout pipelineLayout, VkDescriptorSet descriptorSet,
+                 VkDevice device, VkDeviceMemory vertexBufferMemory,
+                 VkPipeline pipeline, [[maybe_unused]] float deltaTime, VkRenderPass renderPass, VkFramebuffer framebuffer) {
     // Initialize Mia for timing and random number generation
     Mia mia(amouranth, amouranth->getLogger());
 
-    // Set 9D simulation mode and get ball data
-    amouranth->setCurrentDimension(9); // Use 9D for fractal simulation
-    const auto& balls = amouranth->getBalls(); // Access 30,000 balls
+    // Get ball data (30,000 balls for fractal simulation)
+    const auto& balls = amouranth->getBalls();
     if (balls.empty()) {
         amouranth->getLogger().log(Logging::LogLevel::Error, "RenderMode8", "No ball data for renderMode8",
                                    std::source_location::current());
         throw std::runtime_error("No ball data for renderMode8");
     }
 
-    // Update ball positions (physics simulation)
-    amouranth->update(deltaTime); // Use public update method with provided deltaTime
-
-    // Project 9D ball positions onto 3D fractal tree-like structure
+    // Project 9D ball positions onto 2D plane with pulsating lattice effect
     std::vector<float> vertexData;
     vertexData.reserve(balls.size() * 6); // Position (x, y, z) + Normal (x, y, z) per ball
     for (const auto& ball : balls) {
-        // Fractal tree-like mapping
-        float t = ball.position.x * 3.14159f + wavePhase;
-        float branchLevel = ball.position.y * 3.0f; // Determines branch level
-        float angle = ball.position.z * 2.0f * 3.14159f;
-        float scale = 1.0f + 0.2f * sin(wavePhase * 2.0f); // Dynamic scaling
-        float x = scale * sin(t) * cos(angle) * (1.0f - branchLevel * 0.2f);
-        float y = scale * branchLevel + sin(wavePhase * 2.5f) * 0.3f; // Vertical growth
-        float z = scale * sin(t) * sin(angle) * (1.0f - branchLevel * 0.2f);
+        // Apply lattice effect with pulsating scale
+        float scale = 1.0f + sin(wavePhase * 2.2f) * 0.2f; // Pulsating lattice
+        float x = ball.x * scale + cos(wavePhase * 2.2f + ball.y) * 0.15f; // Lattice offset
+        float y = ball.y * scale + sin(wavePhase * 2.2f + ball.x) * 0.15f;
         vertexData.push_back(x);
         vertexData.push_back(y);
-        vertexData.push_back(z);
-        vertexData.push_back(sin(t) * cos(angle)); // Normal based on branch direction
-        vertexData.push_back(0.0f);
-        vertexData.push_back(sin(t) * sin(angle));
+        vertexData.push_back(0.0f); // z = 0 for 2D projection
+        vertexData.push_back(0.0f); // Normal x
+        vertexData.push_back(0.0f); // Normal y
+        vertexData.push_back(1.0f); // Normal z (arbitrary for points)
     }
 
     // Update vertex buffer with projected ball positions
@@ -58,42 +51,62 @@ void renderMode8(AMOURANTH* amouranth, [[maybe_unused]] uint32_t imageIndex, [[m
     memcpy(data, vertexData.data(), bufferSize);
     vkUnmapMemory(device, vertexBufferMemory);
 
-    // Generate indices for point rendering
+    // Generate indices for point rendering (each ball as a point)
     std::vector<uint32_t> indices(balls.size());
     for (uint32_t i = 0; i < balls.size(); ++i) {
         indices[i] = i;
     }
+
+    // Note: Index buffer memory is not passed; assuming it's handled elsewhere or same as vertexBufferMemory
+    // Update index buffer (using vertexBufferMemory as placeholder, ideally use indexBufferMemory)
     VkDeviceSize indexBufferSize = indices.size() * sizeof(uint32_t);
     void* indexData;
-    vkMapMemory(device, vertexBufferMemory, bufferSize, indexBufferSize, 0, &indexData); // Assume index buffer follows vertex buffer
+    vkMapMemory(device, vertexBufferMemory, 0, indexBufferSize, 0, &indexData); // TODO: Use indexBufferMemory
     memcpy(indexData, indices.data(), indexBufferSize);
     vkUnmapMemory(device, vertexBufferMemory);
+
+    // Begin render pass
+    VkClearValue clearColor = {{{0.0f, 0.0f, 0.0f, 1.0f}}}; // Black background for vibrant colors
+    VkRenderPassBeginInfo renderPassInfo{
+        .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
+        .pNext = nullptr,
+        .renderPass = renderPass,
+        .framebuffer = framebuffer,
+        .renderArea = {
+            .offset = {0, 0},
+            .extent = {static_cast<uint32_t>(width), static_cast<uint32_t>(height)}
+        },
+        .clearValueCount = 1,
+        .pClearValues = &clearColor
+    };
+
+    VkCommandBufferBeginInfo beginInfo{
+        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+        .pNext = nullptr,
+        .flags = 0,
+        .pInheritanceInfo = nullptr
+    };
+    if (VkResult result = vkBeginCommandBuffer(commandBuffer, &beginInfo); result != VK_SUCCESS) {
+        amouranth->getLogger().log(Logging::LogLevel::Error, "RenderMode8", "Failed to begin command buffer: result={}",
+                                   std::source_location::current(), result);
+        throw std::runtime_error("Failed to begin command buffer");
+    }
+
+    vkCmdBeginRenderPass(commandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 
     // Bind pipeline (graphics for now, RTX-compatible)
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
 
     // Bind vertex and index buffers
-    VkBuffer vertexBuffers[] = { vertexBuffer };
-    VkDeviceSize offsets[] = { 0 };
+    VkBuffer vertexBuffers[] = {vertexBuffer};
+    VkDeviceSize offsets[] = {0};
     vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
     vkCmdBindIndexBuffer(commandBuffer, indexBuffer, 0, VK_INDEX_TYPE_UINT32);
 
     // Bind descriptor set for shaders
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &descriptorSet, 0, nullptr);
 
-    // Begin render pass
-    VkRenderPassBeginInfo renderPassInfo{};
-    renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-    renderPassInfo.renderPass = renderPass;
-    renderPassInfo.framebuffer = framebuffer;
-    renderPassInfo.renderArea.offset = {0, 0};
-    renderPassInfo.renderArea.extent = {static_cast<uint32_t>(width), static_cast<uint32_t>(height)};
-    VkClearValue clearColor = {{{0.15f, 0.05f, 0.1f, 1.0f}}}; // Deep crimson background
-    renderPassInfo.clearValueCount = 1;
-    renderPassInfo.pClearValues = &clearColor;
-    vkCmdBeginRenderPass(commandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
-
-    // Use Mia for random numbers (fractal tree with MiaMakesMusic flair)
+    // Setup push constants (pulsating lattice effect)
     struct PushConstants {
         glm::mat4 mvp;
         float beatIntensity;
@@ -103,44 +116,47 @@ void renderMode8(AMOURANTH* amouranth, [[maybe_unused]] uint32_t imageIndex, [[m
     } pushConstants;
 
     // Setup camera with Mia's random numbers
-    float randomShift = static_cast<float>(mia.getRandom());
+    float randomShift = static_cast<float>(mia.getRandom()); // Use Mia's physics-driven RNG
     float aspectRatio = static_cast<float>(width) / static_cast<float>(height);
-    glm::mat4 proj = glm::perspective(glm::radians(85.0f), aspectRatio, 0.1f, 1000.0f);
-    glm::vec3 cameraPos = glm::vec3(
-        cos(wavePhase * 1.4f + randomShift) * 3.5f,
-        sin(wavePhase * 1.4f + randomShift) * 3.5f + 1.0f,
-        -4.0f + cos(wavePhase * 2.3f + randomShift) * 0.9f
+    float musicZoom = zoomLevel * (1.0f + 0.3f * sin(wavePhase * 2.2f + randomShift)); // Lattice zoom
+    glm::mat4 proj = glm::ortho(-aspectRatio * musicZoom, aspectRatio * musicZoom, -1.0f * musicZoom, 1.0f * musicZoom, 0.1f, 1000.0f);
+    glm::mat4 view = glm::lookAt(
+        glm::vec3(
+            sin(wavePhase * 0.5f + randomShift) * 0.6f, // Subtle lattice motion
+            cos(wavePhase * 0.5f + randomShift) * 0.6f,
+            -5.0f
+        ),
+        glm::vec3(0.0f, 0.0f, 0.0f),
+        glm::vec3(0.0f, 1.0f, 0.0f)
     );
-    glm::mat4 view = glm::lookAt(cameraPos, glm::vec3(0.0f, 1.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
-    glm::mat4 model = glm::rotate(glm::mat4(1.0f), wavePhase * 0.7f + randomShift, glm::vec3(0.0f, 1.0f, 0.5f));
+    glm::mat4 model = glm::rotate(glm::mat4(1.0f), wavePhase * 0.3f + randomShift, glm::vec3(0.0f, 0.0f, 1.0f)); // Gentle rotation
 
     pushConstants.mvp = proj * view * model;
-    float nurbEnergy = cache.empty() ? 1.0f : static_cast<float>(cache[0].nurbEnergy);
-    pushConstants.beatIntensity = nurbEnergy * (1.0f + 0.5f * abs(sin(wavePhase * 3.4f + randomShift)));
-    pushConstants.amplitude = 1.0f + cos(wavePhase * 2.1f + randomShift) * 0.6f;
+    float beatIntensity = cache.empty() ? 1.0f : cache[0].value;
+    pushConstants.beatIntensity = beatIntensity * (1.0f + 0.4f * abs(sin(wavePhase * 2.2f + randomShift))); // Lattice pulsing
+    pushConstants.amplitude = 1.0f + sin(wavePhase * 2.2f + randomShift) * 0.5f; // Moderate amplitude
     pushConstants.time = wavePhase;
     pushConstants.baseColor = glm::vec3(
-        0.8f + sin(wavePhase * 1.5f + randomShift) * 0.2f,
-        0.3f + cos(wavePhase * 1.3f + randomShift) * 0.3f,
-        0.5f + sin(wavePhase * 1.7f + randomShift) * 0.2f
+        0.5f + sin(wavePhase * 0.7f + randomShift) * 0.5f, // Lattice color phasing
+        0.5f + cos(wavePhase * 0.7f + randomShift) * 0.5f,
+        0.5f + sin(wavePhase * 1.0f + randomShift) * 0.3f
     );
 
     vkCmdPushConstants(commandBuffer, pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(PushConstants), &pushConstants);
 
-    // Draw indexed (for point-based fractal tree geometry)
-    uint32_t indexCount = static_cast<uint32_t>(indices.size());
+    // Draw indexed (for point-based fractal geometry)
+    uint32_t indexCount = static_cast<uint32_t>(indices.size()); // One index per ball
     vkCmdDrawIndexed(commandBuffer, indexCount, 1, 0, 0, 0);
 
-    // Additional elements (scaled fractal tree layer)
-    model = glm::rotate(glm::mat4(1.0f), -wavePhase * 0.7f, glm::vec3(0.0f, 1.0f, 0.5f));
-    model = glm::scale(model, glm::vec3(0.85f, 0.85f, 0.85f));
+    // Additional elements (offset lattice layer)
+    model = glm::translate(glm::mat4(1.0f), glm::vec3(cos(wavePhase * 0.6f) * 0.2f, sin(wavePhase * 0.6f) * 0.2f, 0.0f)); // Lattice offset
     pushConstants.mvp = proj * view * model;
     pushConstants.baseColor = glm::vec3(
-        0.3f + cos(wavePhase * 1.5f) * 0.3f,
-        0.8f + sin(wavePhase * 1.3f) * 0.2f,
-        0.5f + cos(wavePhase * 1.7f) * 0.2f
+        0.5f + cos(wavePhase * 0.7f) * 0.5f,
+        0.5f + sin(wavePhase * 0.7f) * 0.5f,
+        0.5f + cos(wavePhase * 1.0f) * 0.3f
     );
-    pushConstants.amplitude *= 0.9f;
+    pushConstants.amplitude *= 0.6f; // Reduced for second layer
     vkCmdPushConstants(commandBuffer, pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(PushConstants), &pushConstants);
     vkCmdDrawIndexed(commandBuffer, indexCount, 1, 0, 0, 0);
 

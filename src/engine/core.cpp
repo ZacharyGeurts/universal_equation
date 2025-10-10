@@ -35,7 +35,7 @@ void renderMode1(const AMOURANTH* amouranth, uint32_t imageIndex, VkBuffer verte
     };
     vkCmdBeginRenderPass(commandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
-    VkDeviceSize offsets[] = {0}; // Added offset for vertex buffer binding
+    VkDeviceSize offsets[] = {0};
     vkCmdBindVertexBuffers(commandBuffer, 0, 1, &vertexBuffer, offsets);
     vkCmdBindIndexBuffer(commandBuffer, indexBuffer, 0, VK_INDEX_TYPE_UINT32);
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &descriptorSet, 0, nullptr);
@@ -43,76 +43,98 @@ void renderMode1(const AMOURANTH* amouranth, uint32_t imageIndex, VkBuffer verte
     vkCmdEndRenderPass(commandBuffer);
 }
 
-void renderMode2(const AMOURANTH* amouranth, uint32_t imageIndex, VkBuffer vertexBuffer, VkCommandBuffer commandBuffer,
-                 VkBuffer indexBuffer, float zoomLevel, int width, int height, float wavePhase,
-                 std::span<const UniversalEquation::DimensionData> cache, VkPipelineLayout pipelineLayout,
-                 VkDescriptorSet descriptorSet, VkDevice device, VkDeviceMemory vertexBufferMemory,
-                 VkPipeline pipeline, float deltaTime, VkRenderPass renderPass, VkFramebuffer framebuffer) {
+void renderMode2([[maybe_unused]] const AMOURANTH* amouranth, uint32_t imageIndex, [[maybe_unused]] VkBuffer vertexBuffer,
+                 [[maybe_unused]] VkCommandBuffer commandBuffer, [[maybe_unused]] VkBuffer indexBuffer,
+                 [[maybe_unused]] float zoomLevel, [[maybe_unused]] int width, [[maybe_unused]] int height,
+                 [[maybe_unused]] float wavePhase, [[maybe_unused]] std::span<const UniversalEquation::DimensionData> cache,
+                 [[maybe_unused]] VkPipelineLayout pipelineLayout, [[maybe_unused]] VkDescriptorSet descriptorSet,
+                 [[maybe_unused]] VkDevice device, [[maybe_unused]] VkDeviceMemory vertexBufferMemory,
+                 [[maybe_unused]] VkPipeline pipeline, [[maybe_unused]] float deltaTime,
+                 [[maybe_unused]] VkRenderPass renderPass, [[maybe_unused]] VkFramebuffer framebuffer) {
     LOG_DEBUG_CAT("Renderer", "Rendering mode 2 (stub) for image index: {}", std::source_location::current(), imageIndex);
     // TODO: Implement rendering logic for mode 2
-    // Parameters available for use: amouranth, vertexBuffer, commandBuffer, indexBuffer, zoomLevel, width, height,
-    // wavePhase, cache, pipelineLayout, descriptorSet, device, vertexBufferMemory, pipeline, deltaTime, renderPass, framebuffer
 }
 
-void renderMode3(const AMOURANTH* amouranth, uint32_t imageIndex, VkBuffer vertexBuffer, VkCommandBuffer commandBuffer,
-                 VkBuffer indexBuffer, float zoomLevel, int width, int height, float wavePhase,
-                 std::span<const UniversalEquation::DimensionData> cache, VkPipelineLayout pipelineLayout,
-                 VkDescriptorSet descriptorSet, VkDevice device, VkDeviceMemory vertexBufferMemory,
-                 VkPipeline pipeline, float deltaTime, VkRenderPass renderPass, VkFramebuffer framebuffer) {
+void renderMode3([[maybe_unused]] const AMOURANTH* amouranth, uint32_t imageIndex, [[maybe_unused]] VkBuffer vertexBuffer,
+                 [[maybe_unused]] VkCommandBuffer commandBuffer, [[maybe_unused]] VkBuffer indexBuffer,
+                 [[maybe_unused]] float zoomLevel, [[maybe_unused]] int width, [[maybe_unused]] int height,
+                 [[maybe_unused]] float wavePhase, [[maybe_unused]] std::span<const UniversalEquation::DimensionData> cache,
+                 [[maybe_unused]] VkPipelineLayout pipelineLayout, [[maybe_unused]] VkDescriptorSet descriptorSet,
+                 [[maybe_unused]] VkDevice device, [[maybe_unused]] VkDeviceMemory vertexBufferMemory,
+                 [[maybe_unused]] VkPipeline pipeline, [[maybe_unused]] float deltaTime,
+                 [[maybe_unused]] VkRenderPass renderPass, [[maybe_unused]] VkFramebuffer framebuffer) {
     LOG_DEBUG_CAT("Renderer", "Rendering mode 3 (stub) for image index: {}", std::source_location::current(), imageIndex);
     // TODO: Implement rendering logic for mode 3
 }
 
-void renderMode4(const AMOURANTH* amouranth, uint32_t imageIndex, VkBuffer vertexBuffer, VkCommandBuffer commandBuffer,
-                 VkBuffer indexBuffer, float zoomLevel, int width, int height, float wavePhase,
-                 std::span<const UniversalEquation::DimensionData> cache, VkPipelineLayout pipelineLayout,
-                 VkDescriptorSet descriptorSet, VkDevice device, VkDeviceMemory vertexBufferMemory,
-                 VkPipeline pipeline, float deltaTime, VkRenderPass renderPass, VkFramebuffer framebuffer) {
+void renderMode4([[maybe_unused]] const AMOURANTH* amouranth, uint32_t imageIndex, [[maybe_unused]] VkBuffer vertexBuffer,
+                 [[maybe_unused]] VkCommandBuffer commandBuffer, [[maybe_unused]] VkBuffer indexBuffer,
+                 [[maybe_unused]] float zoomLevel, [[maybe_unused]] int width, [[maybe_unused]] int height,
+                 [[maybe_unused]] float wavePhase, [[maybe_unused]] std::span<const UniversalEquation::DimensionData> cache,
+                 [[maybe_unused]] VkPipelineLayout pipelineLayout, [[maybe_unused]] VkDescriptorSet descriptorSet,
+                 [[maybe_unused]] VkDevice device, [[maybe_unused]] VkDeviceMemory vertexBufferMemory,
+                 [[maybe_unused]] VkPipeline pipeline, [[maybe_unused]] float deltaTime,
+                 [[maybe_unused]] VkRenderPass renderPass, [[maybe_unused]] VkFramebuffer framebuffer) {
     LOG_DEBUG_CAT("Renderer", "Rendering mode 4 (stub) for image index: {}", std::source_location::current(), imageIndex);
     // TODO: Implement rendering logic for mode 4
 }
 
-void renderMode5(const AMOURANTH* amouranth, uint32_t imageIndex, VkBuffer vertexBuffer, VkCommandBuffer commandBuffer,
-                 VkBuffer indexBuffer, float zoomLevel, int width, int height, float wavePhase,
-                 std::span<const UniversalEquation::DimensionData> cache, VkPipelineLayout pipelineLayout,
-                 VkDescriptorSet descriptorSet, VkDevice device, VkDeviceMemory vertexBufferMemory,
-                 VkPipeline pipeline, float deltaTime, VkRenderPass renderPass, VkFramebuffer framebuffer) {
+void renderMode5([[maybe_unused]] const AMOURANTH* amouranth, uint32_t imageIndex, [[maybe_unused]] VkBuffer vertexBuffer,
+                 [[maybe_unused]] VkCommandBuffer commandBuffer, [[maybe_unused]] VkBuffer indexBuffer,
+                 [[maybe_unused]] float zoomLevel, [[maybe_unused]] int width, [[maybe_unused]] int height,
+                 [[maybe_unused]] float wavePhase, [[maybe_unused]] std::span<const UniversalEquation::DimensionData> cache,
+                 [[maybe_unused]] VkPipelineLayout pipelineLayout, [[maybe_unused]] VkDescriptorSet descriptorSet,
+                 [[maybe_unused]] VkDevice device, [[maybe_unused]] VkDeviceMemory vertexBufferMemory,
+                 [[maybe_unused]] VkPipeline pipeline, [[maybe_unused]] float deltaTime,
+                 [[maybe_unused]] VkRenderPass renderPass, [[maybe_unused]] VkFramebuffer framebuffer) {
     LOG_DEBUG_CAT("Renderer", "Rendering mode 5 (stub) for image index: {}", std::source_location::current(), imageIndex);
     // TODO: Implement rendering logic for mode 5
 }
 
-void renderMode6(const AMOURANTH* amouranth, uint32_t imageIndex, VkBuffer vertexBuffer, VkCommandBuffer commandBuffer,
-                 VkBuffer indexBuffer, float zoomLevel, int width, int height, float wavePhase,
-                 std::span<const UniversalEquation::DimensionData> cache, VkPipelineLayout pipelineLayout,
-                 VkDescriptorSet descriptorSet, VkDevice device, VkDeviceMemory vertexBufferMemory,
-                 VkPipeline pipeline, float deltaTime, VkRenderPass renderPass, VkFramebuffer framebuffer) {
+void renderMode6([[maybe_unused]] const AMOURANTH* amouranth, uint32_t imageIndex, [[maybe_unused]] VkBuffer vertexBuffer,
+                 [[maybe_unused]] VkCommandBuffer commandBuffer, [[maybe_unused]] VkBuffer indexBuffer,
+                 [[maybe_unused]] float zoomLevel, [[maybe_unused]] int width, [[maybe_unused]] int height,
+                 [[maybe_unused]] float wavePhase, [[maybe_unused]] std::span<const UniversalEquation::DimensionData> cache,
+                 [[maybe_unused]] VkPipelineLayout pipelineLayout, [[maybe_unused]] VkDescriptorSet descriptorSet,
+                 [[maybe_unused]] VkDevice device, [[maybe_unused]] VkDeviceMemory vertexBufferMemory,
+                 [[maybe_unused]] VkPipeline pipeline, [[maybe_unused]] float deltaTime,
+                 [[maybe_unused]] VkRenderPass renderPass, [[maybe_unused]] VkFramebuffer framebuffer) {
     LOG_DEBUG_CAT("Renderer", "Rendering mode 6 (stub) for image index: {}", std::source_location::current(), imageIndex);
     // TODO: Implement rendering logic for mode 6
 }
 
-void renderMode7(const AMOURANTH* amouranth, uint32_t imageIndex, VkBuffer vertexBuffer, VkCommandBuffer commandBuffer,
-                 VkBuffer indexBuffer, float zoomLevel, int width, int height, float wavePhase,
-                 std::span<const UniversalEquation::DimensionData> cache, VkPipelineLayout pipelineLayout,
-                 VkDescriptorSet descriptorSet, VkDevice device, VkDeviceMemory vertexBufferMemory,
-                 VkPipeline pipeline, float deltaTime, VkRenderPass renderPass, VkFramebuffer framebuffer) {
+void renderMode7([[maybe_unused]] const AMOURANTH* amouranth, uint32_t imageIndex, [[maybe_unused]] VkBuffer vertexBuffer,
+                 [[maybe_unused]] VkCommandBuffer commandBuffer, [[maybe_unused]] VkBuffer indexBuffer,
+                 [[maybe_unused]] float zoomLevel, [[maybe_unused]] int width, [[maybe_unused]] int height,
+                 [[maybe_unused]] float wavePhase, [[maybe_unused]] std::span<const UniversalEquation::DimensionData> cache,
+                 [[maybe_unused]] VkPipelineLayout pipelineLayout, [[maybe_unused]] VkDescriptorSet descriptorSet,
+                 [[maybe_unused]] VkDevice device, [[maybe_unused]] VkDeviceMemory vertexBufferMemory,
+                 [[maybe_unused]] VkPipeline pipeline, [[maybe_unused]] float deltaTime,
+                 [[maybe_unused]] VkRenderPass renderPass, [[maybe_unused]] VkFramebuffer framebuffer) {
     LOG_DEBUG_CAT("Renderer", "Rendering mode 7 (stub) for image index: {}", std::source_location::current(), imageIndex);
     // TODO: Implement rendering logic for mode 7
 }
 
-void renderMode8(const AMOURANTH* amouranth, uint32_t imageIndex, VkBuffer vertexBuffer, VkCommandBuffer commandBuffer,
-                 VkBuffer indexBuffer, float zoomLevel, int width, int height, float wavePhase,
-                 std::span<const UniversalEquation::DimensionData> cache, VkPipelineLayout pipelineLayout,
-                 VkDescriptorSet descriptorSet, VkDevice device, VkDeviceMemory vertexBufferMemory,
-                 VkPipeline pipeline, float deltaTime, VkRenderPass renderPass, VkFramebuffer framebuffer) {
+void renderMode8([[maybe_unused]] const AMOURANTH* amouranth, uint32_t imageIndex, [[maybe_unused]] VkBuffer vertexBuffer,
+                 [[maybe_unused]] VkCommandBuffer commandBuffer, [[maybe_unused]] VkBuffer indexBuffer,
+                 [[maybe_unused]] float zoomLevel, [[maybe_unused]] int width, [[maybe_unused]] int height,
+                 [[maybe_unused]] float wavePhase, [[maybe_unused]] std::span<const UniversalEquation::DimensionData> cache,
+                 [[maybe_unused]] VkPipelineLayout pipelineLayout, [[maybe_unused]] VkDescriptorSet descriptorSet,
+                 [[maybe_unused]] VkDevice device, [[maybe_unused]] VkDeviceMemory vertexBufferMemory,
+                 [[maybe_unused]] VkPipeline pipeline, [[maybe_unused]] float deltaTime,
+                 [[maybe_unused]] VkRenderPass renderPass, [[maybe_unused]] VkFramebuffer framebuffer) {
     LOG_DEBUG_CAT("Renderer", "Rendering mode 8 (stub) for image index: {}", std::source_location::current(), imageIndex);
     // TODO: Implement rendering logic for mode 8
 }
 
-void renderMode9(const AMOURANTH* amouranth, uint32_t imageIndex, VkBuffer vertexBuffer, VkCommandBuffer commandBuffer,
-                 VkBuffer indexBuffer, float zoomLevel, int width, int height, float wavePhase,
-                 std::span<const UniversalEquation::DimensionData> cache, VkPipelineLayout pipelineLayout,
-                 VkDescriptorSet descriptorSet, VkDevice device, VkDeviceMemory vertexBufferMemory,
-                 VkPipeline pipeline, float deltaTime, VkRenderPass renderPass, VkFramebuffer framebuffer) {
+void renderMode9([[maybe_unused]] const AMOURANTH* amouranth, uint32_t imageIndex, [[maybe_unused]] VkBuffer vertexBuffer,
+                 [[maybe_unused]] VkCommandBuffer commandBuffer, [[maybe_unused]] VkBuffer indexBuffer,
+                 [[maybe_unused]] float zoomLevel, [[maybe_unused]] int width, [[maybe_unused]] int height,
+                 [[maybe_unused]] float wavePhase, [[maybe_unused]] std::span<const UniversalEquation::DimensionData> cache,
+                 [[maybe_unused]] VkPipelineLayout pipelineLayout, [[maybe_unused]] VkDescriptorSet descriptorSet,
+                 [[maybe_unused]] VkDevice device, [[maybe_unused]] VkDeviceMemory vertexBufferMemory,
+                 [[maybe_unused]] VkPipeline pipeline, [[maybe_unused]] float deltaTime,
+                 [[maybe_unused]] VkRenderPass renderPass, [[maybe_unused]] VkFramebuffer framebuffer) {
     LOG_DEBUG_CAT("Renderer", "Rendering mode 9 (stub) for image index: {}", std::source_location::current(), imageIndex);
     // TODO: Implement rendering logic for mode 9
 }

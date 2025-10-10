@@ -9,11 +9,13 @@
 #include <stdexcept>
 #include <cstring>
 #include <span>
+#include <source_location>
 
-void renderMode1(AMOURANTH* amouranth, uint32_t imageIndex, VkBuffer vertexBuffer, VkCommandBuffer commandBuffer,
-                 VkBuffer indexBuffer, float zoomLevel, int width, int height, float wavePhase,
-                 std::span<const UniversalEquation::DimensionData> cache, VkPipelineLayout pipelineLayout,
-                 VkDescriptorSet descriptorSet, VkDevice device, VkDeviceMemory vertexBufferMemory,
+void renderMode1(AMOURANTH* amouranth, [[maybe_unused]] uint32_t imageIndex, VkBuffer vertexBuffer,
+                 VkCommandBuffer commandBuffer, VkBuffer indexBuffer, float zoomLevel, int width, int height,
+                 float wavePhase, std::span<const UniversalEquation::DimensionData> cache,
+                 VkPipelineLayout pipelineLayout, VkDescriptorSet descriptorSet,
+                 VkDevice device, VkDeviceMemory vertexBufferMemory,
                  VkPipeline pipeline, float deltaTime, VkRenderPass renderPass, VkFramebuffer framebuffer) {
     // Initialize Mia for timing and random number generation
     Mia mia(amouranth, amouranth->getLogger());
@@ -35,7 +37,7 @@ void renderMode1(AMOURANTH* amouranth, uint32_t imageIndex, VkBuffer vertexBuffe
     vertexData.reserve(balls.size() * 6); // Position (x, y, z) + Normal (x, y, z) per ball
     for (const auto& ball : balls) {
         // Project 9D position to 1D (use x-coordinate, modulated by wavePhase)
-        float x = ball.position.x * (1.0f + sin(wavePhase * 4.0f) * 0.2f); // Music-driven pulsing
+        float x = ball.x * (1.0f + sin(wavePhase * 4.0f) * 0.2f); // Music-driven pulsing
         vertexData.push_back(x); // 1D line along x-axis
         vertexData.push_back(0.0f); // y = 0 for 1D
         vertexData.push_back(0.0f); // z = 0 for 1D
@@ -57,14 +59,16 @@ void renderMode1(AMOURANTH* amouranth, uint32_t imageIndex, VkBuffer vertexBuffe
         indices[i] = i;
     }
 
-    // Update index buffer (using separate indexBufferMemory, to be passed as parameter)
+    // Note: Index buffer memory is not passed; assuming it's handled elsewhere or same as vertexBufferMemory
+    // Update index buffer (using vertexBufferMemory as placeholder, ideally use indexBufferMemory)
     VkDeviceSize indexBufferSize = indices.size() * sizeof(uint32_t);
     void* indexData;
-    vkMapMemory(device, vertexBufferMemory, 0, indexBufferSize, 0, &indexData); // Note: This should use indexBufferMemory
+    vkMapMemory(device, vertexBufferMemory, 0, indexBufferSize, 0, &indexData); // TODO: Use indexBufferMemory
     memcpy(indexData, indices.data(), indexBufferSize);
     vkUnmapMemory(device, vertexBufferMemory);
 
     // Begin render pass
+    VkClearValue clearColor = {{{0.0f, 0.0f, 0.0f, 1.0f}}}; // Black background for vibrant colors
     VkRenderPassBeginInfo renderPassInfo{
         .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
         .pNext = nullptr,
@@ -77,7 +81,19 @@ void renderMode1(AMOURANTH* amouranth, uint32_t imageIndex, VkBuffer vertexBuffe
         .clearValueCount = 1,
         .pClearValues = &clearColor
     };
-    VkClearValue clearColor = {{{0.0f, 0.0f, 0.0f, 1.0f}}}; // Black background for vibrant colors
+
+    VkCommandBufferBeginInfo beginInfo{
+        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+        .pNext = nullptr,
+        .flags = 0,
+        .pInheritanceInfo = nullptr
+    };
+    if (VkResult result = vkBeginCommandBuffer(commandBuffer, &beginInfo); result != VK_SUCCESS) {
+        amouranth->getLogger().log(Logging::LogLevel::Error, "RenderMode1", "Failed to begin command buffer: result={}",
+                                   std::source_location::current(), result);
+        throw std::runtime_error("Failed to begin command buffer");
+    }
+
     vkCmdBeginRenderPass(commandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 
     // Bind pipeline (graphics for now, RTX-compatible)
@@ -106,16 +122,19 @@ void renderMode1(AMOURANTH* amouranth, uint32_t imageIndex, VkBuffer vertexBuffe
     float aspectRatio = static_cast<float>(width) / static_cast<float>(height);
     float musicZoom = zoomLevel * (1.0f + 0.2f * sin(wavePhase * 4.0f + randomShift));
     glm::mat4 proj = glm::ortho(-aspectRatio * musicZoom, aspectRatio * musicZoom, -1.0f * musicZoom, 1.0f * musicZoom, 0.1f, 1000.0f);
-    glm::vec3 cameraPos = glm::vec3(
-        sin(wavePhase * 0.9f + randomShift) * 0.5f + cos(wavePhase * 5.0f + randomShift) * 0.3f,
-        cos(wavePhase * 0.9f + randomShift) * 0.5f + sin(wavePhase * 5.0f + randomShift) * 0.3f,
-        -5.0f
+    glm::mat4 view = glm::lookAt(
+        glm::vec3(
+            sin(wavePhase * 0.9f + randomShift) * 0.5f + cos(wavePhase * 5.0f + randomShift) * 0.3f,
+            cos(wavePhase * 0.9f + randomShift) * 0.5f + sin(wavePhase * 5.0f + randomShift) * 0.3f,
+            -5.0f
+        ),
+        glm::vec3(0.0f, 0.0f, 0.0f),
+        glm::vec3(0.0f, 1.0f, 0.0f)
     );
-    glm::mat4 view = glm::lookAt(cameraPos, glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
     glm::mat4 model = glm::rotate(glm::mat4(1.0f), wavePhase * 0.6f + randomShift, glm::vec3(0.0f, 0.0f, 1.0f));
 
     pushConstants.mvp = proj * view * model;
-    float beatIntensity = cache.empty() ? 1.0f : cache[0].value; // Use value instead of nurbEnergy
+    float beatIntensity = cache.empty() ? 1.0f : cache[0].value;
     pushConstants.beatIntensity = beatIntensity * (1.0f + 0.5f * abs(sin(wavePhase * 4.0f + randomShift)));
     pushConstants.amplitude = 1.0f + sin(wavePhase * 4.0f + randomShift) * 0.8f;
     pushConstants.time = wavePhase;

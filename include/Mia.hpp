@@ -1,8 +1,6 @@
-// Mia.hpp
-// Random number generation for AMOURANTH RTX Engine
-// Zachary Geurts 2025
-
 #pragma once
+#ifndef MIA_HPP
+#define MIA_HPP
 
 #include <atomic>
 #include <thread>
@@ -16,14 +14,13 @@
 #include <vector>
 #include <vulkan/vulkan.h>
 #include "engine/logging.hpp"
-#include "engine/core.hpp"
+#include "ue_init.hpp"
 
 class Mia {
 public:
-    Mia(AMOURANTH* amouranth, const Logging::Logger& logger)
+    Mia(const AMOURANTH* amouranth, const Logging::Logger& logger)
         : amouranth_(amouranth), logger_(logger), running_(true), lastTime_(std::chrono::high_resolution_clock::now()),
-          deltaTime_(0.0f), randomBuffer_(131'072), bufferIndex_(0), bufferSize_(0) { // 1MB / 8 bytes = 131,072 uint64_t
-        // Initialize random number generator using /dev/urandom
+          deltaTime_(0.0f), randomBuffer_(131'072), bufferIndex_(0), bufferSize_(0) {
         std::ifstream urandom("/dev/urandom", std::ios::binary);
         if (urandom.is_open()) {
             uint32_t seed;
@@ -37,13 +34,8 @@ public:
             rng_.seed(rd());
         }
 
-        // Fill random buffer initially
         fillRandomBuffer();
-
-        // Cache physics parameters
         updatePhysicsParams();
-
-        // Start update thread
         updateThread_ = std::thread([this] { updateLoop(); });
         logger_.log(Logging::LogLevel::Debug, "Mia", "Mia initialized for 13000+ FPS with 1MB random buffer",
                     std::source_location::current());
@@ -57,12 +49,10 @@ public:
         logger_.log(Logging::LogLevel::Debug, "Mia", "Mia destroyed", std::source_location::current());
     }
 
-    // Get elapsed time since last update (in seconds)
     float getDeltaTime() const {
         return deltaTime_.load(std::memory_order_relaxed);
     }
 
-    // Generate a physics-driven random long double
     long double getRandom() {
         long double baseRandom;
         if (bufferIndex_ < bufferSize_) {
@@ -72,15 +62,13 @@ public:
                 baseRandom = static_cast<long double>(raw) / static_cast<long double>(std::numeric_limits<uint64_t>::max());
             }
         } else {
-            // Fallback to std::mt19937_64
             std::uniform_real_distribution<long double> dist(0.0L, 1.0L);
             baseRandom = dist(rng_);
         }
 
-        // Use cached physics parameters
         long double physicsFactor = godWaveFreq_ * (nurbEnergy_ + godWaveEnergy_ + spinEnergy_ + momentumEnergy_ + fieldEnergy_);
         long double randomValue = baseRandom * physicsFactor;
-        randomValue = std::fmod(randomValue, 1.0L); // Normalize to [0, 1)
+        randomValue = std::fmod(randomValue, 1.0L);
 
         if (std::isnan(randomValue) || std::isinf(randomValue)) {
             logger_.log(Logging::LogLevel::Warning, "Mia", "Invalid random value, returning fallback: value={}",
@@ -128,7 +116,6 @@ private:
                 while (running_.load(std::memory_order_relaxed)) {
                     #pragma omp task
                     {
-                        // Update deltaTime
                         auto currentTime = std::chrono::high_resolution_clock::now();
                         auto duration = std::chrono::duration_cast<std::chrono::nanoseconds>(currentTime - lastTime_.load(std::memory_order_relaxed));
                         deltaTime_.store(static_cast<float>(duration.count()) / 1e9f, std::memory_order_relaxed);
@@ -136,7 +123,6 @@ private:
                     }
                     #pragma omp task
                     {
-                        // Update random buffer and physics parameters
                         if (bufferIndex_ >= bufferSize_) {
                             fillRandomBuffer();
                         }
@@ -145,13 +131,13 @@ private:
                         }
                     }
                     #pragma omp taskwait
-                    std::this_thread::sleep_for(std::chrono::microseconds(1)); // Match 13000+ FPS
+                    std::this_thread::sleep_for(std::chrono::microseconds(1));
                 }
             }
         }
     }
 
-    AMOURANTH* amouranth_;
+    const AMOURANTH* amouranth_;
     const Logging::Logger& logger_;
     std::atomic<bool> running_;
     std::atomic<std::chrono::high_resolution_clock::time_point> lastTime_;
@@ -165,7 +151,9 @@ private:
     long double spinEnergy_{0.032774L};
     long double momentumEnergy_{1.0L};
     long double fieldEnergy_{1.0L};
-    const long double godWaveFreq_{1.0L}; // Fixed as per user specification
+    const long double godWaveFreq_{1.0L};
     std::thread updateThread_;
-    std::mt19937_64 rng_; // Fallback
+    std::mt19937_64 rng_;
 };
+
+#endif // MIA_HPP
