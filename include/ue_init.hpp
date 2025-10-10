@@ -318,7 +318,7 @@ public:
 
     void render(uint32_t imageIndex, VkBuffer vertexBuffer, VkCommandBuffer commandBuffer,
                 VkBuffer indexBuffer, VkPipelineLayout pipelineLayout, VkDescriptorSet descriptorSet,
-                VkRenderPass renderPass, VkFramebuffer framebuffer, float deltaTime);
+                VkRenderPass renderPass, VkFramebuffer framebuffer, float deltaTime) const;
     void update(float deltaTime);
     void adjustInfluence(double delta);
     void adjustNurbMatter(double delta);

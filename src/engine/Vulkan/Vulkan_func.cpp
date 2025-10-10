@@ -4,8 +4,6 @@
 // Zachary Geurts 2025
 
 //#include "engine/Vulkan_init.hpp" // For VulkanInitializer declarations
-#include "engine/Vulkan/Vulkan_func_pipe.hpp"
-#include "engine/Vulkan/Vulkan_func_swapchain.hpp"
 #include "engine/logging.hpp"
 #include <vulkan/vulkan.h>
 #include <stdexcept>
