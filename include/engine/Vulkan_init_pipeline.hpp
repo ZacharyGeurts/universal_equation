@@ -1,8 +1,31 @@
-// AMOURANTH RTX Engine, October 2025 - Vulkan pipeline initialization.
-// Placeholder header; definitions moved to Vulkan_init.hpp to avoid redefinition.
-// Dependencies: Vulkan 1.3+, GLM, C++20 standard library.
-// Zachary Geurts 2025
-
+// include/engine/Vulkan_init_pipeline.hpp
 #pragma once
+#ifndef VULKAN_INIT_PIPELINE_HPP
+#define VULKAN_INIT_PIPELINE_HPP
 
-// Empty header; all definitions (including PushConstants and VulkanPipelineManager) moved to Vulkan_init.hpp
+#include "engine/Vulkan_types.hpp"
+#include "engine/logging.hpp"
+#include <vector>
+#include <string>
+
+class VulkanPipelineManager {
+public:
+    VulkanPipelineManager(VulkanContext& context);
+    ~VulkanPipelineManager() noexcept;
+
+private:
+    void createRenderPass();
+    void createPipelineLayout();
+    void createGraphicsPipeline();
+    void cleanupPipeline();
+    std::vector<char> readFile(const std::string& filename);
+    VkShaderModule createShaderModule(const std::vector<char>& code);
+
+    VulkanContext& context_;
+};
+
+// Utility functions for logging Vulkan types
+std::string vkFormatToString(VkFormat format);
+std::string vkResultToString(VkResult result);
+
+#endif // VULKAN_INIT_PIPELINE_HPP

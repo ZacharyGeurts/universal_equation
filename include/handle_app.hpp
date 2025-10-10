@@ -1,24 +1,19 @@
-// handle_app.hpp
-// AMOURANTH RTX Engine - Application and input handling definitions.
-// Manages SDL3 input events, Vulkan rendering, audio, and application lifecycle.
-// Dependencies: SDL3, Vulkan, GLM, C++20 standard library.
-// Supported platforms: Windows, Linux.
-// Zachary Geurts 2025
-
+// include/handle_app.hpp
 #pragma once
+#ifndef HANDLE_APP_HPP
+#define HANDLE_APP_HPP
 
-#include "engine/core.hpp"
-#include "engine/Vulkan_init.hpp"
 #include "engine/SDL3_init.hpp"
-#include <memory>
-#include <optional>
-#include <vector>
-#include <functional>
+#include "engine/Vulkan_init.hpp"
+#include "universal_equation.hpp"
+#include "engine/logging.hpp"
 #include <SDL3/SDL.h>
 #include <glm/glm.hpp>
-
-// Forward declare HandleInput to resolve declaration order issue
-class HandleInput;
+#include <memory>
+#include <vector>
+#include <optional>
+#include <chrono>
+#include <functional>
 
 class Application {
 public:
@@ -27,23 +22,23 @@ public:
     void run();
     void render();
     void handleResize(int width, int height);
-    void initializeInput();
-    void initializeAudio();
     void setRenderMode(int mode) { mode_ = mode; }
-    int getRenderMode() const { return mode_; }
 
 private:
+    void initializeInput();
+    void initializeAudio();
+
     std::string title_;
     int width_;
     int height_;
     int mode_;
     std::vector<glm::vec3> vertices_;
     std::vector<uint32_t> indices_;
-    std::unique_ptr<SDL3Initializer::SDL3Initializer> sdl_; // Explicitly qualify
+    std::unique_ptr<SDL3Initializer::SDL3Initializer> sdl_;
     std::unique_ptr<VulkanRenderer> renderer_;
     std::unique_ptr<DimensionalNavigator> navigator_;
     std::optional<AMOURANTH> amouranth_;
-    std::unique_ptr<HandleInput> inputHandler_;
+    std::unique_ptr<class HandleInput> inputHandler_;
     SDL_AudioDeviceID audioDevice_;
     SDL_AudioStream* audioStream_;
     std::chrono::steady_clock::time_point lastFrameTime_;
@@ -76,6 +71,16 @@ public:
     );
 
 private:
+    void defaultKeyboardHandler(const SDL_KeyboardEvent& key);
+    void defaultMouseButtonHandler(const SDL_MouseButtonEvent& mb);
+    void defaultMouseMotionHandler(const SDL_MouseMotionEvent& mm);
+    void defaultMouseWheelHandler(const SDL_MouseWheelEvent& mw);
+    void defaultTextInputHandler(const SDL_TextInputEvent& ti);
+    void defaultTouchHandler(const SDL_TouchFingerEvent& tf);
+    void defaultGamepadButtonHandler(const SDL_GamepadButtonEvent& gb);
+    void defaultGamepadAxisHandler(const SDL_GamepadAxisEvent& ga);
+    void defaultGamepadConnectHandler(bool connected, SDL_JoystickID id, SDL_Gamepad* pad);
+
     AMOURANTH& amouranth_;
     DimensionalNavigator* navigator_;
     KeyboardCallback keyboardCallback_;
@@ -87,14 +92,6 @@ private:
     GamepadButtonCallback gamepadButtonCallback_;
     GamepadAxisCallback gamepadAxisCallback_;
     GamepadConnectCallback gamepadConnectCallback_;
-
-    void defaultKeyboardHandler(const SDL_KeyboardEvent& key);
-    void defaultMouseButtonHandler(const SDL_MouseButtonEvent& mb);
-    void defaultMouseMotionHandler(const SDL_MouseMotionEvent& mm);
-    void defaultMouseWheelHandler(const SDL_MouseWheelEvent& mw);
-    void defaultTextInputHandler(const SDL_TextInputEvent& ti);
-    void defaultTouchHandler(const SDL_TouchFingerEvent& tf);
-    void defaultGamepadButtonHandler(const SDL_GamepadButtonEvent& gb);
-    void defaultGamepadAxisHandler(const SDL_GamepadAxisEvent& ga);
-    void defaultGamepadConnectHandler(bool connected, SDL_JoystickID id, SDL_Gamepad* pad);
 };
+
+#endif // HANDLE_APP_HPP

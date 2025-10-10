@@ -1,106 +1,121 @@
-// Vulkan_func_swapchain.cpp
-// AMOURANTH RTX Engine, October 2025 - Vulkan swapchain utilities implementation.
-// Supports Windows/Linux; no mutexes; voxel geometry rendering.
-// Dependencies: Vulkan 1.3+, C++20 standard library.
-// Zachary Geurts 2025
-
+// src/engine/Vulkan/Vulkan_func_swapchain.cpp
 #include "engine/Vulkan/Vulkan_func_swapchain.hpp"
 #include "engine/logging.hpp"
 #include <stdexcept>
-#include <vector>
+#include <source_location>
 
-// Define VK_CHECK for consistent error handling
-#ifndef VK_CHECK
-#define VK_CHECK(result, msg) do { if ((result) != VK_SUCCESS) { LOG_ERROR_CAT("Vulkan", "{} (VkResult: {})", std::source_location::current(), (msg), static_cast<int>(result)); throw std::runtime_error((msg)); } } while (0)
-#endif
+std::string vkResultToString(VkResult result) {
+    switch (result) {
+        case VK_SUCCESS: return "VK_SUCCESS";
+        case VK_NOT_READY: return "VK_NOT_READY";
+        case VK_TIMEOUT: return "VK_TIMEOUT";
+        case VK_ERROR_OUT_OF_HOST_MEMORY: return "VK_ERROR_OUT_OF_HOST_MEMORY";
+        case VK_ERROR_OUT_OF_DEVICE_MEMORY: return "VK_ERROR_OUT_OF_DEVICE_MEMORY";
+        case VK_ERROR_INITIALIZATION_FAILED: return "VK_ERROR_INITIALIZATION_FAILED";
+        default: return "Unknown VkResult (" + std::to_string(result) + ")";
+    }
+}
 
-namespace VulkanInitializer {
+VulkanSwapchainManager::VulkanSwapchainManager(VulkanContext& context, VkSurfaceKHR surface)
+    : context_(context), swapchain_(VK_NULL_HANDLE), imageCount_(0) {
+    LOG_INFO_CAT("VulkanSwapchain", "Constructing VulkanSwapchainManager with context.device={:p}, surface={:p}",
+                 std::source_location::current(), static_cast<void*>(context_.device), static_cast<void*>(surface));
+}
 
-VkSurfaceFormatKHR selectSurfaceFormat(VkPhysicalDevice physicalDevice, VkSurfaceKHR surface) {
-    LOG_INFO_CAT("Vulkan", "Selecting surface format", std::source_location::current());
+VulkanSwapchainManager::~VulkanSwapchainManager() {
+    LOG_INFO_CAT("VulkanSwapchain", "Destroying VulkanSwapchainManager", std::source_location::current());
+    cleanupSwapchain();
+}
+
+void VulkanSwapchainManager::initializeSwapchain(int width, int height) {
+    LOG_DEBUG_CAT("VulkanSwapchain", "Initializing swapchain with width={}, height={}",
+                  std::source_location::current(), width, height);
+
+    VkSurfaceCapabilitiesKHR capabilities;
+    vkGetPhysicalDeviceSurfaceCapabilitiesKHR(context_.physicalDevice, context_.surface, &capabilities);
 
     uint32_t formatCount;
-    VK_CHECK(vkGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice, surface, &formatCount, nullptr), "Failed to get surface format count");
-    if (formatCount == 0) {
-        LOG_ERROR_CAT("Vulkan", "No surface formats available", std::source_location::current());
-        throw std::runtime_error("No surface formats available");
-    }
-
+    vkGetPhysicalDeviceSurfaceFormatsKHR(context_.physicalDevice, context_.surface, &formatCount, nullptr);
     std::vector<VkSurfaceFormatKHR> formats(formatCount);
-    VK_CHECK(vkGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice, surface, &formatCount, formats.data()), "Failed to get surface formats");
+    vkGetPhysicalDeviceSurfaceFormatsKHR(context_.physicalDevice, context_.surface, &formatCount, formats.data());
 
-    VkSurfaceFormatKHR selectedFormat = formats[0];
+    uint32_t presentModeCount;
+    vkGetPhysicalDeviceSurfacePresentModesKHR(context_.physicalDevice, context_.surface, &presentModeCount, nullptr);
+    std::vector<VkPresentModeKHR> presentModes(presentModeCount);
+    vkGetPhysicalDeviceSurfacePresentModesKHR(context_.physicalDevice, context_.surface, &presentModeCount, presentModes.data());
+
+    VkSurfaceFormatKHR surfaceFormat = formats[0];
     for (const auto& format : formats) {
         if (format.format == VK_FORMAT_B8G8R8A8_SRGB && format.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
-            selectedFormat = format;
+            surfaceFormat = format;
             break;
         }
     }
 
-    LOG_INFO_CAT("Vulkan", "Selected surface format: {}", std::source_location::current(), static_cast<int>(selectedFormat.format));
-    return selectedFormat;
-}
-
-void createSwapchain(VkPhysicalDevice physicalDevice, VkDevice device, VkSurfaceKHR surface, VkSwapchainKHR& swapchain,
-                     std::vector<VkImage>& swapchainImages, std::vector<VkImageView>& swapchainImageViews,
-                     VkFormat& swapchainFormat, uint32_t graphicsFamily, uint32_t presentFamily, int width, int height) {
-    LOG_INFO_CAT("Vulkan", "Creating swapchain with width={}, height={}", std::source_location::current(), width, height);
-
-    VkSurfaceFormatKHR surfaceFormat = selectSurfaceFormat(physicalDevice, surface);
-    swapchainFormat = surfaceFormat.format;
-
-    VkSurfaceCapabilitiesKHR capabilities;
-    VK_CHECK(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physicalDevice, surface, &capabilities), "Failed to get surface capabilities");
-
-    uint32_t imageCount = capabilities.minImageCount + 1;
-    if (capabilities.maxImageCount > 0 && imageCount > capabilities.maxImageCount) {
-        imageCount = capabilities.maxImageCount;
+    VkPresentModeKHR presentMode = VK_PRESENT_MODE_FIFO_KHR;
+    for (const auto& mode : presentModes) {
+        if (mode == VK_PRESENT_MODE_MAILBOX_KHR) {
+            presentMode = mode;
+            break;
+        }
     }
 
-    VkSharingMode sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-    std::vector<uint32_t> queueFamilyIndices;
-    if (graphicsFamily != presentFamily) {
-        sharingMode = VK_SHARING_MODE_CONCURRENT;
-        queueFamilyIndices = {graphicsFamily, presentFamily};
+    VkExtent2D extent;
+    if (capabilities.currentExtent.width != UINT32_MAX) {
+        extent = capabilities.currentExtent;
+    } else {
+        extent = {static_cast<uint32_t>(width), static_cast<uint32_t>(height)};
+        extent.width = std::max(capabilities.minImageExtent.width, std::min(capabilities.maxImageExtent.width, extent.width));
+        extent.height = std::max(capabilities.minImageExtent.height, std::min(capabilities.maxImageExtent.height, extent.height));
+    }
+
+    imageCount_ = capabilities.minImageCount + 1;
+    if (capabilities.maxImageCount > 0 && imageCount_ > capabilities.maxImageCount) {
+        imageCount_ = capabilities.maxImageCount;
     }
 
     VkSwapchainCreateInfoKHR createInfo{
         .sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
         .pNext = nullptr,
         .flags = 0,
-        .surface = surface,
-        .minImageCount = imageCount,
-        .imageFormat = swapchainFormat,
+        .surface = context_.surface,
+        .minImageCount = imageCount_,
+        .imageFormat = surfaceFormat.format,
         .imageColorSpace = surfaceFormat.colorSpace,
-        .imageExtent = {static_cast<uint32_t>(width), static_cast<uint32_t>(height)},
+        .imageExtent = extent,
         .imageArrayLayers = 1,
         .imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
-        .imageSharingMode = sharingMode,
-        .queueFamilyIndexCount = static_cast<uint32_t>(queueFamilyIndices.size()),
-        .pQueueFamilyIndices = queueFamilyIndices.empty() ? nullptr : queueFamilyIndices.data(),
+        .imageSharingMode = VK_SHARING_MODE_EXCLUSIVE,
+        .queueFamilyIndexCount = 0,
+        .pQueueFamilyIndices = nullptr,
         .preTransform = capabilities.currentTransform,
         .compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
-        .presentMode = VK_PRESENT_MODE_FIFO_KHR,
+        .presentMode = presentMode,
         .clipped = VK_TRUE,
-        .oldSwapchain = VK_NULL_HANDLE
+        .oldSwapchain = swapchain_
     };
 
-    VK_CHECK(vkCreateSwapchainKHR(device, &createInfo, nullptr, &swapchain), "Failed to create swapchain");
+    VkResult result = vkCreateSwapchainKHR(context_.device, &createInfo, nullptr, &swapchain_);
+    if (result != VK_SUCCESS) {
+        LOG_ERROR_CAT("VulkanSwapchain", "Failed to create swapchain: result={}",
+                      std::source_location::current(), vkResultToString(result));
+        throw std::runtime_error("Failed to create swapchain");
+    }
+    LOG_DEBUG_CAT("VulkanSwapchain", "Created swapchain: swapchain={:p}", std::source_location::current(), static_cast<void*>(swapchain_));
 
-    uint32_t swapchainImageCount;
-    VK_CHECK(vkGetSwapchainImagesKHR(device, swapchain, &swapchainImageCount, nullptr), "Failed to get swapchain image count");
-    swapchainImages.resize(swapchainImageCount);
-    VK_CHECK(vkGetSwapchainImagesKHR(device, swapchain, &swapchainImageCount, swapchainImages.data()), "Failed to get swapchain images");
+    vkGetSwapchainImagesKHR(context_.device, swapchain_, &imageCount_, nullptr);
+    swapchainImages_.resize(imageCount_);
+    vkGetSwapchainImagesKHR(context_.device, swapchain_, &imageCount_, swapchainImages_.data());
 
-    swapchainImageViews.resize(swapchainImageCount);
-    for (size_t i = 0; i < swapchainImageCount; ++i) {
+    swapchainImageViews_.resize(imageCount_);
+    for (uint32_t i = 0; i < imageCount_; ++i) {
         VkImageViewCreateInfo viewInfo{
             .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
             .pNext = nullptr,
             .flags = 0,
-            .image = swapchainImages[i],
+            .image = swapchainImages_[i],
             .viewType = VK_IMAGE_VIEW_TYPE_2D,
-            .format = swapchainFormat,
+            .format = surfaceFormat.format,
             .components = {VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY, VK_COMPONENT_SWIZZLE_IDENTITY},
             .subresourceRange = {
                 .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
@@ -110,35 +125,40 @@ void createSwapchain(VkPhysicalDevice physicalDevice, VkDevice device, VkSurface
                 .layerCount = 1
             }
         };
-
-        VK_CHECK(vkCreateImageView(device, &viewInfo, nullptr, &swapchainImageViews[i]), "Failed to create image view for swapchain image " + std::to_string(i));
+        result = vkCreateImageView(context_.device, &viewInfo, nullptr, &swapchainImageViews_[i]);
+        if (result != VK_SUCCESS) {
+            LOG_ERROR_CAT("VulkanSwapchain", "Failed to create image view {}: result={}",
+                          std::source_location::current(), i, vkResultToString(result));
+            throw std::runtime_error("Failed to create image view");
+        }
+        LOG_DEBUG_CAT("VulkanSwapchain", "Created image view {}: imageView={:p}",
+                      std::source_location::current(), i, static_cast<void*>(swapchainImageViews_[i]));
     }
 
-    LOG_INFO_CAT("Vulkan", "Swapchain created successfully with format: {}", std::source_location::current(), static_cast<int>(swapchainFormat));
+    swapchainExtent_ = extent;
+    swapchainImageFormat_ = surfaceFormat.format;
+    LOG_DEBUG_CAT("VulkanSwapchain", "Swapchain initialized with format={}, extent=[{}, {}]",
+                  std::source_location::current(), swapchainImageFormat_, extent.width, extent.height);
 }
 
-void createFramebuffers(VkDevice device, VkRenderPass renderPass, std::vector<VkImageView>& swapchainImageViews,
-                        std::vector<VkFramebuffer>& swapchainFramebuffers, int width, int height) {
-    LOG_INFO_CAT("Vulkan", "Creating framebuffers", std::source_location::current());
-
-    swapchainFramebuffers.resize(swapchainImageViews.size());
-    for (size_t i = 0; i < swapchainImageViews.size(); ++i) {
-        VkFramebufferCreateInfo createInfo{
-            .sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
-            .pNext = nullptr,
-            .flags = 0,
-            .renderPass = renderPass,
-            .attachmentCount = 1,
-            .pAttachments = &swapchainImageViews[i],
-            .width = static_cast<uint32_t>(width),
-            .height = static_cast<uint32_t>(height),
-            .layers = 1
-        };
-
-        VK_CHECK(vkCreateFramebuffer(device, &createInfo, nullptr, &swapchainFramebuffers[i]), "Failed to create framebuffer " + std::to_string(i));
+void VulkanSwapchainManager::cleanupSwapchain() {
+    LOG_DEBUG_CAT("VulkanSwapchain", "Cleaning up swapchain", std::source_location::current());
+    if (context_.device == VK_NULL_HANDLE) {
+        LOG_WARNING_CAT("VulkanSwapchain", "Device is null, skipping cleanup", std::source_location::current());
+        return;
     }
 
-    LOG_INFO_CAT("Vulkan", "Framebuffers created successfully", std::source_location::current());
-}
+    for (auto imageView : swapchainImageViews_) {
+        if (imageView != VK_NULL_HANDLE) {
+            LOG_DEBUG_CAT("VulkanSwapchain", "Destroying imageView={:p}", std::source_location::current(), static_cast<void*>(imageView));
+            vkDestroyImageView(context_.device, imageView, nullptr);
+        }
+    }
+    swapchainImageViews_.clear();
 
-} // namespace VulkanInitializer
+    if (swapchain_ != VK_NULL_HANDLE) {
+        LOG_DEBUG_CAT("VulkanSwapchain", "Destroying swapchain={:p}", std::source_location::current(), static_cast<void*>(swapchain_));
+        vkDestroySwapchainKHR(context_.device, swapchain_, nullptr);
+        swapchain_ = VK_NULL_HANDLE;
+    }
+}

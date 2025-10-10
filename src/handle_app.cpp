@@ -1,4 +1,4 @@
-// handle_app.cpp
+// src/handle_app.cpp
 // AMOURANTH RTX Engine, October 2025 - Application and input handling implementation.
 // Manages SDL3 input events, Vulkan rendering, audio, and application lifecycle.
 // Dependencies: SDL3, Vulkan, GLM, C++20 standard library.
@@ -143,7 +143,7 @@ void Application::render() {
 
     try {
         LOG_DEBUG_CAT("Application", "Calling renderer_->renderFrame()", std::source_location::current());
-        renderer_->renderFrame(&amouranth_.value());
+        renderer_->renderFrame(amouranth_.value()); // Fixed: Pass by reference
         LOG_DEBUG_CAT("Application", "Frame rendered successfully with deltaTime: {:.3f}", std::source_location::current(), deltaTime);
     } catch (const std::exception& e) {
         LOG_ERROR_CAT("Application", "Render failed: {}", std::source_location::current(), e.what());

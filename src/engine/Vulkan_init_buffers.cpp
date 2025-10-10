@@ -1,313 +1,234 @@
-// AMOURANTH RTX Engine, October 2025 - Vulkan buffer initialization.
-// Manages vertex, index, quad, and voxel buffer creation.
-// Dependencies: Vulkan 1.3+, GLM, C++20 standard library.
-// Zachary Geurts 2025
-
+// src/engine/Vulkan_init_buffers.cpp
 #include "engine/Vulkan_init_buffers.hpp"
+#include "engine/Vulkan_init.hpp"
+#include "engine/Vulkan_init_pipeline.hpp"
 #include "engine/logging.hpp"
 #include <stdexcept>
-#include <cstring>
-#include <format>
 #include <source_location>
+#include <glm/glm.hpp>
 
-VulkanBufferManager::VulkanBufferManager(VulkanContext* context) : context_(context) {
-    LOG_DEBUG_CAT("Vulkan", "Constructing VulkanBufferManager", std::source_location::current());
+std::string vkResultToString(VkResult result) {
+    switch (result) {
+        case VK_SUCCESS: return "VK_SUCCESS";
+        case VK_NOT_READY: return "VK_NOT_READY";
+        case VK_TIMEOUT: return "VK_TIMEOUT";
+        case VK_ERROR_OUT_OF_HOST_MEMORY: return "VK_ERROR_OUT_OF_HOST_MEMORY";
+        case VK_ERROR_OUT_OF_DEVICE_MEMORY: return "VK_ERROR_OUT_OF_DEVICE_MEMORY";
+        case VK_ERROR_INITIALIZATION_FAILED: return "VK_ERROR_INITIALIZATION_FAILED";
+        default: return "Unknown VkResult (" + std::to_string(result) + ")";
+    }
+}
+
+VulkanBufferManager::VulkanBufferManager(VulkanContext& context)
+    : context_(context) {
+    LOG_INFO_CAT("VulkanBuffer", "Constructing VulkanBufferManager with context.device={:p}",
+                 std::source_location::current(), static_cast<void*>(context_.device));
+}
+
+VulkanBufferManager::~VulkanBufferManager() {
+    LOG_INFO_CAT("VulkanBuffer", "Destroying VulkanBufferManager", std::source_location::current());
+    cleanupBuffers();
 }
 
 void VulkanBufferManager::initializeBuffers(std::span<const glm::vec3> vertices, std::span<const uint32_t> indices) {
-    LOG_DEBUG_CAT("Vulkan", "Initializing vertex and index buffers with vertices.size={} indices.size={}", std::source_location::current(), vertices.size(), indices.size());
+    LOG_INFO_CAT("VulkanBuffer", "Initializing buffers with {} vertices and {} indices",
+                 std::source_location::current(), vertices.size(), indices.size());
+
+    if (vertices.empty()) {
+        LOG_ERROR_CAT("VulkanBuffer", "Empty vertex data provided", std::source_location::current());
+        throw std::runtime_error("Empty vertex data provided");
+    }
 
     VkDeviceSize vertexBufferSize = vertices.size() * sizeof(glm::vec3);
-    VkBufferCreateInfo bufferInfo = {
-        .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-        .pNext = nullptr,
-        .flags = 0,
-        .size = vertexBufferSize,
-        .usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-        .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
-        .queueFamilyIndexCount = 0,
-        .pQueueFamilyIndices = nullptr,
-    };
-    if (vkCreateBuffer(context_->device, &bufferInfo, nullptr, &context_->vertexBuffer) != VK_SUCCESS) {
-        LOG_ERROR_CAT("Vulkan", "Failed to create vertex buffer", std::source_location::current());
-        throw std::runtime_error("Failed to create vertex buffer");
+    VulkanInitializer::createBuffer(context_.device, context_.physicalDevice, vertexBufferSize,
+                                   VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                                   VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                                   context_.sphereStagingBuffer, context_.sphereStagingBufferMemory);
+
+    void* vertexData;
+    VkResult result = vkMapMemory(context_.device, context_.sphereStagingBufferMemory, 0, vertexBufferSize, 0, &vertexData);
+    if (result != VK_SUCCESS) {
+        LOG_ERROR_CAT("VulkanBuffer", "Failed to map vertex staging buffer memory: result={}",
+                      std::source_location::current(), vkResultToString(result));
+        throw std::runtime_error("Failed to map vertex staging buffer memory");
     }
-    VkMemoryRequirements memRequirements;
-    vkGetBufferMemoryRequirements(context_->device, context_->vertexBuffer, &memRequirements);
-    VkPhysicalDeviceMemoryProperties memProperties;
-    vkGetPhysicalDeviceMemoryProperties(context_->physicalDevice, &memProperties);
-    uint32_t memoryTypeIndex = 0;
-    for (uint32_t i = 0; i < memProperties.memoryTypeCount; ++i) {
-        if ((memRequirements.memoryTypeBits & (1 << i)) &&
-            (memProperties.memoryTypes[i].propertyFlags & (VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT))) {
-            memoryTypeIndex = i;
-            break;
-        }
-    }
-    VkMemoryAllocateInfo memAllocInfo = {
-        .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
-        .pNext = nullptr,
-        .allocationSize = memRequirements.size,
-        .memoryTypeIndex = memoryTypeIndex,
-    };
-    if (vkAllocateMemory(context_->device, &memAllocInfo, nullptr, &context_->vertexBufferMemory) != VK_SUCCESS) {
-        LOG_ERROR_CAT("Vulkan", "Failed to allocate vertex buffer memory", std::source_location::current());
-        throw std::runtime_error("Failed to allocate vertex buffer memory");
-    }
-    vkBindBufferMemory(context_->device, context_->vertexBuffer, context_->vertexBufferMemory, 0);
-    void* data;
-    vkMapMemory(context_->device, context_->vertexBufferMemory, 0, vertexBufferSize, 0, &data);
-    memcpy(data, vertices.data(), vertexBufferSize);
-    vkUnmapMemory(context_->device, context_->vertexBufferMemory);
-    LOG_INFO_CAT("Vulkan", "Vertex buffer created with size={}", std::source_location::current(), vertexBufferSize);
+    memcpy(vertexData, vertices.data(), vertexBufferSize);
+    vkUnmapMemory(context_.device, context_.sphereStagingBufferMemory);
+    LOG_DEBUG_CAT("VulkanBuffer", "Copied {} bytes to vertex staging buffer", std::source_location::current(), vertexBufferSize);
+
+    VulkanInitializer::createBuffer(context_.device, context_.physicalDevice, vertexBufferSize,
+                                   VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+                                   VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                                   context_.vertexBuffer, context_.vertexBufferMemory);
+    LOG_DEBUG_CAT("VulkanBuffer", "Created vertex buffer: vertexBuffer={:p}", std::source_location::current(), static_cast<void*>(context_.vertexBuffer));
+
+    copyBuffer(context_.sphereStagingBuffer, context_.vertexBuffer, vertexBufferSize);
+    LOG_DEBUG_CAT("VulkanBuffer", "Vertex data copied to device-local buffer", std::source_location::current());
 
     if (!indices.empty()) {
         VkDeviceSize indexBufferSize = indices.size() * sizeof(uint32_t);
-        bufferInfo = {
-            .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-            .pNext = nullptr,
-            .flags = 0,
-            .size = indexBufferSize,
-            .usage = VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
-            .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
-            .queueFamilyIndexCount = 0,
-            .pQueueFamilyIndices = nullptr,
-        };
-        if (vkCreateBuffer(context_->device, &bufferInfo, nullptr, &context_->indexBuffer) != VK_SUCCESS) {
-            LOG_ERROR_CAT("Vulkan", "Failed to create index buffer", std::source_location::current());
-            throw std::runtime_error("Failed to create index buffer");
+        VulkanInitializer::createBuffer(context_.device, context_.physicalDevice, indexBufferSize,
+                                       VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                                       VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                                       context_.indexStagingBuffer, context_.indexStagingBufferMemory);
+
+        void* indexData;
+        result = vkMapMemory(context_.device, context_.indexStagingBufferMemory, 0, indexBufferSize, 0, &indexData);
+        if (result != VK_SUCCESS) {
+            LOG_ERROR_CAT("VulkanBuffer", "Failed to map index staging buffer memory: result={}",
+                          std::source_location::current(), vkResultToString(result));
+            throw std::runtime_error("Failed to map index staging buffer memory");
         }
-        vkGetBufferMemoryRequirements(context_->device, context_->indexBuffer, &memRequirements);
-        memAllocInfo = {
-            .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
-            .pNext = nullptr,
-            .allocationSize = memRequirements.size,
-            .memoryTypeIndex = memoryTypeIndex,
-        };
-        if (vkAllocateMemory(context_->device, &memAllocInfo, nullptr, &context_->indexBufferMemory) != VK_SUCCESS) {
-            LOG_ERROR_CAT("Vulkan", "Failed to allocate index buffer memory", std::source_location::current());
-            throw std::runtime_error("Failed to allocate index buffer memory");
-        }
-        vkBindBufferMemory(context_->device, context_->indexBuffer, context_->indexBufferMemory, 0);
-        vkMapMemory(context_->device, context_->indexBufferMemory, 0, indexBufferSize, 0, &data);
-        memcpy(data, indices.data(), indexBufferSize);
-        vkUnmapMemory(context_->device, context_->indexBufferMemory);
-        LOG_INFO_CAT("Vulkan", "Index buffer created with size={}", std::source_location::current(), indexBufferSize);
-    } else {
-        LOG_WARNING_CAT("Vulkan", "No indices provided, skipping index buffer creation", std::source_location::current());
+        memcpy(indexData, indices.data(), indexBufferSize);
+        vkUnmapMemory(context_.device, context_.indexStagingBufferMemory);
+        LOG_DEBUG_CAT("VulkanBuffer", "Copied {} bytes to index staging buffer", std::source_location::current(), indexBufferSize);
+
+        VulkanInitializer::createBuffer(context_.device, context_.physicalDevice, indexBufferSize,
+                                       VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+                                       VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                                       context_.indexBuffer, context_.indexBufferMemory);
+        LOG_DEBUG_CAT("VulkanBuffer", "Created index buffer: indexBuffer={:p}", std::source_location::current(), static_cast<void*>(context_.indexBuffer));
+
+        copyBuffer(context_.indexStagingBuffer, context_.indexBuffer, indexBufferSize);
+        LOG_DEBUG_CAT("VulkanBuffer", "Index data copied to device-local buffer", std::source_location::current());
     }
+
+    LOG_INFO_CAT("VulkanBuffer", "Buffers initialized successfully", std::source_location::current());
 }
 
-void VulkanBufferManager::initializeQuadBuffers(std::span<const glm::vec3> quadVertices, std::span<const uint32_t> quadIndices) {
-    LOG_DEBUG_CAT("Vulkan", "Initializing quad buffers with vertices.size={} indices.size={}", std::source_location::current(), quadVertices.size(), quadIndices.size());
+void VulkanBufferManager::updateVertexBuffers(std::span<const glm::vec3> vertices, std::span<const uint32_t> indices) {
+    LOG_INFO_CAT("VulkanBuffer", "Updating vertex buffers with {} vertices and {} indices",
+                 std::source_location::current(), vertices.size(), indices.size());
 
-    VkDeviceSize vertexBufferSize = quadVertices.size() * sizeof(glm::vec3);
-    VkBufferCreateInfo bufferInfo = {
-        .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-        .pNext = nullptr,
-        .flags = 0,
-        .size = vertexBufferSize,
-        .usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-        .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
-        .queueFamilyIndexCount = 0,
-        .pQueueFamilyIndices = nullptr,
-    };
-    if (vkCreateBuffer(context_->device, &bufferInfo, nullptr, &context_->quadVertexBuffer) != VK_SUCCESS) {
-        LOG_ERROR_CAT("Vulkan", "Failed to create quad vertex buffer", std::source_location::current());
-        throw std::runtime_error("Failed to create quad vertex buffer");
-    }
-    VkMemoryRequirements memRequirements;
-    vkGetBufferMemoryRequirements(context_->device, context_->quadVertexBuffer, &memRequirements);
-    VkPhysicalDeviceMemoryProperties memProperties;
-    vkGetPhysicalDeviceMemoryProperties(context_->physicalDevice, &memProperties);
-    uint32_t memoryTypeIndex = 0;
-    for (uint32_t i = 0; i < memProperties.memoryTypeCount; ++i) {
-        if ((memRequirements.memoryTypeBits & (1 << i)) &&
-            (memProperties.memoryTypes[i].propertyFlags & (VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT))) {
-            memoryTypeIndex = i;
-            break;
-        }
-    }
-    VkMemoryAllocateInfo memAllocInfo = {
-        .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
-        .pNext = nullptr,
-        .allocationSize = memRequirements.size,
-        .memoryTypeIndex = memoryTypeIndex,
-    };
-    if (vkAllocateMemory(context_->device, &memAllocInfo, nullptr, &context_->quadVertexBufferMemory) != VK_SUCCESS) {
-        LOG_ERROR_CAT("Vulkan", "Failed to allocate quad vertex buffer memory", std::source_location::current());
-        throw std::runtime_error("Failed to allocate quad vertex buffer memory");
-    }
-    vkBindBufferMemory(context_->device, context_->quadVertexBuffer, context_->quadVertexBufferMemory, 0);
-    void* data;
-    vkMapMemory(context_->device, context_->quadVertexBufferMemory, 0, vertexBufferSize, 0, &data);
-    memcpy(data, quadVertices.data(), vertexBufferSize);
-    vkUnmapMemory(context_->device, context_->quadVertexBufferMemory);
-    LOG_INFO_CAT("Vulkan", "Quad vertex buffer created with size={}", std::source_location::current(), vertexBufferSize);
-
-    VkDeviceSize indexBufferSize = quadIndices.size() * sizeof(uint32_t);
-    bufferInfo = {
-        .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-        .pNext = nullptr,
-        .flags = 0,
-        .size = indexBufferSize,
-        .usage = VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
-        .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
-        .queueFamilyIndexCount = 0,
-        .pQueueFamilyIndices = nullptr,
-    };
-    if (vkCreateBuffer(context_->device, &bufferInfo, nullptr, &context_->quadIndexBuffer) != VK_SUCCESS) {
-        LOG_ERROR_CAT("Vulkan", "Failed to create quad index buffer", std::source_location::current());
-        throw std::runtime_error("Failed to create quad index buffer");
-    }
-    vkGetBufferMemoryRequirements(context_->device, context_->quadIndexBuffer, &memRequirements);
-    memAllocInfo = {
-        .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
-        .pNext = nullptr,
-        .allocationSize = memRequirements.size,
-        .memoryTypeIndex = memoryTypeIndex,
-    };
-    if (vkAllocateMemory(context_->device, &memAllocInfo, nullptr, &context_->quadIndexBufferMemory) != VK_SUCCESS) {
-        LOG_ERROR_CAT("Vulkan", "Failed to allocate quad index buffer memory", std::source_location::current());
-        throw std::runtime_error("Failed to allocate quad index buffer memory");
-    }
-    vkBindBufferMemory(context_->device, context_->quadIndexBuffer, context_->quadIndexBufferMemory, 0);
-    vkMapMemory(context_->device, context_->quadIndexBufferMemory, 0, indexBufferSize, 0, &data);
-    memcpy(data, quadIndices.data(), indexBufferSize);
-    vkUnmapMemory(context_->device, context_->quadIndexBufferMemory);
-    LOG_INFO_CAT("Vulkan", "Quad index buffer created with size={}", std::source_location::current(), indexBufferSize);
-}
-
-void VulkanBufferManager::initializeVoxelBuffers(std::span<const glm::vec3> voxelVertices, std::span<const uint32_t> voxelIndices) {
-    LOG_DEBUG_CAT("Vulkan", "Initializing voxel buffers with vertices.size={} indices.size={}", std::source_location::current(), voxelVertices.size(), voxelIndices.size());
-
-    VkDeviceSize vertexBufferSize = voxelVertices.size() * sizeof(glm::vec3);
-    VkBufferCreateInfo bufferInfo = {
-        .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-        .pNext = nullptr,
-        .flags = 0,
-        .size = vertexBufferSize,
-        .usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-        .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
-        .queueFamilyIndexCount = 0,
-        .pQueueFamilyIndices = nullptr,
-    };
-    if (vkCreateBuffer(context_->device, &bufferInfo, nullptr, &context_->voxelVertexBuffer) != VK_SUCCESS) {
-        LOG_ERROR_CAT("Vulkan", "Failed to create voxel vertex buffer", std::source_location::current());
-        throw std::runtime_error("Failed to create voxel vertex buffer");
-    }
-    VkMemoryRequirements memRequirements;
-    vkGetBufferMemoryRequirements(context_->device, context_->voxelVertexBuffer, &memRequirements);
-    VkPhysicalDeviceMemoryProperties memProperties;
-    vkGetPhysicalDeviceMemoryProperties(context_->physicalDevice, &memProperties);
-    uint32_t memoryTypeIndex = 0;
-    for (uint32_t i = 0; i < memProperties.memoryTypeCount; ++i) {
-        if ((memRequirements.memoryTypeBits & (1 << i)) &&
-            (memProperties.memoryTypes[i].propertyFlags & (VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT))) {
-            memoryTypeIndex = i;
-            break;
-        }
-    }
-    VkMemoryAllocateInfo memAllocInfo = {
-        .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
-        .pNext = nullptr,
-        .allocationSize = memRequirements.size,
-        .memoryTypeIndex = memoryTypeIndex,
-    };
-    if (vkAllocateMemory(context_->device, &memAllocInfo, nullptr, &context_->voxelVertexBufferMemory) != VK_SUCCESS) {
-        LOG_ERROR_CAT("Vulkan", "Failed to allocate voxel vertex buffer memory", std::source_location::current());
-        throw std::runtime_error("Failed to allocate voxel vertex buffer memory");
-    }
-    vkBindBufferMemory(context_->device, context_->voxelVertexBuffer, context_->voxelVertexBufferMemory, 0);
-    void* data;
-    vkMapMemory(context_->device, context_->voxelVertexBufferMemory, 0, vertexBufferSize, 0, &data);
-    memcpy(data, voxelVertices.data(), vertexBufferSize);
-    vkUnmapMemory(context_->device, context_->voxelVertexBufferMemory);
-    LOG_INFO_CAT("Vulkan", "Voxel vertex buffer created with size={}", std::source_location::current(), vertexBufferSize);
-
-    VkDeviceSize indexBufferSize = voxelIndices.size() * sizeof(uint32_t);
-    bufferInfo = {
-        .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-        .pNext = nullptr,
-        .flags = 0,
-        .size = indexBufferSize,
-        .usage = VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
-        .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
-        .queueFamilyIndexCount = 0,
-        .pQueueFamilyIndices = nullptr,
-    };
-    if (vkCreateBuffer(context_->device, &bufferInfo, nullptr, &context_->voxelIndexBuffer) != VK_SUCCESS) {
-        LOG_ERROR_CAT("Vulkan", "Failed to create voxel index buffer", std::source_location::current());
-        throw std::runtime_error("Failed to create voxel index buffer");
-    }
-    vkGetBufferMemoryRequirements(context_->device, context_->voxelIndexBuffer, &memRequirements);
-    memAllocInfo = {
-        .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
-        .pNext = nullptr,
-        .allocationSize = memRequirements.size,
-        .memoryTypeIndex = memoryTypeIndex,
-    };
-    if (vkAllocateMemory(context_->device, &memAllocInfo, nullptr, &context_->voxelIndexBufferMemory) != VK_SUCCESS) {
-        LOG_ERROR_CAT("Vulkan", "Failed to allocate voxel index buffer memory", std::source_location::current());
-        throw std::runtime_error("Failed to allocate voxel index buffer memory");
-    }
-    vkBindBufferMemory(context_->device, context_->voxelIndexBuffer, context_->voxelIndexBufferMemory, 0);
-    vkMapMemory(context_->device, context_->voxelIndexBufferMemory, 0, indexBufferSize, 0, &data);
-    memcpy(data, voxelIndices.data(), indexBufferSize);
-    vkUnmapMemory(context_->device, context_->voxelIndexBufferMemory);
-    LOG_INFO_CAT("Vulkan", "Voxel index buffer created with size={}", std::source_location::current(), indexBufferSize);
+    cleanupBuffers();
+    initializeBuffers(vertices, indices);
 }
 
 void VulkanBufferManager::cleanupBuffers() {
-    LOG_INFO_CAT("Vulkan", "Cleaning up buffers", std::source_location::current());
+    LOG_DEBUG_CAT("VulkanBuffer", "Cleaning up buffers", std::source_location::current());
+    if (context_.device == VK_NULL_HANDLE) {
+        LOG_WARNING_CAT("VulkanBuffer", "Device is null, skipping cleanup", std::source_location::current());
+        return;
+    }
 
-    if (context_->vertexBuffer != VK_NULL_HANDLE) {
-        vkDestroyBuffer(context_->device, context_->vertexBuffer, nullptr);
-        context_->vertexBuffer = VK_NULL_HANDLE;
+    vkDeviceWaitIdle(context_.device);
+    LOG_DEBUG_CAT("VulkanBuffer", "Device idle, proceeding with cleanup", std::source_location::current());
+
+    if (context_.vertexBuffer != VK_NULL_HANDLE) {
+        LOG_DEBUG_CAT("VulkanBuffer", "Destroying vertexBuffer={:p}", std::source_location::current(), static_cast<void*>(context_.vertexBuffer));
+        vkDestroyBuffer(context_.device, context_.vertexBuffer, nullptr);
+        context_.vertexBuffer = VK_NULL_HANDLE;
     }
-    if (context_->vertexBufferMemory != VK_NULL_HANDLE) {
-        vkFreeMemory(context_->device, context_->vertexBufferMemory, nullptr);
-        context_->vertexBufferMemory = VK_NULL_HANDLE;
+    if (context_.vertexBufferMemory != VK_NULL_HANDLE) {
+        LOG_DEBUG_CAT("VulkanBuffer", "Freeing vertexBufferMemory={:p}", std::source_location::current(), static_cast<void*>(context_.vertexBufferMemory));
+        vkFreeMemory(context_.device, context_.vertexBufferMemory, nullptr);
+        context_.vertexBufferMemory = VK_NULL_HANDLE;
     }
-    if (context_->indexBuffer != VK_NULL_HANDLE) {
-        vkDestroyBuffer(context_->device, context_->indexBuffer, nullptr);
-        context_->indexBuffer = VK_NULL_HANDLE;
+    if (context_.indexBuffer != VK_NULL_HANDLE) {
+        LOG_DEBUG_CAT("VulkanBuffer", "Destroying indexBuffer={:p}", std::source_location::current(), static_cast<void*>(context_.indexBuffer));
+        vkDestroyBuffer(context_.device, context_.indexBuffer, nullptr);
+        context_.indexBuffer = VK_NULL_HANDLE;
     }
-    if (context_->indexBufferMemory != VK_NULL_HANDLE) {
-        vkFreeMemory(context_->device, context_->indexBufferMemory, nullptr);
-        context_->indexBufferMemory = VK_NULL_HANDLE;
+    if (context_.indexBufferMemory != VK_NULL_HANDLE) {
+        LOG_DEBUG_CAT("VulkanBuffer", "Freeing indexBufferMemory={:p}", std::source_location::current(), static_cast<void*>(context_.indexBufferMemory));
+        vkFreeMemory(context_.device, context_.indexBufferMemory, nullptr);
+        context_.indexBufferMemory = VK_NULL_HANDLE;
     }
-    if (context_->quadVertexBuffer != VK_NULL_HANDLE) {
-        vkDestroyBuffer(context_->device, context_->quadVertexBuffer, nullptr);
-        context_->quadVertexBuffer = VK_NULL_HANDLE;
+    if (context_.sphereStagingBuffer != VK_NULL_HANDLE) {
+        LOG_DEBUG_CAT("VulkanBuffer", "Destroying sphereStagingBuffer={:p}", std::source_location::current(), static_cast<void*>(context_.sphereStagingBuffer));
+        vkDestroyBuffer(context_.device, context_.sphereStagingBuffer, nullptr);
+        context_.sphereStagingBuffer = VK_NULL_HANDLE;
     }
-    if (context_->quadVertexBufferMemory != VK_NULL_HANDLE) {
-        vkFreeMemory(context_->device, context_->quadVertexBufferMemory, nullptr);
-        context_->quadVertexBufferMemory = VK_NULL_HANDLE;
+    if (context_.sphereStagingBufferMemory != VK_NULL_HANDLE) {
+        LOG_DEBUG_CAT("VulkanBuffer", "Freeing sphereStagingBufferMemory={:p}", std::source_location::current(), static_cast<void*>(context_.sphereStagingBufferMemory));
+        vkFreeMemory(context_.device, context_.sphereStagingBufferMemory, nullptr);
+        context_.sphereStagingBufferMemory = VK_NULL_HANDLE;
     }
-    if (context_->quadIndexBuffer != VK_NULL_HANDLE) {
-        vkDestroyBuffer(context_->device, context_->quadIndexBuffer, nullptr);
-        context_->quadIndexBuffer = VK_NULL_HANDLE;
+    if (context_.indexStagingBuffer != VK_NULL_HANDLE) {
+        LOG_DEBUG_CAT("VulkanBuffer", "Destroying indexStagingBuffer={:p}", std::source_location::current(), static_cast<void*>(context_.indexStagingBuffer));
+        vkDestroyBuffer(context_.device, context_.indexStagingBuffer, nullptr);
+        context_.indexStagingBuffer = VK_NULL_HANDLE;
     }
-    if (context_->quadIndexBufferMemory != VK_NULL_HANDLE) {
-        vkFreeMemory(context_->device, context_->quadIndexBufferMemory, nullptr);
-        context_->quadIndexBufferMemory = VK_NULL_HANDLE;
+    if (context_.indexStagingBufferMemory != VK_NULL_HANDLE) {
+        LOG_DEBUG_CAT("VulkanBuffer", "Freeing indexStagingBufferMemory={:p}", std::source_location::current(), static_cast<void*>(context_.indexStagingBufferMemory));
+        vkFreeMemory(context_.device, context_.indexStagingBufferMemory, nullptr);
+        context_.indexStagingBufferMemory = VK_NULL_HANDLE;
     }
-    if (context_->voxelVertexBuffer != VK_NULL_HANDLE) {
-        vkDestroyBuffer(context_->device, context_->voxelVertexBuffer, nullptr);
-        context_->voxelVertexBuffer = VK_NULL_HANDLE;
+    LOG_DEBUG_CAT("VulkanBuffer", "Buffers cleaned up", std::source_location::current());
+}
+
+void VulkanBufferManager::copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size) {
+    LOG_DEBUG_CAT("VulkanBuffer", "Copying buffer from srcBuffer={:p} to dstBuffer={:p}, size={}",
+                  std::source_location::current(), static_cast<void*>(srcBuffer), static_cast<void*>(dstBuffer), size);
+
+    VkCommandBufferAllocateInfo allocInfo{
+        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+        .pNext = nullptr,
+        .commandPool = context_.commandPool,
+        .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+        .commandBufferCount = 1
+    };
+
+    VkCommandBuffer commandBuffer;
+    VkResult result = vkAllocateCommandBuffers(context_.device, &allocInfo, &commandBuffer);
+    if (result != VK_SUCCESS) {
+        LOG_ERROR_CAT("VulkanBuffer", "Failed to allocate command buffer for copy: result={}",
+                      std::source_location::current(), vkResultToString(result));
+        throw std::runtime_error("Failed to allocate command buffer for copy");
     }
-    if (context_->voxelVertexBufferMemory != VK_NULL_HANDLE) {
-        vkFreeMemory(context_->device, context_->voxelVertexBufferMemory, nullptr);
-        context_->voxelVertexBufferMemory = VK_NULL_HANDLE;
+    LOG_DEBUG_CAT("VulkanBuffer", "Allocated command buffer for copy: commandBuffer={:p}", std::source_location::current(), static_cast<void*>(commandBuffer));
+
+    VkCommandBufferBeginInfo beginInfo{
+        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+        .pNext = nullptr,
+        .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
+        .pInheritanceInfo = nullptr
+    };
+
+    result = vkBeginCommandBuffer(commandBuffer, &beginInfo);
+    if (result != VK_SUCCESS) {
+        LOG_ERROR_CAT("VulkanBuffer", "Failed to begin command buffer for copy: result={}",
+                      std::source_location::current(), vkResultToString(result));
+        throw std::runtime_error("Failed to begin command buffer for copy");
     }
-    if (context_->voxelIndexBuffer != VK_NULL_HANDLE) {
-        vkDestroyBuffer(context_->device, context_->voxelIndexBuffer, nullptr);
-        context_->voxelIndexBuffer = VK_NULL_HANDLE;
+
+    VkBufferCopy copyRegion{
+        .srcOffset = 0,
+        .dstOffset = 0,
+        .size = size
+    };
+    vkCmdCopyBuffer(commandBuffer, srcBuffer, dstBuffer, 1, &copyRegion);
+    LOG_DEBUG_CAT("VulkanBuffer", "Issued copy command for {} bytes", std::source_location::current(), size);
+
+    result = vkEndCommandBuffer(commandBuffer);
+    if (result != VK_SUCCESS) {
+        LOG_ERROR_CAT("VulkanBuffer", "Failed to end command buffer for copy: result={}",
+                      std::source_location::current(), vkResultToString(result));
+        throw std::runtime_error("Failed to end command buffer for copy");
     }
-    if (context_->voxelIndexBufferMemory != VK_NULL_HANDLE) {
-        vkFreeMemory(context_->device, context_->voxelIndexBufferMemory, nullptr);
-        context_->voxelIndexBufferMemory = VK_NULL_HANDLE;
+
+    VkSubmitInfo submitInfo{
+        .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+        .pNext = nullptr,
+        .waitSemaphoreCount = 0,
+        .pWaitSemaphores = nullptr,
+        .pWaitDstStageMask = nullptr,
+        .commandBufferCount = 1,
+        .pCommandBuffers = &commandBuffer,
+        .signalSemaphoreCount = 0,
+        .pSignalSemaphores = nullptr
+    };
+
+    result = vkQueueSubmit(context_.graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE);
+    if (result != VK_SUCCESS) {
+        LOG_ERROR_CAT("VulkanBuffer", "Failed to submit copy command buffer: result={}",
+                      std::source_location::current(), vkResultToString(result));
+        throw std::runtime_error("Failed to submit copy command buffer");
     }
-    LOG_INFO_CAT("Vulkan", "Buffers cleaned up", std::source_location::current());
+
+    vkQueueWaitIdle(context_.graphicsQueue);
+    LOG_DEBUG_CAT("VulkanBuffer", "Copy operation completed", std::source_location::current());
+
+    vkFreeCommandBuffers(context_.device, context_.commandPool, 1, &commandBuffer);
+    LOG_DEBUG_CAT("VulkanBuffer", "Freed command buffer for copy", std::source_location::current());
 }

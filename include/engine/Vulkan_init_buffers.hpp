@@ -1,24 +1,25 @@
+// include/engine/Vulkan_init_buffers.hpp
+#pragma once
 #ifndef VULKAN_INIT_BUFFERS_HPP
 #define VULKAN_INIT_BUFFERS_HPP
 
-#include <glm/glm.hpp>
+#include "engine/Vulkan_types.hpp"
 #include <span>
-#include <vulkan/vulkan.h>
-#include "engine/Vulkan_init.hpp"
-#include "engine/logging.hpp"
+#include <glm/glm.hpp>
 
 class VulkanBufferManager {
 public:
-    explicit VulkanBufferManager(VulkanContext* context);
-    ~VulkanBufferManager() = default;
+    VulkanBufferManager(VulkanContext& context);
+    ~VulkanBufferManager();
 
     void initializeBuffers(std::span<const glm::vec3> vertices, std::span<const uint32_t> indices);
-    void initializeQuadBuffers(std::span<const glm::vec3> quadVertices, std::span<const uint32_t> quadIndices);
-    void initializeVoxelBuffers(std::span<const glm::vec3> voxelVertices, std::span<const uint32_t> voxelIndices);
+    void updateVertexBuffers(std::span<const glm::vec3> vertices, std::span<const uint32_t> indices);
     void cleanupBuffers();
 
 private:
-    VulkanContext* context_;
+    void copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size);
+
+    VulkanContext& context_;
 };
 
 #endif // VULKAN_INIT_BUFFERS_HPP
