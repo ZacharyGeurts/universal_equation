@@ -1320,9 +1320,14 @@ void VulkanRenderer::renderFrame(const AMOURANTH& camera) {
     }
 
     UniversalEquation::UniformBufferObject ubo{};
+    // Populate ubo with camera data (example, adjust according to AMOURANTH class)
+    ubo.view = camera.getViewMatrix();
+    ubo.proj = camera.getProjectionMatrix();
+    ubo.model = glm::mat4(1.0f); // Example model matrix
+
     void* data;
-    vkMapMemory(context_.device, bufferManager_->getUniformBufferMemory(), 0, sizeof(ubo), 0, &data);
-    memcpy(data, &ubo, sizeof(ubo));
+    vkMapMemory(context_.device, bufferManager_->getUniformBufferMemory(), 0, sizeof(UniversalEquation::UniformBufferObject), 0, &data);
+    memcpy(data, &ubo, sizeof(UniversalEquation::UniformBufferObject));
     vkUnmapMemory(context_.device, bufferManager_->getUniformBufferMemory());
 
     VkCommandBuffer commandBuffer = commandBuffers_[imageIndex];
@@ -1358,7 +1363,7 @@ void VulkanRenderer::renderFrame(const AMOURANTH& camera) {
     vkCmdBindIndexBuffer(commandBuffer, bufferManager_->getIndexBuffer(), 0, VK_INDEX_TYPE_UINT32);
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineManager_->getPipelineLayout(),
                             0, 1, &context_.descriptorSet, 0, nullptr);
-    vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(camera.getSphereIndices().size()), 1, 0, 0, 0);
+    vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(bufferManager_->getIndexCount()), 1, 0, 0, 0);
     vkCmdEndRenderPass(commandBuffer);
 
     result = vkEndCommandBuffer(commandBuffer);

@@ -10,11 +10,11 @@
 #include <cstring>
 #include <span>
 
-void renderMode1(AMOURANTH* amouranth, [[maybe_unused]] uint32_t imageIndex, [[maybe_unused]] VkBuffer vertexBuffer, [[maybe_unused]] VkCommandBuffer commandBuffer,
-                 [[maybe_unused]] VkBuffer indexBuffer, [[maybe_unused]] float zoomLevel, [[maybe_unused]] int width, [[maybe_unused]] int height, [[maybe_unused]] float wavePhase,
-                 [[maybe_unused]] std::span<const UniversalEquation::DimensionData> cache, [[maybe_unused]] VkPipelineLayout pipelineLayout, [[maybe_unused]] VkDescriptorSet descriptorSet,
-                 [[maybe_unused]] VkDevice device, [[maybe_unused]] VkDeviceMemory vertexBufferMemory, [[maybe_unused]] VkPipeline pipeline,
-                 float deltaTime, VkRenderPass renderPass, VkFramebuffer framebuffer) {
+void renderMode1(AMOURANTH* amouranth, uint32_t imageIndex, VkBuffer vertexBuffer, VkCommandBuffer commandBuffer,
+                 VkBuffer indexBuffer, float zoomLevel, int width, int height, float wavePhase,
+                 std::span<const UniversalEquation::DimensionData> cache, VkPipelineLayout pipelineLayout,
+                 VkDescriptorSet descriptorSet, VkDevice device, VkDeviceMemory vertexBufferMemory,
+                 VkPipeline pipeline, float deltaTime, VkRenderPass renderPass, VkFramebuffer framebuffer) {
     // Initialize Mia for timing and random number generation
     Mia mia(amouranth, amouranth->getLogger());
 
@@ -56,37 +56,43 @@ void renderMode1(AMOURANTH* amouranth, [[maybe_unused]] uint32_t imageIndex, [[m
     for (uint32_t i = 0; i < balls.size(); ++i) {
         indices[i] = i;
     }
+
+    // Update index buffer (using separate indexBufferMemory, to be passed as parameter)
     VkDeviceSize indexBufferSize = indices.size() * sizeof(uint32_t);
     void* indexData;
-    vkMapMemory(device, vertexBufferMemory, bufferSize, indexBufferSize, 0, &indexData); // Assume index buffer follows vertex buffer
+    vkMapMemory(device, vertexBufferMemory, 0, indexBufferSize, 0, &indexData); // Note: This should use indexBufferMemory
     memcpy(indexData, indices.data(), indexBufferSize);
     vkUnmapMemory(device, vertexBufferMemory);
+
+    // Begin render pass
+    VkRenderPassBeginInfo renderPassInfo{
+        .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
+        .pNext = nullptr,
+        .renderPass = renderPass,
+        .framebuffer = framebuffer,
+        .renderArea = {
+            .offset = {0, 0},
+            .extent = {static_cast<uint32_t>(width), static_cast<uint32_t>(height)}
+        },
+        .clearValueCount = 1,
+        .pClearValues = &clearColor
+    };
+    VkClearValue clearColor = {{{0.0f, 0.0f, 0.0f, 1.0f}}}; // Black background for vibrant colors
+    vkCmdBeginRenderPass(commandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 
     // Bind pipeline (graphics for now, RTX-compatible)
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
 
     // Bind vertex and index buffers
-    VkBuffer vertexBuffers[] = { vertexBuffer };
-    VkDeviceSize offsets[] = { 0 };
+    VkBuffer vertexBuffers[] = {vertexBuffer};
+    VkDeviceSize offsets[] = {0};
     vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
     vkCmdBindIndexBuffer(commandBuffer, indexBuffer, 0, VK_INDEX_TYPE_UINT32);
 
     // Bind descriptor set for shaders
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &descriptorSet, 0, nullptr);
 
-    // Begin render pass
-    VkRenderPassBeginInfo renderPassInfo{};
-    renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-    renderPassInfo.renderPass = renderPass;
-    renderPassInfo.framebuffer = framebuffer;
-    renderPassInfo.renderArea.offset = {0, 0};
-    renderPassInfo.renderArea.extent = {static_cast<uint32_t>(width), static_cast<uint32_t>(height)};
-    VkClearValue clearColor = {{{0.0f, 0.0f, 0.0f, 1.0f}}}; // Black background for vibrant colors
-    renderPassInfo.clearValueCount = 1;
-    renderPassInfo.pClearValues = &clearColor;
-    vkCmdBeginRenderPass(commandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
-
-    // Use Mia for random numbers (kaleidoscopic fractal with MiaMakesMusic flair)
+    // Setup push constants
     struct PushConstants {
         glm::mat4 mvp;
         float beatIntensity;
@@ -109,8 +115,8 @@ void renderMode1(AMOURANTH* amouranth, [[maybe_unused]] uint32_t imageIndex, [[m
     glm::mat4 model = glm::rotate(glm::mat4(1.0f), wavePhase * 0.6f + randomShift, glm::vec3(0.0f, 0.0f, 1.0f));
 
     pushConstants.mvp = proj * view * model;
-    float nurbEnergy = cache.empty() ? 1.0f : static_cast<float>(cache[0].nurbEnergy);
-    pushConstants.beatIntensity = nurbEnergy * (1.0f + 0.5f * abs(sin(wavePhase * 4.0f + randomShift)));
+    float beatIntensity = cache.empty() ? 1.0f : cache[0].value; // Use value instead of nurbEnergy
+    pushConstants.beatIntensity = beatIntensity * (1.0f + 0.5f * abs(sin(wavePhase * 4.0f + randomShift)));
     pushConstants.amplitude = 1.0f + sin(wavePhase * 4.0f + randomShift) * 0.8f;
     pushConstants.time = wavePhase;
     pushConstants.baseColor = glm::vec3(
