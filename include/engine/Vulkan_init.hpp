@@ -1,9 +1,16 @@
+// Vulkan_init.hpp
+// AMOURANTH RTX Engine, October 2025 - Vulkan initialization for swapchain, pipeline, and renderer.
+// Dependencies: Vulkan 1.3+, GLM, logging.hpp, VulkanCore.hpp, VulkanBufferManager.hpp.
+// Supported platforms: Linux, Windows.
+// Zachary Geurts 2025
+
 #pragma once
 #ifndef VULKAN_INIT_HPP
 #define VULKAN_INIT_HPP
 
+#include "VulkanCore.hpp"
+#include "VulkanBufferManager.hpp"
 #include "engine/logging.hpp"
-#include "ue_init.hpp"
 #include <vulkan/vulkan.h>
 #include <memory>
 #include <vector>
@@ -12,48 +19,6 @@
 
 // Forward declarations
 class AMOURANTH;
-class VulkanBufferManager;
-
-struct VulkanContext {
-    VkInstance instance = VK_NULL_HANDLE;
-    VkSurfaceKHR surface = VK_NULL_HANDLE;
-    VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
-    VkDevice device = VK_NULL_HANDLE;
-    VkQueue graphicsQueue = VK_NULL_HANDLE;
-    VkQueue presentQueue = VK_NULL_HANDLE;
-    uint32_t graphicsQueueFamilyIndex = 0;
-    uint32_t presentQueueFamilyIndex = 0;
-    VkPhysicalDeviceMemoryProperties memoryProperties;
-    VkCommandPool commandPool = VK_NULL_HANDLE;
-    VkDescriptorSetLayout descriptorSetLayout = VK_NULL_HANDLE;
-    VkDescriptorPool descriptorPool = VK_NULL_HANDLE;
-    VkDescriptorSet descriptorSet = VK_NULL_HANDLE;
-    VkSampler sampler = VK_NULL_HANDLE;
-    VkBuffer uniformBuffer = VK_NULL_HANDLE;
-    VkDeviceMemory uniformBufferMemory = VK_NULL_HANDLE;
-    VkImage storageImage = VK_NULL_HANDLE;
-    VkDeviceMemory storageImageMemory = VK_NULL_HANDLE;
-    VkImageView storageImageView = VK_NULL_HANDLE;
-    VkAccelerationStructureKHR topLevelAS = VK_NULL_HANDLE;
-    VkBuffer topLevelASBuffer = VK_NULL_HANDLE;
-    VkDeviceMemory topLevelASBufferMemory = VK_NULL_HANDLE;
-    VkAccelerationStructureKHR bottomLevelAS = VK_NULL_HANDLE;
-    VkBuffer bottomLevelASBuffer = VK_NULL_HANDLE;
-    VkDeviceMemory bottomLevelASBufferMemory = VK_NULL_HANDLE;
-    VkPipeline rayTracingPipeline = VK_NULL_HANDLE;
-    VkPipelineLayout rayTracingPipelineLayout = VK_NULL_HANDLE;
-    VkDescriptorSetLayout rayTracingDescriptorSetLayout = VK_NULL_HANDLE;
-    VkDescriptorSet rayTracingDescriptorSet = VK_NULL_HANDLE;
-    VkBuffer shaderBindingTable = VK_NULL_HANDLE;
-    VkDeviceMemory shaderBindingTableMemory = VK_NULL_HANDLE;
-    VkSwapchainKHR swapchain = VK_NULL_HANDLE;
-    std::vector<VkImage> swapchainImages;
-    std::vector<VkImageView> swapchainImageViews;
-    VkFormat swapchainImageFormat_ = VK_FORMAT_UNDEFINED;
-    VkExtent2D swapchainExtent_ = {0, 0};
-    VkBuffer vertexBuffer_ = VK_NULL_HANDLE; // Added for acceleration structure
-    VkBuffer indexBuffer_ = VK_NULL_HANDLE;  // Added for acceleration structure
-};
 
 class VulkanSwapchainManager {
 public:
@@ -62,9 +27,10 @@ public:
     void initializeSwapchain(int width, int height);
     void cleanupSwapchain();
     void handleResize(int width, int height);
-    VkSwapchainKHR getSwapchain() const { return swapchain_; }
+    VkSwapchainKHR& getSwapchain() { return swapchain_; } // Changed to return reference
     VkFormat getSwapchainImageFormat() const { return swapchainImageFormat_; }
     VkExtent2D getSwapchainExtent() const { return swapchainExtent_; }
+    const std::vector<VkImage>& getSwapchainImages() const { return swapchainImages_; } // Added getter
     const std::vector<VkImageView>& getSwapchainImageViews() const { return swapchainImageViews_; }
 
 private:
@@ -100,35 +66,6 @@ private:
     VkDescriptorSetLayout descriptorSetLayout_ = VK_NULL_HANDLE;
     VkShaderModule vertexShaderModule_ = VK_NULL_HANDLE;
     VkShaderModule fragmentShaderModule_ = VK_NULL_HANDLE;
-};
-
-class VulkanInitializer {
-public:
-    static void initializeVulkan(VulkanContext& context, int width, int height);
-    static void createSwapchain(VulkanContext& context);
-    static void createImageViews(VulkanContext& context);
-    static VkDeviceAddress getBufferDeviceAddress(VkDevice device, VkBuffer buffer);
-    static uint32_t findMemoryType(VkPhysicalDevice physicalDevice, uint32_t typeFilter, VkMemoryPropertyFlags properties);
-    static void createBuffer(VkDevice device, VkPhysicalDevice physicalDevice, VkDeviceSize size,
-                            VkBufferUsageFlags usage, VkMemoryPropertyFlags properties,
-                            VkBuffer& buffer, VkDeviceMemory& bufferMemory);
-    static VkShaderModule loadShader(VkDevice device, const std::string& filepath);
-    static void createRenderPass(VkDevice device, VkRenderPass& renderPass, VkFormat format);
-    static void createDescriptorSetLayout(VkDevice device, VkDescriptorSetLayout& descriptorSetLayout);
-    static void createGraphicsPipeline(VkDevice device, VkRenderPass renderPass, VkPipeline& pipeline,
-                                      VkPipelineLayout& pipelineLayout, VkDescriptorSetLayout& descriptorSetLayout,
-                                      int width, int height, VkShaderModule& vertexShaderModule,
-                                      VkShaderModule& fragmentShaderModule);
-    static void createDescriptorPoolAndSet(VkDevice device, VkDescriptorSetLayout descriptorSetLayout,
-                                          VkDescriptorPool& descriptorPool, VkDescriptorSet& descriptorSet,
-                                          VkSampler& sampler, VkBuffer uniformBuffer, VkImageView storageImageView,
-                                          VkAccelerationStructureKHR topLevelAS);
-    static void createStorageImage(VkDevice device, VkPhysicalDevice physicalDevice, VkImage& storageImage,
-                                  VkDeviceMemory& storageImageMemory, VkImageView& storageImageView,
-                                  uint32_t width, uint32_t height);
-    static void createAccelerationStructures(VulkanContext& context, std::span<const glm::vec3> vertices, std::span<const uint32_t> indices);
-    static void createRayTracingPipeline(VulkanContext& context);
-    static void createShaderBindingTable(VulkanContext& context);
 };
 
 class VulkanRenderer {

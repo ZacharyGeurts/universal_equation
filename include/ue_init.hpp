@@ -12,7 +12,7 @@
 #include <vector>
 #include <vulkan/vulkan.h>
 #include "engine/logging.hpp"
-#include "engine/Vulkan_init.hpp" // Include Vulkan_init.hpp for VulkanContext and VulkanInitializer
+#include "VulkanCore.hpp"
 #include <atomic>
 #include <mutex>
 #include <thread>
