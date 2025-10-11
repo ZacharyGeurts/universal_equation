@@ -19,17 +19,18 @@
 
 namespace VulkanInitializer {
 
-VkPhysicalDevice findPhysicalDevice(VkInstance instance) {
+VkPhysicalDevice findPhysicalDevice(VkInstance instance, bool preferNvidia) {
     uint32_t deviceCount = 0;
     vkEnumeratePhysicalDevices(instance, &deviceCount, nullptr);
     if (deviceCount == 0) {
-        LOG_ERROR("No physical devices found", std::source_location::current());
+        LOG_ERROR("No physical devices found");
         throw std::runtime_error("No physical devices found");
     }
     std::vector<VkPhysicalDevice> devices(deviceCount);
     vkEnumeratePhysicalDevices(instance, &deviceCount, devices.data());
 
     VkPhysicalDevice selectedDevice = VK_NULL_HANDLE;
+    VkPhysicalDevice fallbackDevice = VK_NULL_HANDLE;
     const char* requiredExtensions[] = {
         VK_KHR_SWAPCHAIN_EXTENSION_NAME,
         VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,
@@ -38,7 +39,10 @@ VkPhysicalDevice findPhysicalDevice(VkInstance instance) {
         VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME
     };
     constexpr uint32_t requiredExtensionCount = 5;
+
     for (const auto& device : devices) {
+        VkPhysicalDeviceProperties props;
+        vkGetPhysicalDeviceProperties(device, &props);
         uint32_t extensionCount;
         vkEnumerateDeviceExtensionProperties(device, nullptr, &extensionCount, nullptr);
         std::vector<VkExtensionProperties> availableExtensions(extensionCount);
@@ -58,18 +62,24 @@ VkPhysicalDevice findPhysicalDevice(VkInstance instance) {
             }
         }
         if (hasAllExtensions) {
-            selectedDevice = device;
-            break;
+            if (preferNvidia && props.vendorID == 0x10DE) { // NVIDIA vendor ID
+                selectedDevice = device;
+                break;
+            }
+            if (!selectedDevice) {
+                fallbackDevice = device;
+            }
         }
     }
+    selectedDevice = selectedDevice != VK_NULL_HANDLE ? selectedDevice : fallbackDevice;
     if (selectedDevice == VK_NULL_HANDLE) {
-        LOG_ERROR("No physical device with required ray tracing extensions found", std::source_location::current());
+        LOG_ERROR("No physical device with required ray tracing extensions found");
         throw std::runtime_error("No physical device with required ray tracing extensions found");
     }
 
     VkPhysicalDeviceProperties props;
     vkGetPhysicalDeviceProperties(selectedDevice, &props);
-    LOG_INFO("Selected physical device: {}", std::source_location::current(), props.deviceName);
+    LOG_INFO("Selected physical device: {}", std::string_view(props.deviceName));
     return selectedDevice;
 }
 
@@ -77,11 +87,11 @@ void initializeVulkan(VulkanContext& context, int width, int height) {
     (void)width;
     (void)height;
 
-    context.physicalDevice = findPhysicalDevice(context.instance);
+    context.physicalDevice = findPhysicalDevice(context.instance, false);
 
     VkPhysicalDeviceProperties props;
     vkGetPhysicalDeviceProperties(context.physicalDevice, &props);
-    LOG_INFO("Selected physical device: {}", std::source_location::current(), props.deviceName);
+    LOG_INFO("Selected physical device: {}", std::string_view(props.deviceName));
 
     uint32_t queueFamilyCount = 0;
     vkGetPhysicalDeviceQueueFamilyProperties(context.physicalDevice, &queueFamilyCount, nullptr);
@@ -104,15 +114,14 @@ void initializeVulkan(VulkanContext& context, int width, int height) {
         }
     }
     if (context.graphicsQueueFamilyIndex == UINT32_MAX) {
-        LOG_ERROR("Failed to find graphics or compute queue family", std::source_location::current());
+        LOG_ERROR("Failed to find graphics or compute queue family");
         throw std::runtime_error("Failed to find graphics or compute queue family");
     }
     if (context.presentQueueFamilyIndex == UINT32_MAX) {
-        LOG_ERROR("Failed to find present queue family", std::source_location::current());
+        LOG_ERROR("Failed to find present queue family");
         throw std::runtime_error("Failed to find present queue family");
     }
-    LOG_INFO("Graphics queue family: {}, present queue family: {}", std::source_location::current(),
-             context.graphicsQueueFamilyIndex, context.presentQueueFamilyIndex);
+    LOG_INFO("Graphics queue family: {}, present queue family: {}", context.graphicsQueueFamilyIndex, context.presentQueueFamilyIndex);
 
     float queuePriority = 1.0f;
     VkDeviceQueueCreateInfo queueCreateInfos[2] = {
@@ -183,15 +192,14 @@ void initializeVulkan(VulkanContext& context, int width, int height) {
         .pEnabledFeatures = &deviceFeatures
     };
     if (vkCreateDevice(context.physicalDevice, &deviceCreateInfo, nullptr, &context.device) != VK_SUCCESS) {
-        LOG_ERROR("Failed to create logical device", std::source_location::current());
+        LOG_ERROR("Failed to create logical device");
         throw std::runtime_error("Failed to create logical device");
     }
-    LOG_INFO("Created logical device: {:p}", std::source_location::current(), static_cast<void*>(context.device));
+    LOG_INFO("Created logical device: {}", context.device);
 
     vkGetDeviceQueue(context.device, context.graphicsQueueFamilyIndex, 0, &context.graphicsQueue);
     vkGetDeviceQueue(context.device, context.presentQueueFamilyIndex, 0, &context.presentQueue);
-    LOG_INFO("Graphics queue: {:p}, present queue: {:p}", std::source_location::current(),
-             static_cast<void*>(context.graphicsQueue), static_cast<void*>(context.presentQueue));
+    LOG_INFO("Graphics queue: {}, present queue: {}", context.graphicsQueue, context.presentQueue);
 
     VkCommandPoolCreateInfo poolInfo{
         .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
@@ -200,10 +208,10 @@ void initializeVulkan(VulkanContext& context, int width, int height) {
         .queueFamilyIndex = context.graphicsQueueFamilyIndex
     };
     if (vkCreateCommandPool(context.device, &poolInfo, nullptr, &context.commandPool) != VK_SUCCESS) {
-        LOG_ERROR("Failed to create command pool", std::source_location::current());
+        LOG_ERROR("Failed to create command pool");
         throw std::runtime_error("Failed to create command pool");
     }
-    LOG_INFO("Created command pool: {:p}", std::source_location::current(), static_cast<void*>(context.commandPool));
+    LOG_INFO("Created command pool: {}", context.commandPool);
 
     vkGetPhysicalDeviceMemoryProperties(context.physicalDevice, &context.memoryProperties);
 }
@@ -211,13 +219,13 @@ void initializeVulkan(VulkanContext& context, int width, int height) {
 void createSwapchain(VulkanContext& context, int width, int height) {
     VkSurfaceCapabilitiesKHR capabilities;
     if (vkGetPhysicalDeviceSurfaceCapabilitiesKHR(context.physicalDevice, context.surface, &capabilities) != VK_SUCCESS) {
-        LOG_ERROR("Failed to get surface capabilities", std::source_location::current());
+        LOG_ERROR("Failed to get surface capabilities");
         throw std::runtime_error("Failed to get surface capabilities");
     }
     uint32_t formatCount;
     vkGetPhysicalDeviceSurfaceFormatsKHR(context.physicalDevice, context.surface, &formatCount, nullptr);
     if (formatCount == 0) {
-        LOG_ERROR("No surface formats available", std::source_location::current());
+        LOG_ERROR("No surface formats available");
         throw std::runtime_error("No surface formats available");
     }
     std::vector<VkSurfaceFormatKHR> formats(formatCount);
@@ -259,18 +267,17 @@ void createSwapchain(VulkanContext& context, int width, int height) {
         .imageSharingMode = VK_SHARING_MODE_EXCLUSIVE,
         .queueFamilyIndexCount = 0,
         .pQueueFamilyIndices = nullptr,
-        .preTransform = capabilities.currentTransform,
+        .preTransform = capabilities.preTransform,
         .compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
         .presentMode = presentMode,
         .clipped = VK_TRUE,
         .oldSwapchain = VK_NULL_HANDLE
     };
     if (vkCreateSwapchainKHR(context.device, &createInfo, nullptr, &context.swapchain) != VK_SUCCESS) {
-        LOG_ERROR("Failed to create swapchain", std::source_location::current());
+        LOG_ERROR("Failed to create swapchain");
         throw std::runtime_error("Failed to create swapchain");
     }
-    LOG_INFO("Created swapchain: {:p}, format: {}, extent: {}x{}", std::source_location::current(),
-             static_cast<void*>(context.swapchain), surfaceFormat.format, extent.width, extent.height);
+    LOG_INFO("Created swapchain: {}, format: {}, extent: {}x{}", context.swapchain, surfaceFormat.format, extent.width, extent.height);
     context.swapchainImageFormat_ = surfaceFormat.format;
     context.swapchainExtent_ = extent;
     vkGetSwapchainImagesKHR(context.device, context.swapchain, &imageCount, nullptr);
@@ -303,22 +310,22 @@ void createImageViews(VulkanContext& context) {
             }
         };
         if (vkCreateImageView(context.device, &viewInfo, nullptr, &context.swapchainImageViews[i]) != VK_SUCCESS) {
-            LOG_ERROR("Failed to create image view for image {}", std::source_location::current(), i);
+            LOG_ERROR("Failed to create image view for image {}", i);
             throw std::runtime_error("Failed to create image view");
         }
-        LOG_INFO("Created image view: {:p} for image {}", std::source_location::current(), static_cast<void*>(context.swapchainImageViews[i]), i);
+        LOG_INFO("Created image view: {} for image {}", context.swapchainImageViews[i], i);
     }
 }
 
 VkShaderModule loadShader(VkDevice device, const std::string& filepath) {
     std::filesystem::path shaderPath(filepath);
     if (!std::filesystem::exists(shaderPath)) {
-        LOG_ERROR("Shader file does not exist: {}", std::source_location::current(), filepath);
+        LOG_ERROR("Shader file does not exist: {}", filepath);
         throw std::runtime_error("Shader file does not exist: " + filepath);
     }
     std::ifstream file(filepath, std::ios::binary | std::ios::ate);
     if (!file.is_open()) {
-        LOG_ERROR("Failed to open shader file: {}", std::source_location::current(), filepath);
+        LOG_ERROR("Failed to open shader file: {}", filepath);
         throw std::runtime_error("Failed to open shader file: " + filepath);
     }
     size_t size = static_cast<size_t>(file.tellg());
@@ -335,16 +342,16 @@ VkShaderModule loadShader(VkDevice device, const std::string& filepath) {
     };
     VkShaderModule module;
     if (vkCreateShaderModule(device, &createInfo, nullptr, &module) != VK_SUCCESS) {
-        LOG_ERROR("Failed to create shader module: {}", std::source_location::current(), filepath);
+        LOG_ERROR("Failed to create shader module: {}", filepath);
         throw std::runtime_error("Failed to create shader module");
     }
-    LOG_INFO("Loaded shader: {:p} from {}", std::source_location::current(), static_cast<void*>(module), filepath);
+    LOG_INFO("Loaded shader: {} from {}", module, filepath);
     return module;
 }
 
 void createRenderPass(VkDevice device, VkRenderPass& renderPass, VkFormat format) {
     if (format == VK_FORMAT_UNDEFINED) {
-        LOG_ERROR("Invalid format for render pass: VK_FORMAT_UNDEFINED", std::source_location::current());
+        LOG_ERROR("Invalid format for render pass: VK_FORMAT_UNDEFINED");
         throw std::runtime_error("Invalid format for render pass");
     }
     VkAttachmentDescription colorAttachment{
@@ -395,10 +402,10 @@ void createRenderPass(VkDevice device, VkRenderPass& renderPass, VkFormat format
         .pDependencies = &dependency
     };
     if (vkCreateRenderPass(device, &renderPassInfo, nullptr, &renderPass) != VK_SUCCESS) {
-        LOG_ERROR("Failed to create render pass", std::source_location::current());
+        LOG_ERROR("Failed to create render pass");
         throw std::runtime_error("Failed to create render pass");
     }
-    LOG_INFO("Created render pass: {:p}", std::source_location::current(), static_cast<void*>(renderPass));
+    LOG_INFO("Created render pass: {}", renderPass);
 }
 
 void createDescriptorSetLayout(VkDevice device, VkDescriptorSetLayout& descriptorSetLayout) {
@@ -439,10 +446,10 @@ void createDescriptorSetLayout(VkDevice device, VkDescriptorSetLayout& descripto
         .pBindings = bindings
     };
     if (vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &descriptorSetLayout) != VK_SUCCESS) {
-        LOG_ERROR("Failed to create descriptor set layout", std::source_location::current());
+        LOG_ERROR("Failed to create descriptor set layout");
         throw std::runtime_error("Failed to create descriptor set layout");
     }
-    LOG_INFO("Created descriptor set layout: {:p}", std::source_location::current(), static_cast<void*>(descriptorSetLayout));
+    LOG_INFO("Created descriptor set layout: {}", descriptorSetLayout);
 }
 
 void createDescriptorPoolAndSet(VkDevice device, VkDescriptorSetLayout descriptorSetLayout,
@@ -463,10 +470,10 @@ void createDescriptorPoolAndSet(VkDevice device, VkDescriptorSetLayout descripto
         .pPoolSizes = poolSizes
     };
     if (vkCreateDescriptorPool(device, &poolInfo, nullptr, &descriptorPool) != VK_SUCCESS) {
-        LOG_ERROR("Failed to create descriptor pool", std::source_location::current());
+        LOG_ERROR("Failed to create descriptor pool");
         throw std::runtime_error("Failed to create descriptor pool");
     }
-    LOG_INFO("Created descriptor pool: {:p}", std::source_location::current(), static_cast<void*>(descriptorPool));
+    LOG_INFO("Created descriptor pool: {}", descriptorPool);
     VkDescriptorSetAllocateInfo allocInfo{
         .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
         .pNext = nullptr,
@@ -475,10 +482,10 @@ void createDescriptorPoolAndSet(VkDevice device, VkDescriptorSetLayout descripto
         .pSetLayouts = &descriptorSetLayout
     };
     if (vkAllocateDescriptorSets(device, &allocInfo, &descriptorSet) != VK_SUCCESS) {
-        LOG_ERROR("Failed to allocate descriptor set", std::source_location::current());
+        LOG_ERROR("Failed to allocate descriptor set");
         throw std::runtime_error("Failed to allocate descriptor set");
     }
-    LOG_INFO("Allocated descriptor set: {:p}", std::source_location::current(), static_cast<void*>(descriptorSet));
+    LOG_INFO("Allocated descriptor set: {}", descriptorSet);
     VkSamplerCreateInfo samplerInfo{
         .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
         .pNext = nullptr,
@@ -500,10 +507,10 @@ void createDescriptorPoolAndSet(VkDevice device, VkDescriptorSetLayout descripto
         .unnormalizedCoordinates = VK_FALSE
     };
     if (vkCreateSampler(device, &samplerInfo, nullptr, &sampler) != VK_SUCCESS) {
-        LOG_ERROR("Failed to create sampler", std::source_location::current());
+        LOG_ERROR("Failed to create sampler");
         throw std::runtime_error("Failed to create sampler");
     }
-    LOG_INFO("Created sampler: {:p}", std::source_location::current(), static_cast<void*>(sampler));
+    LOG_INFO("Created sampler: {}", sampler);
     VkDescriptorBufferInfo modeInfo{
         .buffer = uniformBuffer,
         .offset = 0,
@@ -576,7 +583,7 @@ void createDescriptorPoolAndSet(VkDevice device, VkDescriptorSetLayout descripto
         }
     };
     vkUpdateDescriptorSets(device, 4, descriptorWrites, 0, nullptr);
-    LOG_INFO("Updated descriptor sets", std::source_location::current());
+    LOG_INFO("Updated descriptor sets");
 }
 
 void createStorageImage(VkDevice device, VkPhysicalDevice physicalDevice, VkImage& storageImage,
@@ -600,10 +607,10 @@ void createStorageImage(VkDevice device, VkPhysicalDevice physicalDevice, VkImag
         .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED
     };
     if (vkCreateImage(device, &imageInfo, nullptr, &storageImage) != VK_SUCCESS) {
-        LOG_ERROR("Failed to create storage image", std::source_location::current());
+        LOG_ERROR("Failed to create storage image");
         throw std::runtime_error("Failed to create storage image");
     }
-    LOG_INFO("Created storage image: {:p}", std::source_location::current(), static_cast<void*>(storageImage));
+    LOG_INFO("Created storage image: {}", storageImage);
     VkMemoryRequirements memRequirements;
     vkGetImageMemoryRequirements(device, storageImage, &memRequirements);
     VkMemoryAllocateInfo allocInfo{
@@ -613,10 +620,10 @@ void createStorageImage(VkDevice device, VkPhysicalDevice physicalDevice, VkImag
         .memoryTypeIndex = findMemoryType(physicalDevice, memRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)
     };
     if (vkAllocateMemory(device, &allocInfo, nullptr, &storageImageMemory) != VK_SUCCESS) {
-        LOG_ERROR("Failed to allocate storage image memory", std::source_location::current());
+        LOG_ERROR("Failed to allocate storage image memory");
         throw std::runtime_error("Failed to allocate storage image memory");
     }
-    LOG_INFO("Allocated storage image memory: {:p}", std::source_location::current(), static_cast<void*>(storageImageMemory));
+    LOG_INFO("Allocated storage image memory: {}", storageImageMemory);
     vkBindImageMemory(device, storageImage, storageImageMemory, 0);
     VkImageViewCreateInfo viewInfo{
         .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
@@ -640,10 +647,10 @@ void createStorageImage(VkDevice device, VkPhysicalDevice physicalDevice, VkImag
         }
     };
     if (vkCreateImageView(device, &viewInfo, nullptr, &storageImageView) != VK_SUCCESS) {
-        LOG_ERROR("Failed to create storage image view", std::source_location::current());
+        LOG_ERROR("Failed to create storage image view");
         throw std::runtime_error("Failed to create storage image view");
     }
-    LOG_INFO("Created storage image view: {:p}", std::source_location::current(), static_cast<void*>(storageImageView));
+    LOG_INFO("Created storage image view: {}", storageImageView);
 }
 
 void createRayTracingPipeline(VulkanContext& context, VkPipelineLayout pipelineLayout,
@@ -731,19 +738,31 @@ void createRayTracingPipeline(VulkanContext& context, VkPipelineLayout pipelineL
 
     auto vkCreateRayTracingPipelinesKHR = (PFN_vkCreateRayTracingPipelinesKHR)vkGetDeviceProcAddr(context.device, "vkCreateRayTracingPipelinesKHR");
     if (!vkCreateRayTracingPipelinesKHR) {
-        LOG_ERROR("Failed to get vkCreateRayTracingPipelinesKHR function pointer", std::source_location::current());
+        LOG_ERROR("Failed to get vkCreateRayTracingPipelinesKHR function pointer");
         throw std::runtime_error("Failed to get vkCreateRayTracingPipelinesKHR");
     }
     if (vkCreateRayTracingPipelinesKHR(context.device, VK_NULL_HANDLE, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &pipeline) != VK_SUCCESS) {
-        LOG_ERROR("Failed to create ray tracing pipeline", std::source_location::current());
+        LOG_ERROR("Failed to create ray tracing pipeline");
         throw std::runtime_error("Failed to create ray tracing pipeline");
     }
-    LOG_INFO("Created ray tracing pipeline: {:p}", std::source_location::current(), static_cast<void*>(pipeline));
+    LOG_INFO("Created ray tracing pipeline: {}", pipeline);
 }
 
 void createShaderBindingTable(VulkanContext& context) {
-    const uint32_t handleSize = context.sbtRecordSize;
-    const uint32_t handleSizeAligned = (handleSize + context.sbtAlignment - 1) & ~(context.sbtAlignment - 1);
+    auto vkGetRayTracingPipelinePropertiesKHR = (PFN_vkGetRayTracingPipelinePropertiesKHR)vkGetDeviceProcAddr(context.device, "vkGetRayTracingPipelinePropertiesKHR");
+    if (!vkGetRayTracingPipelinePropertiesKHR) {
+        LOG_ERROR("Failed to get vkGetRayTracingPipelinePropertiesKHR function pointer");
+        throw std::runtime_error("Failed to get vkGetRayTracingPipelinePropertiesKHR");
+    }
+    VkRayTracingPipelinePropertiesKHR sbtProps{
+        .sType = VK_STRUCTURE_TYPE_RAY_TRACING_PIPELINE_PROPERTIES_KHR
+    };
+    vkGetRayTracingPipelinePropertiesKHR(context.device, context.rayTracingPipeline, &sbtProps);
+    uint32_t handleSize = sbtProps.shaderGroupHandleSize;
+    uint32_t handleAlignment = sbtProps.shaderGroupHandleAlignment;
+    context.sbtRecordSize = handleSize;
+    context.sbtAlignment = handleAlignment;
+    const uint32_t handleSizeAligned = (handleSize + handleAlignment - 1) & ~(handleAlignment - 1);
     const uint32_t groupCount = 3; // Raygen, Miss, Hit
     const uint32_t sbtSize = groupCount * handleSizeAligned;
 
@@ -758,10 +777,10 @@ void createShaderBindingTable(VulkanContext& context) {
         .pQueueFamilyIndices = nullptr
     };
     if (vkCreateBuffer(context.device, &bufferInfo, nullptr, &context.shaderBindingTable) != VK_SUCCESS) {
-        LOG_ERROR("Failed to create shader binding table buffer", std::source_location::current());
+        LOG_ERROR("Failed to create shader binding table buffer");
         throw std::runtime_error("Failed to create shader binding table buffer");
     }
-    LOG_INFO("Created shader binding table buffer: {:p}", std::source_location::current(), static_cast<void*>(context.shaderBindingTable));
+    LOG_INFO("Created shader binding table buffer: {}", context.shaderBindingTable);
 
     VkMemoryRequirements memRequirements;
     vkGetBufferMemoryRequirements(context.device, context.shaderBindingTable, &memRequirements);
@@ -772,21 +791,21 @@ void createShaderBindingTable(VulkanContext& context) {
         .memoryTypeIndex = findMemoryType(context.physicalDevice, memRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)
     };
     if (vkAllocateMemory(context.device, &allocInfo, nullptr, &context.shaderBindingTableMemory) != VK_SUCCESS) {
-        LOG_ERROR("Failed to allocate shader binding table memory", std::source_location::current());
+        LOG_ERROR("Failed to allocate shader binding table memory");
         throw std::runtime_error("Failed to allocate shader binding table memory");
     }
-    LOG_INFO("Allocated shader binding table memory: {:p}", std::source_location::current(), static_cast<void*>(context.shaderBindingTableMemory));
+    LOG_INFO("Allocated shader binding table memory: {}", context.shaderBindingTableMemory);
     vkBindBufferMemory(context.device, context.shaderBindingTable, context.shaderBindingTableMemory, 0);
 
     auto vkGetRayTracingShaderGroupHandlesKHR = (PFN_vkGetRayTracingShaderGroupHandlesKHR)vkGetDeviceProcAddr(context.device, "vkGetRayTracingShaderGroupHandlesKHR");
     if (!vkGetRayTracingShaderGroupHandlesKHR) {
-        LOG_ERROR("Failed to get vkGetRayTracingShaderGroupHandlesKHR function pointer", std::source_location::current());
+        LOG_ERROR("Failed to get vkGetRayTracingShaderGroupHandlesKHR function pointer");
         throw std::runtime_error("Failed to get vkGetRayTracingShaderGroupHandlesKHR");
     }
 
     std::vector<uint8_t> shaderHandles(sbtSize);
     if (vkGetRayTracingShaderGroupHandlesKHR(context.device, context.rayTracingPipeline, 0, groupCount, sbtSize, shaderHandles.data()) != VK_SUCCESS) {
-        LOG_ERROR("Failed to get shader group handles", std::source_location::current());
+        LOG_ERROR("Failed to get shader group handles");
         throw std::runtime_error("Failed to get shader group handles");
     }
 
@@ -805,14 +824,14 @@ void createShaderBindingTable(VulkanContext& context) {
     };
     auto vkGetBufferDeviceAddress = (PFN_vkGetBufferDeviceAddress)vkGetDeviceProcAddr(context.device, "vkGetBufferDeviceAddress");
     if (!vkGetBufferDeviceAddress) {
-        LOG_ERROR("Failed to get vkGetBufferDeviceAddress function pointer", std::source_location::current());
+        LOG_ERROR("Failed to get vkGetBufferDeviceAddress function pointer");
         throw std::runtime_error("Failed to get vkGetBufferDeviceAddress");
     }
     context.raygenSbtAddress = vkGetBufferDeviceAddress(context.device, &sbtAddressInfo);
     context.missSbtAddress = context.raygenSbtAddress + handleSizeAligned;
     context.hitSbtAddress = context.missSbtAddress + handleSizeAligned;
-    LOG_INFO("Created shader binding table: raygen={:p}, miss={:p}, hit={:p}", std::source_location::current(),
-             reinterpret_cast<void*>(context.raygenSbtAddress), reinterpret_cast<void*>(context.missSbtAddress), reinterpret_cast<void*>(context.hitSbtAddress));
+    LOG_INFO("Created shader binding table: raygen={}, miss={}, hit={}", 
+             context.raygenSbtAddress, context.missSbtAddress, context.hitSbtAddress);
 }
 
 void createAccelerationStructures(VulkanContext& context, std::span<const glm::vec3> vertices, std::span<const uint32_t> indices) {
@@ -830,7 +849,7 @@ void createAccelerationStructures(VulkanContext& context, std::span<const glm::v
         .pQueueFamilyIndices = nullptr
     };
     if (vkCreateBuffer(context.device, &vertexBufferInfo, nullptr, &vertexBuffer) != VK_SUCCESS) {
-        LOG_ERROR("Failed to create vertex buffer for acceleration structure", std::source_location::current());
+        LOG_ERROR("Failed to create vertex buffer for acceleration structure");
         throw std::runtime_error("Failed to create vertex buffer for acceleration structure");
     }
     VkMemoryRequirements vertexMemRequirements;
@@ -842,7 +861,7 @@ void createAccelerationStructures(VulkanContext& context, std::span<const glm::v
         .memoryTypeIndex = findMemoryType(context.physicalDevice, vertexMemRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)
     };
     if (vkAllocateMemory(context.device, &vertexAllocInfo, nullptr, &vertexBufferMemory) != VK_SUCCESS) {
-        LOG_ERROR("Failed to allocate vertex buffer memory for acceleration structure", std::source_location::current());
+        LOG_ERROR("Failed to allocate vertex buffer memory for acceleration structure");
         throw std::runtime_error("Failed to allocate vertex buffer memory for acceleration structure");
     }
     vkBindBufferMemory(context.device, vertexBuffer, vertexBufferMemory, 0);
@@ -862,7 +881,7 @@ void createAccelerationStructures(VulkanContext& context, std::span<const glm::v
         .pQueueFamilyIndices = nullptr
     };
     if (vkCreateBuffer(context.device, &indexBufferInfo, nullptr, &indexBuffer) != VK_SUCCESS) {
-        LOG_ERROR("Failed to create index buffer for acceleration structure", std::source_location::current());
+        LOG_ERROR("Failed to create index buffer for acceleration structure");
         throw std::runtime_error("Failed to create index buffer for acceleration structure");
     }
     VkMemoryRequirements indexMemRequirements;
@@ -874,7 +893,7 @@ void createAccelerationStructures(VulkanContext& context, std::span<const glm::v
         .memoryTypeIndex = findMemoryType(context.physicalDevice, indexMemRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)
     };
     if (vkAllocateMemory(context.device, &indexAllocInfo, nullptr, &indexBufferMemory) != VK_SUCCESS) {
-        LOG_ERROR("Failed to allocate index buffer memory for acceleration structure", std::source_location::current());
+        LOG_ERROR("Failed to allocate index buffer memory for acceleration structure");
         throw std::runtime_error("Failed to allocate index buffer memory for acceleration structure");
     }
     vkBindBufferMemory(context.device, indexBuffer, indexBufferMemory, 0);
@@ -883,23 +902,25 @@ void createAccelerationStructures(VulkanContext& context, std::span<const glm::v
     memcpy(indexData, indices.data(), indexBufferInfo.size);
     vkUnmapMemory(context.device, indexBufferMemory);
 
-    VkDeviceAddress vertexBufferAddress;
-    VkDeviceAddress indexBufferAddress;
     auto vkGetBufferDeviceAddress = (PFN_vkGetBufferDeviceAddress)vkGetDeviceProcAddr(context.device, "vkGetBufferDeviceAddress");
     if (!vkGetBufferDeviceAddress) {
-        LOG_ERROR("Failed to get vkGetBufferDeviceAddress function pointer", std::source_location::current());
+        LOG_ERROR("Failed to get vkGetBufferDeviceAddress function pointer");
         throw std::runtime_error("Failed to get vkGetBufferDeviceAddress");
     }
-    vertexBufferAddress = vkGetBufferDeviceAddress(context.device, &(VkBufferDeviceAddressInfo{
+
+    VkBufferDeviceAddressInfo vertexBufferAddrInfo{
         .sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO,
         .pNext = nullptr,
         .buffer = vertexBuffer
-    }));
-    indexBufferAddress = vkGetBufferDeviceAddress(context.device, &(VkBufferDeviceAddressInfo{
+    };
+    VkDeviceAddress vertexBufferAddress = vkGetBufferDeviceAddress(context.device, &vertexBufferAddrInfo);
+
+    VkBufferDeviceAddressInfo indexBufferAddrInfo{
         .sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO,
         .pNext = nullptr,
         .buffer = indexBuffer
-    }));
+    };
+    VkDeviceAddress indexBufferAddress = vkGetBufferDeviceAddress(context.device, &indexBufferAddrInfo);
 
     VkAccelerationStructureGeometryTrianglesDataKHR triangles{
         .sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_TRIANGLES_DATA_KHR,
@@ -929,16 +950,20 @@ void createAccelerationStructures(VulkanContext& context, std::span<const glm::v
         .dstAccelerationStructure = VK_NULL_HANDLE,
         .geometryCount = 1,
         .pGeometries = &geometry,
-        .ppGeometries = nullptr
+        .ppGeometries = nullptr,
+        .scratchData = {0}
     };
     VkAccelerationStructureBuildSizesInfoKHR buildSizesInfo{
         .sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR,
-        .pNext = nullptr
+        .pNext = nullptr,
+        .accelerationStructureSize = 0,
+        .updateScratchSize = 0,
+        .buildScratchSize = 0
     };
     uint32_t primitiveCount = static_cast<uint32_t>(indices.size() / 3);
     auto vkGetAccelerationStructureBuildSizesKHR = (PFN_vkGetAccelerationStructureBuildSizesKHR)vkGetDeviceProcAddr(context.device, "vkGetAccelerationStructureBuildSizesKHR");
     if (!vkGetAccelerationStructureBuildSizesKHR) {
-        LOG_ERROR("Failed to get vkGetAccelerationStructureBuildSizesKHR function pointer", std::source_location::current());
+        LOG_ERROR("Failed to get vkGetAccelerationStructureBuildSizesKHR function pointer");
         throw std::runtime_error("Failed to get vkGetAccelerationStructureBuildSizesKHR");
     }
     vkGetAccelerationStructureBuildSizesKHR(context.device, VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR, &buildGeometryInfo, &primitiveCount, &buildSizesInfo);
@@ -954,7 +979,7 @@ void createAccelerationStructures(VulkanContext& context, std::span<const glm::v
         .pQueueFamilyIndices = nullptr
     };
     if (vkCreateBuffer(context.device, &blasBufferInfo, nullptr, &context.bottomLevelASBuffer) != VK_SUCCESS) {
-        LOG_ERROR("Failed to create bottom-level AS buffer", std::source_location::current());
+        LOG_ERROR("Failed to create bottom-level AS buffer");
         throw std::runtime_error("Failed to create bottom-level AS buffer");
     }
     VkMemoryRequirements blasMemRequirements;
@@ -966,7 +991,7 @@ void createAccelerationStructures(VulkanContext& context, std::span<const glm::v
         .memoryTypeIndex = findMemoryType(context.physicalDevice, blasMemRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)
     };
     if (vkAllocateMemory(context.device, &blasAllocInfo, nullptr, &context.bottomLevelASBufferMemory) != VK_SUCCESS) {
-        LOG_ERROR("Failed to allocate bottom-level AS buffer memory", std::source_location::current());
+        LOG_ERROR("Failed to allocate bottom-level AS buffer memory");
         throw std::runtime_error("Failed to allocate bottom-level AS buffer memory");
     }
     vkBindBufferMemory(context.device, context.bottomLevelASBuffer, context.bottomLevelASBufferMemory, 0);
@@ -983,14 +1008,14 @@ void createAccelerationStructures(VulkanContext& context, std::span<const glm::v
     };
     auto vkCreateAccelerationStructureKHR = (PFN_vkCreateAccelerationStructureKHR)vkGetDeviceProcAddr(context.device, "vkCreateAccelerationStructureKHR");
     if (!vkCreateAccelerationStructureKHR) {
-        LOG_ERROR("Failed to get vkCreateAccelerationStructureKHR function pointer", std::source_location::current());
+        LOG_ERROR("Failed to get vkCreateAccelerationStructureKHR function pointer");
         throw std::runtime_error("Failed to get vkCreateAccelerationStructureKHR");
     }
     if (vkCreateAccelerationStructureKHR(context.device, &blasCreateInfo, nullptr, &context.bottomLevelAS) != VK_SUCCESS) {
-        LOG_ERROR("Failed to create bottom-level acceleration structure", std::source_location::current());
+        LOG_ERROR("Failed to create bottom-level acceleration structure");
         throw std::runtime_error("Failed to create bottom-level acceleration structure");
     }
-    LOG_INFO("Created bottom-level acceleration structure: {:p}", std::source_location::current(), static_cast<void*>(context.bottomLevelAS));
+    LOG_INFO("Created bottom-level acceleration structure: {}", context.bottomLevelAS);
 
     VkBufferCreateInfo scratchBufferInfo{
         .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
@@ -1004,7 +1029,7 @@ void createAccelerationStructures(VulkanContext& context, std::span<const glm::v
     };
     VkBuffer scratchBuffer;
     if (vkCreateBuffer(context.device, &scratchBufferInfo, nullptr, &scratchBuffer) != VK_SUCCESS) {
-        LOG_ERROR("Failed to create scratch buffer for acceleration structure", std::source_location::current());
+        LOG_ERROR("Failed to create scratch buffer for acceleration structure");
         throw std::runtime_error("Failed to create scratch buffer for acceleration structure");
     }
     VkMemoryRequirements scratchMemRequirements;
@@ -1017,15 +1042,17 @@ void createAccelerationStructures(VulkanContext& context, std::span<const glm::v
     };
     VkDeviceMemory scratchBufferMemory;
     if (vkAllocateMemory(context.device, &scratchAllocInfo, nullptr, &scratchBufferMemory) != VK_SUCCESS) {
-        LOG_ERROR("Failed to allocate scratch buffer memory for acceleration structure", std::source_location::current());
+        LOG_ERROR("Failed to allocate scratch buffer memory for acceleration structure");
         throw std::runtime_error("Failed to allocate scratch buffer memory for acceleration structure");
     }
     vkBindBufferMemory(context.device, scratchBuffer, scratchBufferMemory, 0);
-    VkDeviceAddress scratchBufferAddress = vkGetBufferDeviceAddress(context.device, &(VkBufferDeviceAddressInfo{
+
+    VkBufferDeviceAddressInfo scratchBufferAddrInfo{
         .sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO,
         .pNext = nullptr,
         .buffer = scratchBuffer
-    }));
+    };
+    VkDeviceAddress scratchBufferAddress = vkGetBufferDeviceAddress(context.device, &scratchBufferAddrInfo);
 
     buildGeometryInfo.dstAccelerationStructure = context.bottomLevelAS;
     buildGeometryInfo.scratchData.deviceAddress = scratchBufferAddress;
@@ -1038,7 +1065,7 @@ void createAccelerationStructures(VulkanContext& context, std::span<const glm::v
     VkAccelerationStructureBuildRangeInfoKHR* buildRangeInfos[] = {&buildRangeInfo};
     auto vkCmdBuildAccelerationStructuresKHR = (PFN_vkCmdBuildAccelerationStructuresKHR)vkGetDeviceProcAddr(context.device, "vkCmdBuildAccelerationStructuresKHR");
     if (!vkCmdBuildAccelerationStructuresKHR) {
-        LOG_ERROR("Failed to get vkCmdBuildAccelerationStructuresKHR function pointer", std::source_location::current());
+        LOG_ERROR("Failed to get vkCmdBuildAccelerationStructuresKHR function pointer");
         throw std::runtime_error("Failed to get vkCmdBuildAccelerationStructuresKHR");
     }
 
@@ -1051,7 +1078,7 @@ void createAccelerationStructures(VulkanContext& context, std::span<const glm::v
         .commandBufferCount = 1
     };
     if (vkAllocateCommandBuffers(context.device, &allocInfo, &commandBuffer) != VK_SUCCESS) {
-        LOG_ERROR("Failed to allocate command buffer for AS build", std::source_location::current());
+        LOG_ERROR("Failed to allocate command buffer for AS build");
         throw std::runtime_error("Failed to allocate command buffer for AS build");
     }
     VkCommandBufferBeginInfo beginInfo{
@@ -1061,12 +1088,12 @@ void createAccelerationStructures(VulkanContext& context, std::span<const glm::v
         .pInheritanceInfo = nullptr
     };
     if (vkBeginCommandBuffer(commandBuffer, &beginInfo) != VK_SUCCESS) {
-        LOG_ERROR("Failed to begin command buffer for AS build", std::source_location::current());
+        LOG_ERROR("Failed to begin command buffer for AS build");
         throw std::runtime_error("Failed to begin command buffer for AS build");
     }
     vkCmdBuildAccelerationStructuresKHR(commandBuffer, 1, &buildGeometryInfo, buildRangeInfos);
     if (vkEndCommandBuffer(commandBuffer) != VK_SUCCESS) {
-        LOG_ERROR("Failed to end command buffer for AS build", std::source_location::current());
+        LOG_ERROR("Failed to end command buffer for AS build");
         throw std::runtime_error("Failed to end command buffer for AS build");
     }
     VkSubmitInfo submitInfo{
@@ -1081,7 +1108,7 @@ void createAccelerationStructures(VulkanContext& context, std::span<const glm::v
         .pSignalSemaphores = nullptr
     };
     if (vkQueueSubmit(context.graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE) != VK_SUCCESS) {
-        LOG_ERROR("Failed to submit command buffer for AS build", std::source_location::current());
+        LOG_ERROR("Failed to submit command buffer for AS build");
         throw std::runtime_error("Failed to submit command buffer for AS build");
     }
     vkQueueWaitIdle(context.graphicsQueue);
@@ -1089,30 +1116,37 @@ void createAccelerationStructures(VulkanContext& context, std::span<const glm::v
     vkDestroyBuffer(context.device, scratchBuffer, nullptr);
     vkFreeMemory(context.device, scratchBufferMemory, nullptr);
 
+    auto vkGetAccelerationStructureDeviceAddressKHR = (PFN_vkGetAccelerationStructureDeviceAddressKHR)vkGetDeviceProcAddr(context.device, "vkGetAccelerationStructureDeviceAddressKHR");
+    if (!vkGetAccelerationStructureDeviceAddressKHR) {
+        LOG_ERROR("Failed to get vkGetAccelerationStructureDeviceAddressKHR function pointer");
+        throw std::runtime_error("Failed to get vkGetAccelerationStructureDeviceAddressKHR");
+    }
+
+    VkAccelerationStructureInfoKHR asInfo{
+        .sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_INFO_KHR,
+        .pNext = nullptr,
+        .type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR,
+        .flags = 0,
+        .deviceAddress = 0,
+        .accelerationStructure = context.bottomLevelAS
+    };
+    VkDeviceAddress blasAddress = vkGetAccelerationStructureDeviceAddressKHR(context.device, &asInfo);
+
     VkAccelerationStructureInstanceKHR instance{
         .transform = {
             .matrix = {
                 {1.0f, 0.0f, 0.0f, 0.0f},
                 {0.0f, 1.0f, 0.0f, 0.0f},
-                {0.0f, 0.0f, 1.0f, 0.0f}
+                {0.0f, 0.0f, 1.0f, 0.0f},
+                {0.0f, 0.0f, 0.0f, 1.0f}
             }
         },
         .instanceCustomIndex = 0,
         .mask = 0xFF,
         .instanceShaderBindingTableRecordOffset = 0,
         .flags = VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR,
-        .accelerationStructureReference = 0
+        .accelerationStructureReference = blasAddress
     };
-    auto vkGetAccelerationStructureDeviceAddressKHR = (PFN_vkGetAccelerationStructureDeviceAddressKHR)vkGetDeviceProcAddr(context.device, "vkGetAccelerationStructureDeviceAddressKHR");
-    if (!vkGetAccelerationStructureDeviceAddressKHR) {
-        LOG_ERROR("Failed to get vkGetAccelerationStructureDeviceAddressKHR function pointer", std::source_location::current());
-        throw std::runtime_error("Failed to get vkGetAccelerationStructureDeviceAddressKHR");
-    }
-    instance.accelerationStructureReference = vkGetAccelerationStructureDeviceAddressKHR(context.device, &(VkAccelerationStructureDeviceAddressInfoKHR{
-        .sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_DEVICE_ADDRESS_INFO_KHR,
-        .pNext = nullptr,
-        .accelerationStructure = context.bottomLevelAS
-    }));
 
     VkBufferCreateInfo instanceBufferInfo{
         .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
@@ -1126,7 +1160,7 @@ void createAccelerationStructures(VulkanContext& context, std::span<const glm::v
     };
     VkBuffer instanceBuffer;
     if (vkCreateBuffer(context.device, &instanceBufferInfo, nullptr, &instanceBuffer) != VK_SUCCESS) {
-        LOG_ERROR("Failed to create instance buffer for top-level AS", std::source_location::current());
+        LOG_ERROR("Failed to create instance buffer for top-level AS");
         throw std::runtime_error("Failed to create instance buffer for top-level AS");
     }
     VkMemoryRequirements instanceMemRequirements;
@@ -1139,7 +1173,7 @@ void createAccelerationStructures(VulkanContext& context, std::span<const glm::v
     };
     VkDeviceMemory instanceBufferMemory;
     if (vkAllocateMemory(context.device, &instanceAllocInfo, nullptr, &instanceBufferMemory) != VK_SUCCESS) {
-        LOG_ERROR("Failed to allocate instance buffer memory for top-level AS", std::source_location::current());
+        LOG_ERROR("Failed to allocate instance buffer memory for top-level AS");
         throw std::runtime_error("Failed to allocate instance buffer memory for top-level AS");
     }
     vkBindBufferMemory(context.device, instanceBuffer, instanceBufferMemory, 0);
@@ -1148,21 +1182,24 @@ void createAccelerationStructures(VulkanContext& context, std::span<const glm::v
     memcpy(instanceData, &instance, sizeof(VkAccelerationStructureInstanceKHR));
     vkUnmapMemory(context.device, instanceBufferMemory);
 
+    VkBufferDeviceAddressInfo instanceBufferAddrInfo{
+        .sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO,
+        .pNext = nullptr,
+        .buffer = instanceBuffer
+    };
+    VkDeviceAddress instanceBufferAddress = vkGetBufferDeviceAddress(context.device, &instanceBufferAddrInfo);
+
     VkAccelerationStructureGeometryInstancesDataKHR instancesData{
         .sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_INSTANCES_DATA_KHR,
         .pNext = nullptr,
         .arrayOfPointers = VK_FALSE,
-        .data = {vkGetBufferDeviceAddress(context.device, &(VkBufferDeviceAddressInfo{
-            .sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO,
-            .pNext = nullptr,
-            .buffer = instanceBuffer
-        }))}
+        .data = { .deviceAddress = instanceBufferAddress }
     };
     VkAccelerationStructureGeometryKHR topLevelGeometry{
         .sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR,
         .pNext = nullptr,
         .geometryType = VK_GEOMETRY_TYPE_INSTANCES_KHR,
-        .geometry = {instancesData},
+        .geometry = { .instances = instancesData },
         .flags = VK_GEOMETRY_OPAQUE_BIT_KHR
     };
     VkAccelerationStructureBuildGeometryInfoKHR topLevelBuildInfo{
@@ -1175,13 +1212,18 @@ void createAccelerationStructures(VulkanContext& context, std::span<const glm::v
         .dstAccelerationStructure = VK_NULL_HANDLE,
         .geometryCount = 1,
         .pGeometries = &topLevelGeometry,
-        .ppGeometries = nullptr
+        .ppGeometries = nullptr,
+        .scratchData = {0}
     };
     VkAccelerationStructureBuildSizesInfoKHR topLevelBuildSizes{
         .sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR,
-        .pNext = nullptr
+        .pNext = nullptr,
+        .accelerationStructureSize = 0,
+        .updateScratchSize = 0,
+        .buildScratchSize = 0
     };
-    vkGetAccelerationStructureBuildSizesKHR(context.device, VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR, &topLevelBuildInfo, &primitiveCount, &topLevelBuildSizes);
+    uint32_t instanceCount = 1;
+    vkGetAccelerationStructureBuildSizesKHR(context.device, VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR, &topLevelBuildInfo, &instanceCount, &topLevelBuildSizes);
 
     VkBufferCreateInfo tlasBufferInfo{
         .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
@@ -1194,7 +1236,7 @@ void createAccelerationStructures(VulkanContext& context, std::span<const glm::v
         .pQueueFamilyIndices = nullptr
     };
     if (vkCreateBuffer(context.device, &tlasBufferInfo, nullptr, &context.topLevelASBuffer) != VK_SUCCESS) {
-        LOG_ERROR("Failed to create top-level AS buffer", std::source_location::current());
+        LOG_ERROR("Failed to create top-level AS buffer");
         throw std::runtime_error("Failed to create top-level AS buffer");
     }
     VkMemoryRequirements tlasMemRequirements;
@@ -1206,7 +1248,7 @@ void createAccelerationStructures(VulkanContext& context, std::span<const glm::v
         .memoryTypeIndex = findMemoryType(context.physicalDevice, tlasMemRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)
     };
     if (vkAllocateMemory(context.device, &tlasAllocInfo, nullptr, &context.topLevelASBufferMemory) != VK_SUCCESS) {
-        LOG_ERROR("Failed to allocate top-level AS buffer memory", std::source_location::current());
+        LOG_ERROR("Failed to allocate top-level AS buffer memory");
         throw std::runtime_error("Failed to allocate top-level AS buffer memory");
     }
     vkBindBufferMemory(context.device, context.topLevelASBuffer, context.topLevelASBufferMemory, 0);
@@ -1222,10 +1264,10 @@ void createAccelerationStructures(VulkanContext& context, std::span<const glm::v
         .deviceAddress = 0
     };
     if (vkCreateAccelerationStructureKHR(context.device, &tlasCreateInfo, nullptr, &context.topLevelAS) != VK_SUCCESS) {
-        LOG_ERROR("Failed to create top-level acceleration structure", std::source_location::current());
+        LOG_ERROR("Failed to create top-level acceleration structure");
         throw std::runtime_error("Failed to create top-level acceleration structure");
     }
-    LOG_INFO("Created top-level acceleration structure: {:p}", std::source_location::current(), static_cast<void*>(context.topLevelAS));
+    LOG_INFO("Created top-level acceleration structure: {}", context.topLevelAS);
 
     VkBufferCreateInfo tlasScratchBufferInfo{
         .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
@@ -1239,7 +1281,7 @@ void createAccelerationStructures(VulkanContext& context, std::span<const glm::v
     };
     VkBuffer tlasScratchBuffer;
     if (vkCreateBuffer(context.device, &tlasScratchBufferInfo, nullptr, &tlasScratchBuffer) != VK_SUCCESS) {
-        LOG_ERROR("Failed to create scratch buffer for top-level AS", std::source_location::current());
+        LOG_ERROR("Failed to create scratch buffer for top-level AS");
         throw std::runtime_error("Failed to create scratch buffer for top-level AS");
     }
     VkMemoryRequirements tlasScratchMemRequirements;
@@ -1252,39 +1294,73 @@ void createAccelerationStructures(VulkanContext& context, std::span<const glm::v
     };
     VkDeviceMemory tlasScratchBufferMemory;
     if (vkAllocateMemory(context.device, &tlasScratchAllocInfo, nullptr, &tlasScratchBufferMemory) != VK_SUCCESS) {
-        LOG_ERROR("Failed to allocate scratch buffer memory for top-level AS", std::source_location::current());
+        LOG_ERROR("Failed to allocate scratch buffer memory for top-level AS");
         throw std::runtime_error("Failed to allocate scratch buffer memory for top-level AS");
     }
     vkBindBufferMemory(context.device, tlasScratchBuffer, tlasScratchBufferMemory, 0);
-    VkDeviceAddress tlasScratchBufferAddress = vkGetBufferDeviceAddress(context.device, &(VkBufferDeviceAddressInfo{
+
+    VkBufferDeviceAddressInfo tlasScratchBufferAddrInfo{
         .sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO,
         .pNext = nullptr,
         .buffer = tlasScratchBuffer
-    }));
+    };
+    VkDeviceAddress tlasScratchBufferAddress = vkGetBufferDeviceAddress(context.device, &tlasScratchBufferAddrInfo);
 
     topLevelBuildInfo.dstAccelerationStructure = context.topLevelAS;
     topLevelBuildInfo.scratchData.deviceAddress = tlasScratchBufferAddress;
     VkAccelerationStructureBuildRangeInfoKHR topLevelBuildRangeInfo{
-        .primitiveCount = 1,
+        .primitiveCount = instanceCount,
         .primitiveOffset = 0,
         .firstVertex = 0,
         .transformOffset = 0
     };
     VkAccelerationStructureBuildRangeInfoKHR* topLevelBuildRangeInfos[] = {&topLevelBuildRangeInfo};
-    if (vkCmdBuildAccelerationStructuresKHR(commandBuffer, 1, &topLevelBuildInfo, topLevelBuildRangeInfos) != VK_SUCCESS) {
-        LOG_ERROR("Failed to build top-level acceleration structure", std::source_location::current());
-        throw std::runtime_error("Failed to build top-level acceleration structure");
+
+    VkCommandBuffer tlasCommandBuffer;
+    VkCommandBufferAllocateInfo tlasAllocCmdInfo{
+        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+        .pNext = nullptr,
+        .commandPool = context.commandPool,
+        .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+        .commandBufferCount = 1
+    };
+    if (vkAllocateCommandBuffers(context.device, &tlasAllocCmdInfo, &tlasCommandBuffer) != VK_SUCCESS) {
+        LOG_ERROR("Failed to allocate command buffer for TLAS build");
+        throw std::runtime_error("Failed to allocate command buffer for TLAS build");
     }
-    if (vkEndCommandBuffer(commandBuffer) != VK_SUCCESS) {
-        LOG_ERROR("Failed to end command buffer for top-level AS build", std::source_location::current());
-        throw std::runtime_error("Failed to end command buffer for top-level AS build");
+    VkCommandBufferBeginInfo tlasBeginInfo{
+        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+        .pNext = nullptr,
+        .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
+        .pInheritanceInfo = nullptr
+    };
+    if (vkBeginCommandBuffer(tlasCommandBuffer, &tlasBeginInfo) != VK_SUCCESS) {
+        LOG_ERROR("Failed to begin command buffer for TLAS build");
+        throw std::runtime_error("Failed to begin command buffer for TLAS build");
     }
-    if (vkQueueSubmit(context.graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE) != VK_SUCCESS) {
-        LOG_ERROR("Failed to submit command buffer for top-level AS build", std::source_location::current());
-        throw std::runtime_error("Failed to submit command buffer for top-level AS build");
+    vkCmdBuildAccelerationStructuresKHR(tlasCommandBuffer, 1, &topLevelBuildInfo, topLevelBuildRangeInfos);
+    if (vkEndCommandBuffer(tlasCommandBuffer) != VK_SUCCESS) {
+        LOG_ERROR("Failed to end command buffer for TLAS build");
+        throw std::runtime_error("Failed to end command buffer for TLAS build");
+    }
+    VkSubmitInfo tlasSubmitInfo{
+        .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+        .pNext = nullptr,
+        .waitSemaphoreCount = 0,
+        .pWaitSemaphores = nullptr,
+        .pWaitDstStageMask = nullptr,
+        .commandBufferCount = 1,
+        .pCommandBuffers = &tlasCommandBuffer,
+        .signalSemaphoreCount = 0,
+        .pSignalSemaphores = nullptr
+    };
+    if (vkQueueSubmit(context.graphicsQueue, 1, &tlasSubmitInfo, VK_NULL_HANDLE) != VK_SUCCESS) {
+        LOG_ERROR("Failed to submit command buffer for TLAS build");
+        throw std::runtime_error("Failed to submit command buffer for TLAS build");
     }
     vkQueueWaitIdle(context.graphicsQueue);
-    vkFreeCommandBuffers(context.device, context.commandPool, 1, &commandBuffer);
+    vkFreeCommandBuffers(context.device, context.commandPool, 1, &tlasCommandBuffer);
+
     vkDestroyBuffer(context.device, tlasScratchBuffer, nullptr);
     vkFreeMemory(context.device, tlasScratchBufferMemory, nullptr);
     vkDestroyBuffer(context.device, instanceBuffer, nullptr);
@@ -1303,7 +1379,7 @@ uint32_t findMemoryType(VkPhysicalDevice physicalDevice, uint32_t typeFilter, Vk
             return i;
         }
     }
-    LOG_ERROR("Failed to find suitable memory type", std::source_location::current());
+    LOG_ERROR("Failed to find suitable memory type");
     throw std::runtime_error("Failed to find suitable memory type");
 }
 
@@ -1312,7 +1388,7 @@ uint32_t findMemoryType(VkPhysicalDevice physicalDevice, uint32_t typeFilter, Vk
 VulkanSwapchainManager::VulkanSwapchainManager(VulkanContext& context, VkSurfaceKHR surface)
     : context_(context), swapchain_(VK_NULL_HANDLE), imageCount_(0), swapchainImageFormat_(VK_FORMAT_UNDEFINED), swapchainExtent_{0, 0} {
     context_.surface = surface;
-    LOG_INFO("Initialized VulkanSwapchainManager", std::source_location::current());
+    LOG_INFO("Initialized VulkanSwapchainManager");
 }
 
 VulkanSwapchainManager::~VulkanSwapchainManager() {
@@ -1329,31 +1405,31 @@ void VulkanSwapchainManager::initializeSwapchain(int width, int height) {
     swapchainImageViews_ = context_.swapchainImageViews;
     imageCount_ = static_cast<uint32_t>(swapchainImages_.size());
     LOG_INFO("Swapchain initialized: {} images, format={}, extent={}x{}", 
-             std::source_location::current(), imageCount_, swapchainImageFormat_, 
+             imageCount_, swapchainImageFormat_, 
              swapchainExtent_.width, swapchainExtent_.height);
 }
 
 void VulkanSwapchainManager::cleanupSwapchain() {
     for (auto imageView : swapchainImageViews_) {
         if (imageView != VK_NULL_HANDLE) {
-            LOG_INFO_CAT("Vulkan", "Destroying image view: {:p}", std::source_location::current(), static_cast<void*>(imageView));
+            LOG_INFO_CAT("Vulkan", "Destroying image view: {}", imageView);
             vkDestroyImageView(context_.device, imageView, nullptr);
         }
     }
     swapchainImageViews_.clear();
     swapchainImages_.clear();
     if (swapchain_ != VK_NULL_HANDLE) {
-        LOG_INFO_CAT("Vulkan", "Destroying swapchain: {:p}", std::source_location::current(), static_cast<void*>(swapchain_));
+        LOG_INFO_CAT("Vulkan", "Destroying swapchain: {}", swapchain_);
         vkDestroySwapchainKHR(context_.device, swapchain_, nullptr);
         swapchain_ = VK_NULL_HANDLE;
     }
-    LOG_DEBUG("Swapchain cleaned up", std::source_location::current());
+    LOG_DEBUG("Swapchain cleaned up");
 }
 
 void VulkanSwapchainManager::handleResize(int width, int height) {
     cleanupSwapchain();
     initializeSwapchain(width, height);
-    LOG_INFO("Resized swapchain to {}x{}", std::source_location::current(), width, height);
+    LOG_INFO("Resized swapchain to {}x{}", width, height);
 }
 
 VulkanPipelineManager::VulkanPipelineManager(VulkanContext& context, int width, int height)
@@ -1365,7 +1441,7 @@ VulkanPipelineManager::VulkanPipelineManager(VulkanContext& context, int width, 
     createPipelineLayout();
     createRayTracingPipeline();
     createGraphicsPipeline();
-    LOG_INFO("Initialized VulkanPipelineManager {}x{}", std::source_location::current(), width, height);
+    LOG_INFO("Initialized VulkanPipelineManager {}x{}", width, height);
 }
 
 VulkanPipelineManager::~VulkanPipelineManager() {
@@ -1374,7 +1450,7 @@ VulkanPipelineManager::~VulkanPipelineManager() {
 
 void VulkanPipelineManager::createRenderPass() {
     VulkanInitializer::createRenderPass(context_.device, renderPass_, context_.swapchainImageFormat_);
-    LOG_INFO_CAT("Vulkan", "Created render pass: {:p}", std::source_location::current(), static_cast<void*>(renderPass_));
+    LOG_INFO_CAT("Vulkan", "Created render pass: {}", renderPass_);
 }
 
 void VulkanPipelineManager::createPipelineLayout() {
@@ -1393,10 +1469,10 @@ void VulkanPipelineManager::createPipelineLayout() {
         .pPushConstantRanges = &pushConstantRange
     };
     if (vkCreatePipelineLayout(context_.device, &layoutInfo, nullptr, &pipelineLayout_) != VK_SUCCESS) {
-        LOG_ERROR("Failed to create pipeline layout", std::source_location::current());
+        LOG_ERROR("Failed to create pipeline layout");
         throw std::runtime_error("Failed to create pipeline layout");
     }
-    LOG_INFO_CAT("Vulkan", "Created pipeline layout: {:p}", std::source_location::current(), static_cast<void*>(pipelineLayout_));
+    LOG_INFO_CAT("Vulkan", "Created pipeline layout: {}", pipelineLayout_);
 }
 
 void VulkanPipelineManager::createRayTracingPipeline() {
@@ -1405,15 +1481,15 @@ void VulkanPipelineManager::createRayTracingPipeline() {
     std::filesystem::path closestHitPath = "assets/shaders/raytracing/closesthit.spv";
 
     if (!std::filesystem::exists(rayGenPath)) {
-        LOG_ERROR("Ray generation shader file does not exist: {}", std::source_location::current(), rayGenPath.string());
+        LOG_ERROR("Ray generation shader file does not exist: {}", rayGenPath.string());
         throw std::runtime_error("Ray generation shader file does not exist: " + rayGenPath.string());
     }
     if (!std::filesystem::exists(missPath)) {
-        LOG_ERROR("Miss shader file does not exist: {}", std::source_location::current(), missPath.string());
+        LOG_ERROR("Miss shader file does not exist: {}", missPath.string());
         throw std::runtime_error("Miss shader file does not exist: " + missPath.string());
     }
     if (!std::filesystem::exists(closestHitPath)) {
-        LOG_ERROR("Closest hit shader file does not exist: {}", std::source_location::current(), closestHitPath.string());
+        LOG_ERROR("Closest hit shader file does not exist: {}", closestHitPath.string());
         throw std::runtime_error("Closest hit shader file does not exist: " + closestHitPath.string());
     }
 
@@ -1422,7 +1498,7 @@ void VulkanPipelineManager::createRayTracingPipeline() {
     closestHitShaderModule_ = VulkanInitializer::loadShader(context_.device, closestHitPath.string());
 
     VulkanInitializer::createRayTracingPipeline(context_, pipelineLayout_, rayGenShaderModule_, missShaderModule_, closestHitShaderModule_, rayTracingPipeline_);
-    LOG_INFO_CAT("Vulkan", "Created ray tracing pipeline: {:p}", std::source_location::current(), static_cast<void*>(rayTracingPipeline_));
+    LOG_INFO_CAT("Vulkan", "Created ray tracing pipeline: {}", rayTracingPipeline_);
 }
 
 void VulkanPipelineManager::createGraphicsPipeline() {
@@ -1461,7 +1537,7 @@ void VulkanPipelineManager::createGraphicsPipeline() {
         .location = 0,
         .binding = 0,
         .format = VK_FORMAT_R32G32B32_SFLOAT,
-         .offset = 0
+        .offset = 0
     };
     VkPipelineVertexInputStateCreateInfo vertexInputInfo{
         .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
@@ -1565,56 +1641,56 @@ void VulkanPipelineManager::createGraphicsPipeline() {
         .basePipelineIndex = -1
     };
     if (vkCreateGraphicsPipelines(context_.device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &graphicsPipeline_) != VK_SUCCESS) {
-        LOG_ERROR("Failed to create graphics pipeline", std::source_location::current());
+        LOG_ERROR("Failed to create graphics pipeline");
         throw std::runtime_error("Failed to create graphics pipeline");
     }
     vkDestroyShaderModule(context_.device, vertShaderModule, nullptr);
     vkDestroyShaderModule(context_.device, fragShaderModule, nullptr);
-    LOG_INFO("Created graphics pipeline: {:p}", std::source_location::current(), static_cast<void*>(graphicsPipeline_));
+    LOG_INFO("Created graphics pipeline: {}", graphicsPipeline_);
 }
 
 void VulkanPipelineManager::cleanupPipeline() {
     if (rayTracingPipeline_ != VK_NULL_HANDLE) {
-        LOG_INFO_CAT("Vulkan", "Destroying ray tracing pipeline: {:p}", std::source_location::current(), static_cast<void*>(rayTracingPipeline_));
+        LOG_INFO_CAT("Vulkan", "Destroying ray tracing pipeline: {}", rayTracingPipeline_);
         vkDestroyPipeline(context_.device, rayTracingPipeline_, nullptr);
         rayTracingPipeline_ = VK_NULL_HANDLE;
     }
     if (graphicsPipeline_ != VK_NULL_HANDLE) {
-        LOG_INFO_CAT("Vulkan", "Destroying graphics pipeline: {:p}", std::source_location::current(), static_cast<void*>(graphicsPipeline_));
+        LOG_INFO_CAT("Vulkan", "Destroying graphics pipeline: {}", graphicsPipeline_);
         vkDestroyPipeline(context_.device, graphicsPipeline_, nullptr);
         graphicsPipeline_ = VK_NULL_HANDLE;
     }
     if (pipelineLayout_ != VK_NULL_HANDLE) {
-        LOG_INFO_CAT("Vulkan", "Destroying pipeline layout: {:p}", std::source_location::current(), static_cast<void*>(pipelineLayout_));
+        LOG_INFO_CAT("Vulkan", "Destroying pipeline layout: {}", pipelineLayout_);
         vkDestroyPipelineLayout(context_.device, pipelineLayout_, nullptr);
         pipelineLayout_ = VK_NULL_HANDLE;
     }
     if (renderPass_ != VK_NULL_HANDLE) {
-        LOG_INFO_CAT("Vulkan", "Destroying render pass: {:p}", std::source_location::current(), static_cast<void*>(renderPass_));
+        LOG_INFO_CAT("Vulkan", "Destroying render pass: {}", renderPass_);
         vkDestroyRenderPass(context_.device, renderPass_, nullptr);
         renderPass_ = VK_NULL_HANDLE;
     }
     if (descriptorSetLayout_ != VK_NULL_HANDLE) {
-        LOG_INFO_CAT("Vulkan", "Destroying descriptor set layout: {:p}", std::source_location::current(), static_cast<void*>(descriptorSetLayout_));
+        LOG_INFO_CAT("Vulkan", "Destroying descriptor set layout: {}", descriptorSetLayout_);
         vkDestroyDescriptorSetLayout(context_.device, descriptorSetLayout_, nullptr);
         descriptorSetLayout_ = VK_NULL_HANDLE;
     }
     if (rayGenShaderModule_ != VK_NULL_HANDLE) {
-        LOG_INFO_CAT("Vulkan", "Destroying ray gen shader module: {:p}", std::source_location::current(), static_cast<void*>(rayGenShaderModule_));
+        LOG_INFO_CAT("Vulkan", "Destroying ray gen shader module: {}", rayGenShaderModule_);
         vkDestroyShaderModule(context_.device, rayGenShaderModule_, nullptr);
         rayGenShaderModule_ = VK_NULL_HANDLE;
     }
     if (missShaderModule_ != VK_NULL_HANDLE) {
-        LOG_INFO_CAT("Vulkan", "Destroying miss shader module: {:p}", std::source_location::current(), static_cast<void*>(missShaderModule_));
+        LOG_INFO_CAT("Vulkan", "Destroying miss shader module: {}", missShaderModule_);
         vkDestroyShaderModule(context_.device, missShaderModule_, nullptr);
         missShaderModule_ = VK_NULL_HANDLE;
     }
     if (closestHitShaderModule_ != VK_NULL_HANDLE) {
-        LOG_INFO_CAT("Vulkan", "Destroying closest hit shader module: {:p}", std::source_location::current(), static_cast<void*>(closestHitShaderModule_));
+        LOG_INFO_CAT("Vulkan", "Destroying closest hit shader module: {}", closestHitShaderModule_);
         vkDestroyShaderModule(context_.device, closestHitShaderModule_, nullptr);
         closestHitShaderModule_ = VK_NULL_HANDLE;
     }
-    LOG_DEBUG("Pipeline cleaned up", std::source_location::current());
+    LOG_DEBUG("Pipeline cleaned up");
 }
 
 VulkanRenderer::VulkanRenderer(VkInstance instance, VkSurfaceKHR surface,
@@ -1653,40 +1729,40 @@ VulkanRenderer::VulkanRenderer(VkInstance instance, VkSurfaceKHR surface,
     createFramebuffers();
     createCommandBuffers();
     createSyncObjects();
-    LOG_INFO("VulkanRenderer initialized {}x{}", std::source_location::current(), width, height);
+    LOG_INFO("VulkanRenderer initialized {}x{}", width, height);
 }
 
 VulkanRenderer::~VulkanRenderer() {
     vkDeviceWaitIdle(context_.device);
-    LOG_INFO("Destroying VulkanRenderer", std::source_location::current());
+    LOG_INFO("Destroying VulkanRenderer");
 
     pipelineManager_.reset();
 
     if (!commandBuffers_.empty() && context_.commandPool != VK_NULL_HANDLE) {
-        LOG_INFO_CAT("Vulkan", "Freeing command buffers", std::source_location::current());
+        LOG_INFO_CAT("Vulkan", "Freeing command buffers");
         vkFreeCommandBuffers(context_.device, context_.commandPool, static_cast<uint32_t>(commandBuffers_.size()), commandBuffers_.data());
         commandBuffers_.clear();
     }
 
     if (imageAvailableSemaphore_ != VK_NULL_HANDLE) {
-        LOG_INFO_CAT("Vulkan", "Destroying image available semaphore: {:p}", std::source_location::current(), static_cast<void*>(imageAvailableSemaphore_));
+        LOG_INFO_CAT("Vulkan", "Destroying image available semaphore: {}", imageAvailableSemaphore_);
         vkDestroySemaphore(context_.device, imageAvailableSemaphore_, nullptr);
         imageAvailableSemaphore_ = VK_NULL_HANDLE;
     }
     if (renderFinishedSemaphore_ != VK_NULL_HANDLE) {
-        LOG_INFO_CAT("Vulkan", "Destroying render finished semaphore: {:p}", std::source_location::current(), static_cast<void*>(renderFinishedSemaphore_));
+        LOG_INFO_CAT("Vulkan", "Destroying render finished semaphore: {}", renderFinishedSemaphore_);
         vkDestroySemaphore(context_.device, renderFinishedSemaphore_, nullptr);
         renderFinishedSemaphore_ = VK_NULL_HANDLE;
     }
     if (inFlightFence_ != VK_NULL_HANDLE) {
-        LOG_INFO_CAT("Vulkan", "Destroying in-flight fence: {:p}", std::source_location::current(), static_cast<void*>(inFlightFence_));
+        LOG_INFO_CAT("Vulkan", "Destroying in-flight fence: {}", inFlightFence_);
         vkDestroyFence(context_.device, inFlightFence_, nullptr);
         inFlightFence_ = VK_NULL_HANDLE;
     }
 
     for (auto framebuffer : framebuffers_) {
         if (framebuffer != VK_NULL_HANDLE) {
-            LOG_INFO_CAT("Vulkan", "Destroying framebuffer: {:p}", std::source_location::current(), static_cast<void*>(framebuffer));
+            LOG_INFO_CAT("Vulkan", "Destroying framebuffer: {}", framebuffer);
             vkDestroyFramebuffer(context_.device, framebuffer, nullptr);
         }
     }
@@ -1696,99 +1772,99 @@ VulkanRenderer::~VulkanRenderer() {
     bufferManager_.reset();
 
     if (context_.commandPool != VK_NULL_HANDLE) {
-        LOG_INFO_CAT("Vulkan", "Destroying command pool: {:p}", std::source_location::current(), static_cast<void*>(context_.commandPool));
+        LOG_INFO_CAT("Vulkan", "Destroying command pool: {}", context_.commandPool);
         vkDestroyCommandPool(context_.device, context_.commandPool, nullptr);
         context_.commandPool = VK_NULL_HANDLE;
     }
 
     if (context_.storageImageView != VK_NULL_HANDLE) {
-        LOG_INFO_CAT("Vulkan", "Destroying storage image view: {:p}", std::source_location::current(), static_cast<void*>(context_.storageImageView));
+        LOG_INFO_CAT("Vulkan", "Destroying storage image view: {}", context_.storageImageView);
         vkDestroyImageView(context_.device, context_.storageImageView, nullptr);
         context_.storageImageView = VK_NULL_HANDLE;
     }
     if (context_.storageImage != VK_NULL_HANDLE) {
-        LOG_INFO_CAT("Vulkan", "Destroying storage image: {:p}", std::source_location::current(), static_cast<void*>(context_.storageImage));
+        LOG_INFO_CAT("Vulkan", "Destroying storage image: {}", context_.storageImage);
         vkDestroyImage(context_.device, context_.storageImage, nullptr);
         context_.storageImage = VK_NULL_HANDLE;
     }
     if (context_.storageImageMemory != VK_NULL_HANDLE) {
-        LOG_INFO_CAT("Vulkan", "Freeing storage image memory: {:p}", std::source_location::current(), static_cast<void*>(context_.storageImageMemory));
+        LOG_INFO_CAT("Vulkan", "Freeing storage image memory: {}", context_.storageImageMemory);
         vkFreeMemory(context_.device, context_.storageImageMemory, nullptr);
         context_.storageImageMemory = VK_NULL_HANDLE;
     }
 
     if (context_.sampler != VK_NULL_HANDLE) {
-        LOG_INFO_CAT("Vulkan", "Destroying sampler: {:p}", std::source_location::current(), static_cast<void*>(context_.sampler));
+        LOG_INFO_CAT("Vulkan", "Destroying sampler: {}", context_.sampler);
         vkDestroySampler(context_.device, context_.sampler, nullptr);
         context_.sampler = VK_NULL_HANDLE;
     }
 
     if (context_.descriptorPool != VK_NULL_HANDLE) {
-        LOG_INFO_CAT("Vulkan", "Destroying descriptor pool: {:p}", std::source_location::current(), static_cast<void*>(context_.descriptorPool));
+        LOG_INFO_CAT("Vulkan", "Destroying descriptor pool: {}", context_.descriptorPool);
         vkDestroyDescriptorPool(context_.device, context_.descriptorPool, nullptr);
         context_.descriptorPool = VK_NULL_HANDLE;
     }
 
     auto vkDestroyAccelerationStructureKHR = (PFN_vkDestroyAccelerationStructureKHR)vkGetDeviceProcAddr(context_.device, "vkDestroyAccelerationStructureKHR");
     if (context_.topLevelAS != VK_NULL_HANDLE && vkDestroyAccelerationStructureKHR) {
-        LOG_INFO_CAT("Vulkan", "Destroying top-level AS: {:p}", std::source_location::current(), static_cast<void*>(context_.topLevelAS));
+        LOG_INFO_CAT("Vulkan", "Destroying top-level AS: {}", context_.topLevelAS);
         vkDestroyAccelerationStructureKHR(context_.device, context_.topLevelAS, nullptr);
         context_.topLevelAS = VK_NULL_HANDLE;
     }
     if (context_.topLevelASBuffer != VK_NULL_HANDLE) {
-        LOG_INFO_CAT("Vulkan", "Destroying top-level AS buffer: {:p}", std::source_location::current(), static_cast<void*>(context_.topLevelASBuffer));
+        LOG_INFO_CAT("Vulkan", "Destroying top-level AS buffer: {}", context_.topLevelASBuffer);
         vkDestroyBuffer(context_.device, context_.topLevelASBuffer, nullptr);
         context_.topLevelASBuffer = VK_NULL_HANDLE;
     }
     if (context_.topLevelASBufferMemory != VK_NULL_HANDLE) {
-        LOG_INFO_CAT("Vulkan", "Freeing top-level AS buffer memory: {:p}", std::source_location::current(), static_cast<void*>(context_.topLevelASBufferMemory));
+        LOG_INFO_CAT("Vulkan", "Freeing top-level AS buffer memory: {}", context_.topLevelASBufferMemory);
         vkFreeMemory(context_.device, context_.topLevelASBufferMemory, nullptr);
         context_.topLevelASBufferMemory = VK_NULL_HANDLE;
     }
     if (context_.bottomLevelAS != VK_NULL_HANDLE && vkDestroyAccelerationStructureKHR) {
-        LOG_INFO_CAT("Vulkan", "Destroying bottom-level AS: {:p}", std::source_location::current(), static_cast<void*>(context_.bottomLevelAS));
+        LOG_INFO_CAT("Vulkan", "Destroying bottom-level AS: {}", context_.bottomLevelAS);
         vkDestroyAccelerationStructureKHR(context_.device, context_.bottomLevelAS, nullptr);
         context_.bottomLevelAS = VK_NULL_HANDLE;
     }
     if (context_.bottomLevelASBuffer != VK_NULL_HANDLE) {
-        LOG_INFO_CAT("Vulkan", "Destroying bottom-level AS buffer: {:p}", std::source_location::current(), static_cast<void*>(context_.bottomLevelASBuffer));
+        LOG_INFO_CAT("Vulkan", "Destroying bottom-level AS buffer: {}", context_.bottomLevelASBuffer);
         vkDestroyBuffer(context_.device, context_.bottomLevelASBuffer, nullptr);
         context_.bottomLevelASBuffer = VK_NULL_HANDLE;
     }
     if (context_.bottomLevelASBufferMemory != VK_NULL_HANDLE) {
-        LOG_INFO_CAT("Vulkan", "Freeing bottom-level AS buffer memory: {:p}", std::source_location::current(), static_cast<void*>(context_.bottomLevelASBufferMemory));
+        LOG_INFO_CAT("Vulkan", "Freeing bottom-level AS buffer memory: {}", context_.bottomLevelASBufferMemory);
         vkFreeMemory(context_.device, context_.bottomLevelASBufferMemory, nullptr);
         context_.bottomLevelASBufferMemory = VK_NULL_HANDLE;
     }
 
     if (context_.rayTracingPipeline != VK_NULL_HANDLE) {
-        LOG_INFO_CAT("Vulkan", "Destroying ray-tracing pipeline: {:p}", std::source_location::current(), static_cast<void*>(context_.rayTracingPipeline));
+        LOG_INFO_CAT("Vulkan", "Destroying ray-tracing pipeline: {}", context_.rayTracingPipeline);
         vkDestroyPipeline(context_.device, context_.rayTracingPipeline, nullptr);
         context_.rayTracingPipeline = VK_NULL_HANDLE;
     }
     if (context_.rayTracingPipelineLayout != VK_NULL_HANDLE) {
-        LOG_INFO_CAT("Vulkan", "Destroying ray-tracing pipeline layout: {:p}", std::source_location::current(), static_cast<void*>(context_.rayTracingPipelineLayout));
+        LOG_INFO_CAT("Vulkan", "Destroying ray-tracing pipeline layout: {}", context_.rayTracingPipelineLayout);
         vkDestroyPipelineLayout(context_.device, context_.rayTracingPipelineLayout, nullptr);
         context_.rayTracingPipelineLayout = VK_NULL_HANDLE;
     }
     if (context_.rayTracingDescriptorSetLayout != VK_NULL_HANDLE) {
-        LOG_INFO_CAT("Vulkan", "Destroying ray-tracing descriptor set layout: {:p}", std::source_location::current(), static_cast<void*>(context_.rayTracingDescriptorSetLayout));
+        LOG_INFO_CAT("Vulkan", "Destroying ray-tracing descriptor set layout: {}", context_.rayTracingDescriptorSetLayout);
         vkDestroyDescriptorSetLayout(context_.device, context_.rayTracingDescriptorSetLayout, nullptr);
         context_.rayTracingDescriptorSetLayout = VK_NULL_HANDLE;
     }
     if (context_.shaderBindingTable != VK_NULL_HANDLE) {
-        LOG_INFO_CAT("Vulkan", "Destroying shader binding table: {:p}", std::source_location::current(), static_cast<void*>(context_.shaderBindingTable));
+        LOG_INFO_CAT("Vulkan", "Destroying shader binding table: {}", context_.shaderBindingTable);
         vkDestroyBuffer(context_.device, context_.shaderBindingTable, nullptr);
         context_.shaderBindingTable = VK_NULL_HANDLE;
     }
     if (context_.shaderBindingTableMemory != VK_NULL_HANDLE) {
-        LOG_INFO_CAT("Vulkan", "Freeing shader binding table memory: {:p}", std::source_location::current(), static_cast<void*>(context_.shaderBindingTableMemory));
+        LOG_INFO_CAT("Vulkan", "Freeing shader binding table memory: {}", context_.shaderBindingTableMemory);
         vkFreeMemory(context_.device, context_.shaderBindingTableMemory, nullptr);
         context_.shaderBindingTableMemory = VK_NULL_HANDLE;
     }
 
     if (context_.device != VK_NULL_HANDLE) {
-        LOG_INFO_CAT("Vulkan", "Destroying device: {:p}", std::source_location::current(), static_cast<void*>(context_.device));
+        LOG_INFO_CAT("Vulkan", "Destroying device: {}", context_.device);
         vkDestroyDevice(context_.device, nullptr);
         context_.device = VK_NULL_HANDLE;
     }
@@ -1810,10 +1886,10 @@ void VulkanRenderer::createFramebuffers() {
             .layers = 1
         };
         if (vkCreateFramebuffer(context_.device, &framebufferInfo, nullptr, &framebuffers_[i]) != VK_SUCCESS) {
-            LOG_ERROR("Failed to create framebuffer[{}]", std::source_location::current(), i);
+            LOG_ERROR("Failed to create framebuffer[{}]", i);
             throw std::runtime_error("Failed to create framebuffer");
         }
-        LOG_INFO_CAT("Vulkan", "Created framebuffer: {:p}", std::source_location::current(), static_cast<void*>(framebuffers_[i]));
+        LOG_INFO_CAT("Vulkan", "Created framebuffer: {}", framebuffers_[i]);
     }
 }
 
@@ -1827,10 +1903,10 @@ void VulkanRenderer::createCommandBuffers() {
         .commandBufferCount = static_cast<uint32_t>(commandBuffers_.size())
     };
     if (vkAllocateCommandBuffers(context_.device, &allocInfo, commandBuffers_.data()) != VK_SUCCESS) {
-        LOG_ERROR("Failed to allocate command buffers", std::source_location::current());
+        LOG_ERROR("Failed to allocate command buffers");
         throw std::runtime_error("Failed to allocate command buffers");
     }
-    LOG_INFO("Allocated {} command buffers", std::source_location::current(), commandBuffers_.size());
+    LOG_INFO("Allocated {} command buffers", commandBuffers_.size());
 }
 
 void VulkanRenderer::createSyncObjects() {
@@ -1847,12 +1923,12 @@ void VulkanRenderer::createSyncObjects() {
     if (vkCreateSemaphore(context_.device, &semaphoreInfo, nullptr, &imageAvailableSemaphore_) != VK_SUCCESS ||
         vkCreateSemaphore(context_.device, &semaphoreInfo, nullptr, &renderFinishedSemaphore_) != VK_SUCCESS ||
         vkCreateFence(context_.device, &fenceInfo, nullptr, &inFlightFence_) != VK_SUCCESS) {
-        LOG_ERROR("Failed to create sync objects", std::source_location::current());
+        LOG_ERROR("Failed to create sync objects");
         throw std::runtime_error("Failed to create sync objects");
     }
-    LOG_INFO_CAT("Vulkan", "Created image available semaphore: {:p}", std::source_location::current(), static_cast<void*>(imageAvailableSemaphore_));
-    LOG_INFO_CAT("Vulkan", "Created render finished semaphore: {:p}", std::source_location::current(), static_cast<void*>(renderFinishedSemaphore_));
-    LOG_INFO_CAT("Vulkan", "Created in-flight fence: {:p}", std::source_location::current(), static_cast<void*>(inFlightFence_));
+    LOG_INFO_CAT("Vulkan", "Created image available semaphore: {}", imageAvailableSemaphore_);
+    LOG_INFO_CAT("Vulkan", "Created render finished semaphore: {}", renderFinishedSemaphore_);
+    LOG_INFO_CAT("Vulkan", "Created in-flight fence: {}", inFlightFence_);
 }
 
 void VulkanRenderer::renderFrame(const AMOURANTH& camera) {
@@ -1866,7 +1942,7 @@ void VulkanRenderer::renderFrame(const AMOURANTH& camera) {
         return;
     }
     if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
-        LOG_ERROR("Failed to acquire swapchain image: {}", std::source_location::current(), result);
+        LOG_ERROR("Failed to acquire swapchain image: {}", result);
         throw std::runtime_error("Failed to acquire swapchain image");
     }
 
@@ -1880,7 +1956,7 @@ void VulkanRenderer::renderFrame(const AMOURANTH& camera) {
                 0, sizeof(UE::UniformBufferObject), 0, &data);
     memcpy(data, &ubo, sizeof(UE::UniformBufferObject));
     vkUnmapMemory(context_.device, bufferManager_->getUniformBufferMemory(imageIndex));
-    LOG_DEBUG("Updated uniform buffer for image {}", std::source_location::current(), imageIndex);
+    LOG_DEBUG("Updated uniform buffer for image {}", imageIndex);
 
     VkCommandBuffer commandBuffer = commandBuffers_[imageIndex];
     vkResetCommandBuffer(commandBuffer, 0);
@@ -1891,7 +1967,7 @@ void VulkanRenderer::renderFrame(const AMOURANTH& camera) {
         .pInheritanceInfo = nullptr
     };
     if (vkBeginCommandBuffer(commandBuffer, &beginInfo) != VK_SUCCESS) {
-        LOG_ERROR("Failed to begin command buffer: {:p}", std::source_location::current(), static_cast<void*>(commandBuffer));
+        LOG_ERROR("Failed to begin command buffer: {}", commandBuffer);
         throw std::runtime_error("Failed to begin command buffer");
     }
 
@@ -1940,7 +2016,7 @@ void VulkanRenderer::renderFrame(const AMOURANTH& camera) {
 
     auto vkCmdTraceRaysKHR = (PFN_vkCmdTraceRaysKHR)vkGetDeviceProcAddr(context_.device, "vkCmdTraceRaysKHR");
     if (!vkCmdTraceRaysKHR) {
-        LOG_ERROR("Failed to get vkCmdTraceRaysKHR function pointer", std::source_location::current());
+        LOG_ERROR("Failed to get vkCmdTraceRaysKHR function pointer");
         throw std::runtime_error("Failed to get vkCmdTraceRaysKHR");
     }
     vkCmdTraceRaysKHR(commandBuffer, &raygenSbt, &missSbt, &hitSbt, &callableSbt,
@@ -1989,7 +2065,7 @@ void VulkanRenderer::renderFrame(const AMOURANTH& camera) {
     vkCmdEndRenderPass(commandBuffer);
 
     if (vkEndCommandBuffer(commandBuffer) != VK_SUCCESS) {
-        LOG_ERROR("Failed to end command buffer: {:p}", std::source_location::current(), static_cast<void*>(commandBuffer));
+        LOG_ERROR("Failed to end command buffer: {}", commandBuffer);
         throw std::runtime_error("Failed to end command buffer");
     }
 
@@ -2006,7 +2082,7 @@ void VulkanRenderer::renderFrame(const AMOURANTH& camera) {
         .pSignalSemaphores = &renderFinishedSemaphore_
     };
     if (vkQueueSubmit(context_.graphicsQueue, 1, &submitInfo, inFlightFence_) != VK_SUCCESS) {
-        LOG_ERROR("Failed to submit draw command buffer: {:p}", std::source_location::current(), static_cast<void*>(context_.graphicsQueue));
+        LOG_ERROR("Failed to submit draw command buffer: {}", context_.graphicsQueue);
         throw std::runtime_error("Failed to submit draw command buffer");
     }
 
@@ -2025,7 +2101,7 @@ void VulkanRenderer::renderFrame(const AMOURANTH& camera) {
     if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
         handleResize(width_, height_);
     } else if (result != VK_SUCCESS) {
-        LOG_ERROR("Failed to present swapchain image: {}", std::source_location::current(), result);
+        LOG_ERROR("Failed to present swapchain image: {}", result);
         throw std::runtime_error("Failed to present swapchain image");
     }
 }
@@ -2045,7 +2121,7 @@ void VulkanRenderer::handleResize(int width, int height) {
     framebuffers_.clear();
     createFramebuffers();
     createCommandBuffers();
-    LOG_INFO("Handled resize to {}x{}", std::source_location::current(), width, height);
+    LOG_INFO("Handled resize to {}x{}", width, height);
 }
 
 VkDeviceMemory VulkanRenderer::getVertexBufferMemory() const {

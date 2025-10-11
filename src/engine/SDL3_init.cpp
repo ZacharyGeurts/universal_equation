@@ -134,7 +134,7 @@ SDL3Initializer::SDL3Initializer(const std::string& title, int width, int height
               std::source_location::current(), static_cast<void*>(surface_));
 
     // Verify surface support
-    VkPhysicalDevice physicalDevice = VulkanInitializer::findPhysicalDevice(instance_);
+    VkPhysicalDevice physicalDevice = ::VulkanInitializer::findPhysicalDevice(instance_);
     uint32_t queueFamilyCount = 0;
     vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice, &queueFamilyCount, nullptr);
     bool surfaceSupported = false;

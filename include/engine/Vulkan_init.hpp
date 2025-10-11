@@ -11,12 +11,37 @@
 #include "VulkanCore.hpp"
 #include "VulkanBufferManager.hpp"
 #include "ue_init.hpp"
+#include "engine/logging.hpp" // Ensure logging.hpp is included for LOG_* macros
 #include <vulkan/vulkan.h>
 #include <vector>
 #include <memory>
 #include <string>
 #include <span>
 #include <glm/glm.hpp>
+
+namespace VulkanInitializer {
+    // Function declarations for Vulkan initialization utilities
+    VkPhysicalDevice findPhysicalDevice(VkInstance instance, bool preferNvidia = false);
+    void initializeVulkan(VulkanContext& context, int width, int height);
+    void createSwapchain(VulkanContext& context, int width, int height);
+    void createImageViews(VulkanContext& context);
+    VkShaderModule loadShader(VkDevice device, const std::string& filepath);
+    void createRenderPass(VkDevice device, VkRenderPass& renderPass, VkFormat format);
+    void createDescriptorSetLayout(VkDevice device, VkDescriptorSetLayout& descriptorSetLayout);
+    void createDescriptorPoolAndSet(VkDevice device, VkDescriptorSetLayout descriptorSetLayout,
+                                   VkDescriptorPool& descriptorPool, VkDescriptorSet& descriptorSet,
+                                   VkSampler& sampler, VkBuffer uniformBuffer, VkImageView storageImageView,
+                                   VkAccelerationStructureKHR topLevelAS);
+    void createStorageImage(VkDevice device, VkPhysicalDevice physicalDevice, VkImage& storageImage,
+                           VkDeviceMemory& storageImageMemory, VkImageView& storageImageView,
+                           uint32_t width, uint32_t height);
+    void createRayTracingPipeline(VulkanContext& context, VkPipelineLayout pipelineLayout,
+                                 VkShaderModule rayGenShader, VkShaderModule missShader,
+                                 VkShaderModule closestHitShader, VkPipeline& pipeline);
+    void createShaderBindingTable(VulkanContext& context);
+    void createAccelerationStructures(VulkanContext& context, std::span<const glm::vec3> vertices, std::span<const uint32_t> indices);
+    uint32_t findMemoryType(VkPhysicalDevice physicalDevice, uint32_t typeFilter, VkMemoryPropertyFlags properties);
+}
 
 class VulkanSwapchainManager {
 public:

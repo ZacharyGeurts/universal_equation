@@ -6,6 +6,7 @@
 // Delta time format: microseconds (<10ms), milliseconds (10ms-1s), seconds (1s-1min), minutes (1min-1hr), hours (>1hr).
 // Usage: LOG_INFO("Message: {}", value); or Logger::get().log(LogLevel::Info, "Vulkan", "Message: {}", value);
 // Features: Singleton, log rotation, environment variable config, automatic flush, extended colors, overloads.
+// Extended features: Additional Vulkan/SDL types, GLM arrays, AMOURANTH camera, category filtering, high-frequency logging.
 // Zachary Geurts 2025
 
 #ifndef ENGINE_LOGGING_HPP
@@ -27,7 +28,8 @@
 #include <chrono>
 #include <cstdint>
 #include <glm/glm.hpp>
-#include <glm/mat4x4.hpp> // Added for glm::mat4
+#include <glm/mat4x4.hpp>
+#include <glm/vec2.hpp> // Added for glm::vec2
 #include <type_traits>
 #include <concepts>
 #include <filesystem>
@@ -36,6 +38,8 @@
 #include <optional>
 #include <map>
 #include <ctime>
+#include <span>
+#include <set>
 
 #define LOG_DEBUG(...) Logging::Logger::get().log(Logging::LogLevel::Debug, "General", __VA_ARGS__)
 #define LOG_INFO(...) Logging::Logger::get().log(Logging::LogLevel::Info, "General", __VA_ARGS__)
@@ -50,6 +54,7 @@ namespace Logging {
 
 enum class LogLevel { Debug, Info, Warning, Error };
 
+// ANSI color codes
 inline constexpr std::string_view RESET = "\033[0m";
 inline constexpr std::string_view CYAN = "\033[1;36m";    // Bold cyan for debug
 inline constexpr std::string_view GREEN = "\033[1;32m";   // Bold green for info
@@ -77,10 +82,14 @@ struct LogMessage {
         : level(lvl), message(msg), category(cat), location(loc), timestamp(ts) {}
 };
 
+// Forward declaration of AMOURANTH camera (assuming it's defined elsewhere)
+struct AMOURANTH;
+
 class Logger {
 public:
     Logger(LogLevel level = LogLevel::Info, const std::string& logFile = getDefaultLogFile())
         : head_(0), tail_(0), running_(true), level_(level), maxLogFileSize_(10 * 1024 * 1024) {
+        loadCategoryFilters();
         if (!logFile.empty()) {
             setLogFile(logFile);
         }
@@ -92,10 +101,11 @@ public:
         return instance;
     }
 
+    // Generic log with format string and arguments
     template<typename... Args>
     void log(LogLevel level, std::string_view category, std::string_view message,
              const std::source_location& location = std::source_location::current(), const Args&... args) const {
-        if (static_cast<int>(level) < static_cast<int>(level_.load(std::memory_order_relaxed))) {
+        if (!shouldLog(level, category)) {
             return;
         }
 
@@ -128,14 +138,43 @@ public:
         enqueueMessage(level, message, category, formatted, location);
     }
 
+    // Log without format arguments
     void log(LogLevel level, std::string_view category, std::string_view message,
              const std::source_location& location = std::source_location::current()) const {
-        if (static_cast<int>(level) < static_cast<int>(level_.load(std::memory_order_relaxed))) {
+        if (!shouldLog(level, category)) {
             return;
         }
         enqueueMessage(level, message, category, std::string(message), location);
     }
 
+    // Log Vulkan handles
+    template<typename T>
+    requires (
+        std::same_as<T, VkBuffer> || std::same_as<T, VkCommandBuffer> ||
+        std::same_as<T, VkPipelineLayout> || std::same_as<T, VkDescriptorSet> ||
+        std::same_as<T, VkRenderPass> || std::same_as<T, VkFramebuffer> ||
+        std::same_as<T, VkImage> || std::same_as<T, VkDeviceMemory> ||
+        std::same_as<T, VkDevice> || std::same_as<T, VkQueue> ||
+        std::same_as<T, VkCommandPool> || std::same_as<T, VkPipeline> ||
+        std::same_as<T, VkSwapchainKHR> || std::same_as<T, VkShaderModule> ||
+        std::same_as<T, VkSemaphore> || std::same_as<T, VkFence> ||
+        std::same_as<T, VkSurfaceKHR> || std::same_as<T, VkImageView> ||
+        std::same_as<T, VkDescriptorSetLayout> || std::same_as<T, VkInstance> ||
+        std::same_as<T, VkSampler> || std::same_as<T, VkDescriptorPool> ||
+        std::same_as<T, VkAccelerationStructureKHR> || std::same_as<T, VkPhysicalDevice> ||
+        std::same_as<T, VkExtent2D> || std::same_as<T, VkViewport> || // Added Vulkan types
+        std::same_as<T, VkRect2D>
+    )
+    void log(LogLevel level, std::string_view category, T handle, std::string_view handleName,
+             const std::source_location& location = std::source_location::current()) const {
+        if (!shouldLog(level, category)) {
+            return;
+        }
+        std::string formatted = formatVulkanType(handle, handleName);
+        enqueueMessage(level, handleName, category, formatted, location);
+    }
+
+    // Log span of Vulkan handles
     template<typename T>
     requires (
         std::same_as<T, VkBuffer> || std::same_as<T, VkCommandBuffer> ||
@@ -151,29 +190,46 @@ public:
         std::same_as<T, VkSampler> || std::same_as<T, VkDescriptorPool> ||
         std::same_as<T, VkAccelerationStructureKHR> || std::same_as<T, VkPhysicalDevice>
     )
-    void log(LogLevel level, std::string_view category, T handle, std::string_view handleName,
+    void log(LogLevel level, std::string_view category, std::span<const T> handles, std::string_view handleName,
              const std::source_location& location = std::source_location::current()) const {
-        if (static_cast<int>(level) < static_cast<int>(level_.load(std::memory_order_relaxed))) {
+        if (!shouldLog(level, category)) {
             return;
         }
-        std::string formatted = handle == VK_NULL_HANDLE ?
-            std::format("{}: VK_NULL_HANDLE", handleName) :
-            std::format("{}: {:p}", handleName, static_cast<const void*>(handle));
+        std::string formatted = std::format("{}[{}]{{", handleName, handles.size());
+        for (size_t i = 0; i < handles.size(); ++i) {
+            formatted += formatVulkanType(handles[i], "");
+            if (i < handles.size() - 1) {
+                formatted += ", ";
+            }
+        }
+        formatted += "}";
         enqueueMessage(level, handleName, category, formatted, location);
     }
 
+    // Log glm::vec3
     void log(LogLevel level, std::string_view category, const glm::vec3& vec,
              const std::source_location& location = std::source_location::current()) const {
-        if (static_cast<int>(level) < static_cast<int>(level_.load(std::memory_order_relaxed))) {
+        if (!shouldLog(level, category)) {
             return;
         }
         std::string formatted = std::format("vec3({:.3f}, {:.3f}, {:.3f})", vec.x, vec.y, vec.z);
         enqueueMessage(level, "glm::vec3", category, formatted, location);
     }
 
+    // Log glm::vec2
+    void log(LogLevel level, std::string_view category, const glm::vec2& vec,
+             const std::source_location& location = std::source_location::current()) const {
+        if (!shouldLog(level, category)) {
+            return;
+        }
+        std::string formatted = std::format("vec2({:.3f}, {:.3f})", vec.x, vec.y);
+        enqueueMessage(level, "glm::vec2", category, formatted, location);
+    }
+
+    // Log glm::mat4
     void log(LogLevel level, std::string_view category, const glm::mat4& mat, std::string_view message,
              const std::source_location& location = std::source_location::current()) const {
-        if (static_cast<int>(level) < static_cast<int>(level_.load(std::memory_order_relaxed))) {
+        if (!shouldLog(level, category)) {
             return;
         }
         std::string formatted = std::format("{}: [{:.3f}, {:.3f}, {:.3f}, {:.3f}; {:.3f}, {:.3f}, {:.3f}, {:.3f}; {:.3f}, {:.3f}, {:.3f}, {:.3f}; {:.3f}, {:.3f}, {:.3f}, {:.3f}]",
@@ -184,9 +240,31 @@ public:
         enqueueMessage(level, message, category, formatted, location);
     }
 
+    // Log span of glm::vec3
+    void log(LogLevel level, std::string_view category, std::span<const glm::vec3> vecs, std::string_view message,
+             const std::source_location& location = std::source_location::current()) const {
+        if (!shouldLog(level, category)) {
+            return;
+        }
+        std::string formatted = std::format("{}[{}]{{", message, vecs.size());
+        for (size_t i = 0; i < vecs.size(); ++i) {
+            formatted += std::format("vec3({:.3f}, {:.3f}, {:.3f})", vecs[i].x, vecs[i].y, vecs[i].z);
+            if (i < vecs.size() - 1) {
+                formatted += ", ";
+            }
+        }
+        formatted += "}";
+        enqueueMessage(level, message, category, formatted, location);
+    }
+
+    // Log AMOURANTH camera (assuming it has position, orientation, etc.)
+    void log(LogLevel level, std::string_view category, const AMOURANTH& camera, std::string_view message,
+             const std::source_location& location = std::source_location::current()) const;
+
+    // Log uint32_t
     void log(LogLevel level, std::string_view category, std::string_view message, uint32_t value,
              const std::source_location& location = std::source_location::current()) const {
-        if (static_cast<int>(level) < static_cast<int>(level_.load(std::memory_order_relaxed))) {
+        if (!shouldLog(level, category)) {
             return;
         }
         std::string formatted;
@@ -219,6 +297,16 @@ public:
         return true;
     }
 
+    void setCategoryFilter(std::string_view category, bool enable) {
+        std::lock_guard<std::mutex> lock(categoryMutex_);
+        if (enable) {
+            enabledCategories_.insert(std::string(category));
+        } else {
+            enabledCategories_.erase(std::string(category));
+        }
+        log(LogLevel::Info, "General", "Category {} {}", std::source_location::current(), category, enable ? "enabled" : "disabled");
+    }
+
     void stop() {
         if (running_.exchange(false)) {
             worker_->request_stop();
@@ -230,6 +318,7 @@ public:
 private:
     static constexpr size_t QueueSize = 1024;
     static constexpr size_t MaxFiles = 5;
+
     static LogLevel getDefaultLogLevel() {
         if (const char* levelStr = std::getenv("AMOURANTH_LOG_LEVEL")) {
             std::string level(levelStr);
@@ -260,6 +349,55 @@ private:
         };
         auto it = categoryColors.find(category);
         return it != categoryColors.end() ? it->second : WHITE;
+    }
+
+    bool shouldLog(LogLevel level, std::string_view category) const {
+        if (static_cast<int>(level) < static_cast<int>(level_.load(std::memory_order_relaxed))) {
+            return false;
+        }
+        std::lock_guard<std::mutex> lock(categoryMutex_);
+        return enabledCategories_.empty() || enabledCategories_.contains(std::string(category));
+    }
+
+    void loadCategoryFilters() {
+        if (const char* categories = std::getenv("AMOURANTH_LOG_CATEGORIES")) {
+            std::string cats(categories);
+            std::string_view catsView(cats);
+            size_t start = 0;
+            size_t end;
+            while ((end = catsView.find(',', start)) != std::string_view::npos) {
+                std::string_view cat = catsView.substr(start, end - start);
+                cat.remove_prefix(std::min(cat.find_first_not_of(" "), cat.size()));
+                cat.remove_suffix(std::min(cat.size() - cat.find_last_not_of(" ") - 1, cat.size()));
+                if (!cat.empty()) {
+                    enabledCategories_.insert(std::string(cat));
+                }
+                start = end + 1;
+            }
+            std::string_view cat = catsView.substr(start);
+            cat.remove_prefix(std::min(cat.find_first_not_of(" "), cat.size()));
+            cat.remove_suffix(std::min(cat.size() - cat.find_last_not_of(" ") - 1, cat.size()));
+            if (!cat.empty()) {
+                enabledCategories_.insert(std::string(cat));
+            }
+        }
+    }
+
+    template<typename T>
+    std::string formatVulkanType(T handle, std::string_view handleName) const {
+        if constexpr (std::is_same_v<T, VkExtent2D>) {
+            return std::format("{}: {{width: {}, height: {}}}", handleName, handle.width, handle.height);
+        } else if constexpr (std::is_same_v<T, VkViewport>) {
+            return std::format("{}: {{x: {:.1f}, y: {:.1f}, width: {:.1f}, height: {:.1f}, minDepth: {:.1f}, maxDepth: {:.1f}}}",
+                               handleName, handle.x, handle.y, handle.width, handle.height, handle.minDepth, handle.maxDepth);
+        } else if constexpr (std::is_same_v<T, VkRect2D>) {
+            return std::format("{}: {{offset: {{x: {}, y: {}}}, extent: {{width: {}, height: {}}}}}", handleName,
+                               handle.offset.x, handle.offset.y, handle.extent.width, handle.extent.height);
+        } else {
+            return handle == VK_NULL_HANDLE ?
+                   std::format("{}: VK_NULL_HANDLE", handleName) :
+                   std::format("{}: {:p}", handleName, static_cast<const void*>(handle));
+        }
     }
 
     void enqueueMessage(LogLevel level, std::string_view message, std::string_view category,
@@ -318,11 +456,12 @@ private:
                             const auto& msg = batch[i];
                             std::string_view categoryColor = getCategoryColor(msg.category);
                             std::string_view levelStr;
+                            std::string_view levelColor;
                             switch (msg.level) {
-                                case LogLevel::Debug:   levelStr = "[DEBUG]"; break;
-                                case LogLevel::Info:    levelStr = "[INFO]";  break;
-                                case LogLevel::Warning: levelStr = "[WARN]";  break;
-                                case LogLevel::Error:   levelStr = "[ERROR]"; break;
+                                case LogLevel::Debug:   levelStr = "[DEBUG]"; levelColor = CYAN; break;
+                                case LogLevel::Info:    levelStr = "[INFO]";  levelColor = GREEN; break;
+                                case LogLevel::Warning: levelStr = "[WARN]";  levelColor = YELLOW; break;
+                                case LogLevel::Error:   levelStr = "[ERROR]"; levelColor = MAGENTA; break;
                             }
 
                             auto delta = std::chrono::duration_cast<std::chrono::microseconds>(msg.timestamp - *firstLogTime_).count();
@@ -339,9 +478,9 @@ private:
                                 timeStr = std::format("{:>6.3f}h", delta / 3600000000.0);
                             }
 
-                            std::string output = std::format("{}{} [{}] [{}] [{}:{}] {}{}",
-                                                             categoryColor, levelStr, timeStr, msg.category,
-                                                             msg.location.file_name(), msg.location.line(),
+                            std::string output = std::format("{}{} [{}] [{}] [{}] {}{}",
+                                                             levelColor, levelStr, timeStr, msg.category,
+                                                             std::source_location(msg.location), // Use formatter
                                                              msg.formattedMessage, RESET);
                             std::osyncstream(std::cout) << output << std::endl;
                             if (logFile_.is_open()) {
@@ -394,11 +533,12 @@ private:
         for (const auto& msg : batch) {
             std::string_view categoryColor = getCategoryColor(msg.category);
             std::string_view levelStr;
+            std::string_view levelColor;
             switch (msg.level) {
-                case LogLevel::Debug:   levelStr = "[DEBUG]"; break;
-                case LogLevel::Info:    levelStr = "[INFO]";  break;
-                case LogLevel::Warning: levelStr = "[WARN]";  break;
-                case LogLevel::Error:   levelStr = "[ERROR]"; break;
+                case LogLevel::Debug:   levelStr = "[DEBUG]"; levelColor = CYAN; break;
+                case LogLevel::Info:    levelStr = "[INFO]";  levelColor = GREEN; break;
+                case LogLevel::Warning: levelStr = "[WARN]";  levelColor = YELLOW; break;
+                case LogLevel::Error:   levelStr = "[ERROR]"; levelColor = MAGENTA; break;
             }
 
             auto delta = std::chrono::duration_cast<std::chrono::microseconds>(msg.timestamp - *firstLogTime_).count();
@@ -415,9 +555,9 @@ private:
                 timeStr = std::format("{:>6.3f}h", delta / 3600000000.0);
             }
 
-            std::string output = std::format("{}{} [{}] [{}] [{}:{}] {}{}",
-                                             categoryColor, levelStr, timeStr, msg.category,
-                                             msg.location.file_name(), msg.location.line(),
+            std::string output = std::format("{}{} [{}] [{}] [{}] {}{}",
+                                             levelColor, levelStr, timeStr, msg.category,
+                                             std::source_location(msg.location), // Use formatter
                                              msg.formattedMessage, RESET);
             std::osyncstream(std::cout) << output << std::endl;
             if (logFile_.is_open()) {
@@ -435,7 +575,9 @@ private:
     std::ofstream logFile_;
     std::filesystem::path logFilePath_;
     size_t maxLogFileSize_;
-    std::mutex fileMutex_;
+    mutable std::mutex fileMutex_;
+    mutable std::mutex categoryMutex_;
+    std::set<std::string> enabledCategories_;
     std::unique_ptr<std::jthread> worker_;
     mutable std::optional<std::chrono::steady_clock::time_point> firstLogTime_;
 };
@@ -453,6 +595,16 @@ struct formatter<uint64_t, char> {
             return format_to(ctx.out(), "INVALID_SIZE");
         }
         return format_to(ctx.out(), "{}", value);
+    }
+};
+
+// Formatter for glm::vec2
+template<>
+struct formatter<glm::vec2, char> {
+    constexpr auto parse(format_parse_context& ctx) { return ctx.begin(); }
+    template<typename FormatContext>
+    auto format(const glm::vec2& vec, FormatContext& ctx) const {
+        return format_to(ctx.out(), "vec2({:.3f}, {:.3f})", vec.x, vec.y);
     }
 };
 
@@ -516,6 +668,38 @@ struct formatter<T, char> {
             return format_to(ctx.out(), "VK_NULL_HANDLE");
         }
         return format_to(ctx.out(), "{:p}", static_cast<const void*>(ptr));
+    }
+};
+
+// Formatter for VkExtent2D
+template<>
+struct formatter<VkExtent2D, char> {
+    constexpr auto parse(format_parse_context& ctx) { return ctx.begin(); }
+    template<typename FormatContext>
+    auto format(const VkExtent2D& extent, FormatContext& ctx) const {
+        return format_to(ctx.out(), "{{width: {}, height: {}}}", extent.width, extent.height);
+    }
+};
+
+// Formatter for VkViewport
+template<>
+struct formatter<VkViewport, char> {
+    constexpr auto parse(format_parse_context& ctx) { return ctx.begin(); }
+    template<typename FormatContext>
+    auto format(const VkViewport& viewport, FormatContext& ctx) const {
+        return format_to(ctx.out(), "{{x: {:.1f}, y: {:.1f}, width: {:.1f}, height: {:.1f}, minDepth: {:.1f}, maxDepth: {:.1f}}}",
+                        viewport.x, viewport.y, viewport.width, viewport.height, viewport.minDepth, viewport.maxDepth);
+    }
+};
+
+// Formatter for VkRect2D
+template<>
+struct formatter<VkRect2D, char> {
+    constexpr auto parse(format_parse_context& ctx) { return ctx.begin(); }
+    template<typename FormatContext>
+    auto format(const VkRect2D& rect, FormatContext& ctx) const {
+        return format_to(ctx.out(), "{{offset: {{x: {}, y: {}}}, extent: {{width: {}, height: {}}}}}",
+                        rect.offset.x, rect.offset.y, rect.extent.width, rect.extent.height);
     }
 };
 

@@ -6,6 +6,7 @@
 
 #include "engine/SDL3/SDL3_vulkan.hpp"
 #include "engine/logging.hpp"
+#include "engine/Vulkan_init.hpp" // Include for VulkanInitializer::findPhysicalDevice
 #include <SDL3/SDL_vulkan.h>
 #include <vulkan/vulkan.h>
 #include <vector>
@@ -17,14 +18,14 @@ namespace SDL3Initializer {
 
 void VulkanInstanceDeleter::operator()(VkInstance instance) {
     if (instance != VK_NULL_HANDLE) {
-        LOG_INFO_CAT("Vulkan", "Destroying Vulkan instance: {:p}", std::source_location::current(), static_cast<void*>(instance));
+        LOG_INFO_CAT("Vulkan", "Destroying Vulkan instance: {}", std::source_location::current(), instance);
         vkDestroyInstance(instance, nullptr);
     }
 }
 
 void VulkanSurfaceDeleter::operator()(VkSurfaceKHR surface) {
     if (surface != VK_NULL_HANDLE && m_instance != VK_NULL_HANDLE) {
-        LOG_INFO_CAT("Vulkan", "Destroying Vulkan surface: {:p}", std::source_location::current(), static_cast<void*>(surface));
+        LOG_INFO_CAT("Vulkan", "Destroying Vulkan surface: {}", std::source_location::current(), surface);
         vkDestroySurfaceKHR(m_instance, surface, nullptr);
     }
 }
@@ -36,7 +37,8 @@ void initVulkan(
     bool enableValidation, 
     bool preferNvidia, 
     bool rt, 
-    std::string_view title) {
+    std::string_view title,
+    VkPhysicalDevice& physicalDevice) { // Added output parameter for physical device
     if (!window) {
         LOG_ERROR("Invalid SDL window pointer", std::source_location::current());
         throw std::runtime_error("Invalid SDL window pointer");
@@ -106,7 +108,7 @@ void initVulkan(
         throw std::runtime_error("Failed to create Vulkan instance");
     }
     instance = VulkanInstancePtr(rawInstance, VulkanInstanceDeleter());
-    LOG_INFO("Created Vulkan instance: {:p}", std::source_location::current(), static_cast<void*>(rawInstance));
+    LOG_INFO("Created Vulkan instance: {}", std::source_location::current(), rawInstance);
 
     // Create Vulkan surface
     VkSurfaceKHR rawSurface;
@@ -115,7 +117,10 @@ void initVulkan(
         throw std::runtime_error("Failed to create Vulkan surface: " + std::string(SDL_GetError()));
     }
     surface = VulkanSurfacePtr(rawSurface, VulkanSurfaceDeleter(rawInstance));
-    LOG_INFO("Created Vulkan surface: {:p}", std::source_location::current(), static_cast<void*>(rawSurface));
+    LOG_INFO("Created Vulkan surface: {}", std::source_location::current(), rawSurface);
+
+    // Select physical device using preferNvidia parameter
+    physicalDevice = VulkanInitializer::findPhysicalDevice(rawInstance, preferNvidia);
 }
 
 VkInstance getVkInstance(const VulkanInstancePtr& instance) {
