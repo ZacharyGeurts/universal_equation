@@ -5,6 +5,7 @@
 // Zachary Geurts 2025
 
 #include "VulkanBufferManager.hpp"
+#include "VulkanCore.hpp"
 #include "ue_init.hpp"
 #include "engine/logging.hpp"
 #include <vulkan/vulkan.h>
@@ -17,7 +18,7 @@ VulkanBufferManager::VulkanBufferManager(VulkanContext& context)
     : context_(context), vertexBuffer_(VK_NULL_HANDLE), vertexBufferMemory_(VK_NULL_HANDLE), vertexBufferAddress_(0),
       indexBuffer_(VK_NULL_HANDLE), indexBufferMemory_(VK_NULL_HANDLE), indexBufferAddress_(0),
       scratchBuffer_(VK_NULL_HANDLE), scratchBufferMemory_(VK_NULL_HANDLE), scratchBufferAddress_(0), indexCount_(0) {
-    LOG_INFO("Initialized VulkanBufferManager", std::source_location::current());
+    LOG_INFO("Initialized VulkanBufferManager");
 }
 
 VulkanBufferManager::~VulkanBufferManager() {
@@ -38,7 +39,7 @@ void VulkanBufferManager::initializeBuffers(std::span<const glm::vec3> vertices,
         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
         stagingBuffer, stagingBufferMemory
     );
-    LOG_INFO_CAT("Vulkan", "Created staging buffer: {:p}", std::source_location::current(), static_cast<void*>(stagingBuffer));
+    LOG_INFO("Created staging buffer");
 
     void* data;
     vkMapMemory(context_.device, stagingBufferMemory, 0, vertexBufferSize + indexBufferSize, 0, &data);
@@ -53,7 +54,7 @@ void VulkanBufferManager::initializeBuffers(std::span<const glm::vec3> vertices,
         vertexBuffer_, vertexBufferMemory_
     );
     vertexBufferAddress_ = VulkanInitializer::getBufferDeviceAddress(context_.device, vertexBuffer_);
-    LOG_INFO_CAT("Vulkan", "Created vertex buffer: {:p}", std::source_location::current(), static_cast<void*>(vertexBuffer_));
+    LOG_INFO("Created vertex buffer");
 
     VulkanInitializer::createBuffer(
         context_.device, context_.physicalDevice, indexBufferSize,
@@ -62,7 +63,7 @@ void VulkanBufferManager::initializeBuffers(std::span<const glm::vec3> vertices,
         indexBuffer_, indexBufferMemory_
     );
     indexBufferAddress_ = VulkanInitializer::getBufferDeviceAddress(context_.device, indexBuffer_);
-    LOG_INFO_CAT("Vulkan", "Created index buffer: {:p}", std::source_location::current(), static_cast<void*>(indexBuffer_));
+    LOG_INFO("Created index buffer");
 
     VkCommandBufferAllocateInfo allocInfo{
         .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
@@ -73,12 +74,12 @@ void VulkanBufferManager::initializeBuffers(std::span<const glm::vec3> vertices,
     };
     VkCommandBuffer commandBuffer;
     if (vkAllocateCommandBuffers(context_.device, &allocInfo, &commandBuffer) != VK_SUCCESS) {
-        LOG_ERROR("Failed to allocate command buffer", std::source_location::current());
+        LOG_ERROR("Failed to allocate command buffer");
         vkDestroyBuffer(context_.device, stagingBuffer, nullptr);
         vkFreeMemory(context_.device, stagingBufferMemory, nullptr);
         throw std::runtime_error("Failed to allocate command buffer");
     }
-    LOG_INFO_CAT("Vulkan", "Allocated command buffer: {:p}", std::source_location::current(), static_cast<void*>(commandBuffer));
+    LOG_INFO("Allocated command buffer");
 
     VkCommandBufferBeginInfo beginInfo{
         .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
@@ -87,7 +88,7 @@ void VulkanBufferManager::initializeBuffers(std::span<const glm::vec3> vertices,
         .pInheritanceInfo = nullptr
     };
     if (vkBeginCommandBuffer(commandBuffer, &beginInfo) != VK_SUCCESS) {
-        LOG_ERROR("Failed to begin command buffer", std::source_location::current());
+        LOG_ERROR("Failed to begin command buffer");
         vkFreeCommandBuffers(context_.device, context_.commandPool, 1, &commandBuffer);
         vkDestroyBuffer(context_.device, stagingBuffer, nullptr);
         vkFreeMemory(context_.device, stagingBufferMemory, nullptr);
@@ -109,7 +110,7 @@ void VulkanBufferManager::initializeBuffers(std::span<const glm::vec3> vertices,
     vkCmdCopyBuffer(commandBuffer, stagingBuffer, indexBuffer_, 1, &indexCopyRegion);
 
     if (vkEndCommandBuffer(commandBuffer) != VK_SUCCESS) {
-        LOG_ERROR("Failed to end command buffer", std::source_location::current());
+        LOG_ERROR("Failed to end command buffer");
         vkFreeCommandBuffers(context_.device, context_.commandPool, 1, &commandBuffer);
         vkDestroyBuffer(context_.device, stagingBuffer, nullptr);
         vkFreeMemory(context_.device, stagingBufferMemory, nullptr);
@@ -128,7 +129,7 @@ void VulkanBufferManager::initializeBuffers(std::span<const glm::vec3> vertices,
         .pSignalSemaphores = nullptr
     };
     if (vkQueueSubmit(context_.graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE) != VK_SUCCESS) {
-        LOG_ERROR("Failed to submit command buffer", std::source_location::current());
+        LOG_ERROR("Failed to submit command buffer");
         vkFreeCommandBuffers(context_.device, context_.commandPool, 1, &commandBuffer);
         vkDestroyBuffer(context_.device, stagingBuffer, nullptr);
         vkFreeMemory(context_.device, stagingBufferMemory, nullptr);
@@ -144,7 +145,7 @@ void VulkanBufferManager::initializeBuffers(std::span<const glm::vec3> vertices,
 void VulkanBufferManager::createUniformBuffers(uint32_t count) {
     uniformBuffers_.resize(count);
     uniformBufferMemories_.resize(count);
-    VkDeviceSize bufferSize = sizeof(UE::UniformBufferObject);
+    VkDeviceSize bufferSize = sizeof(UE::UniformBufferObject) + sizeof(int);
     for (uint32_t i = 0; i < count; ++i) {
         VulkanInitializer::createBuffer(
             context_.device, context_.physicalDevice, bufferSize,
@@ -152,7 +153,7 @@ void VulkanBufferManager::createUniformBuffers(uint32_t count) {
             VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
             uniformBuffers_[i], uniformBufferMemories_[i]
         );
-        LOG_INFO_CAT("Vulkan", "Created uniform buffer[{}]: {:p}", std::source_location::current(), i, static_cast<void*>(uniformBuffers_[i]));
+        LOG_INFO("Created uniform buffer[{}]", i);
     }
 }
 
@@ -164,44 +165,44 @@ void VulkanBufferManager::createScratchBuffer(VkDeviceSize size) {
         scratchBuffer_, scratchBufferMemory_
     );
     scratchBufferAddress_ = VulkanInitializer::getBufferDeviceAddress(context_.device, scratchBuffer_);
-    LOG_INFO_CAT("Vulkan", "Created scratch buffer: {:p}", std::source_location::current(), static_cast<void*>(scratchBuffer_));
+    LOG_INFO("Created scratch buffer");
 }
 
 void VulkanBufferManager::cleanupBuffers() {
     for (auto buffer : uniformBuffers_) {
         if (buffer != VK_NULL_HANDLE) {
-            LOG_INFO_CAT("Vulkan", "Destroying uniform buffer: {:p}", std::source_location::current(), static_cast<void*>(buffer));
+            LOG_INFO("Destroying uniform buffer");
             vkDestroyBuffer(context_.device, buffer, nullptr);
         }
     }
     for (auto memory : uniformBufferMemories_) {
         if (memory != VK_NULL_HANDLE) {
-            LOG_INFO_CAT("Vulkan", "Freeing uniform buffer memory: {:p}", std::source_location::current(), static_cast<void*>(memory));
+            LOG_INFO("Freeing uniform buffer memory");
             vkFreeMemory(context_.device, memory, nullptr);
         }
     }
     if (vertexBuffer_ != VK_NULL_HANDLE) {
-        LOG_INFO_CAT("Vulkan", "Destroying vertex buffer: {:p}", std::source_location::current(), static_cast<void*>(vertexBuffer_));
+        LOG_INFO("Destroying vertex buffer");
         vkDestroyBuffer(context_.device, vertexBuffer_, nullptr);
     }
     if (vertexBufferMemory_ != VK_NULL_HANDLE) {
-        LOG_INFO_CAT("Vulkan", "Freeing vertex buffer memory: {:p}", std::source_location::current(), static_cast<void*>(vertexBufferMemory_));
+        LOG_INFO("Freeing vertex buffer memory");
         vkFreeMemory(context_.device, vertexBufferMemory_, nullptr);
     }
     if (indexBuffer_ != VK_NULL_HANDLE) {
-        LOG_INFO_CAT("Vulkan", "Destroying index buffer: {:p}", std::source_location::current(), static_cast<void*>(indexBuffer_));
+        LOG_INFO("Destroying index buffer");
         vkDestroyBuffer(context_.device, indexBuffer_, nullptr);
     }
     if (indexBufferMemory_ != VK_NULL_HANDLE) {
-        LOG_INFO_CAT("Vulkan", "Freeing index buffer memory: {:p}", std::source_location::current(), static_cast<void*>(indexBufferMemory_));
+        LOG_INFO("Freeing index buffer memory");
         vkFreeMemory(context_.device, indexBufferMemory_, nullptr);
     }
     if (scratchBuffer_ != VK_NULL_HANDLE) {
-        LOG_INFO_CAT("Vulkan", "Destroying scratch buffer: {:p}", std::source_location::current(), static_cast<void*>(scratchBuffer_));
+        LOG_INFO("Destroying scratch buffer");
         vkDestroyBuffer(context_.device, scratchBuffer_, nullptr);
     }
     if (scratchBufferMemory_ != VK_NULL_HANDLE) {
-        LOG_INFO_CAT("Vulkan", "Freeing scratch buffer memory: {:p}", std::source_location::current(), static_cast<void*>(scratchBufferMemory_));
+        LOG_INFO("Freeing scratch buffer memory");
         vkFreeMemory(context_.device, scratchBufferMemory_, nullptr);
     }
 }

@@ -49,8 +49,8 @@ struct VulkanContext {
     VkPipeline rayTracingPipeline = VK_NULL_HANDLE;
     VkPipelineLayout rayTracingPipelineLayout = VK_NULL_HANDLE;
     VkDescriptorSetLayout rayTracingDescriptorSetLayout = VK_NULL_HANDLE;
-    VkBuffer shaderBindingTable = VK_NULL_HANDLE;
-    VkDeviceMemory shaderBindingTableMemory = VK_NULL_HANDLE;
+    VkBuffer sbtBuffer = VK_NULL_HANDLE;
+    VkDeviceMemory sbtBufferMemory = VK_NULL_HANDLE;
     VkDeviceAddress raygenSbtAddress = 0;
     VkDeviceAddress missSbtAddress = 0;
     VkDeviceAddress hitSbtAddress = 0;
@@ -63,15 +63,10 @@ namespace VulkanInitializer {
                      VkBufferUsageFlags usage, VkMemoryPropertyFlags properties,
                      VkBuffer& buffer, VkDeviceMemory& bufferMemory);
     VkDeviceAddress getBufferDeviceAddress(VkDevice device, VkBuffer buffer);
-    uint32_t findMemoryType(VkPhysicalDevice physicalDevice, uint32_t typeFilter, VkMemoryPropertyFlags properties);
-    void createAccelerationStructures(VulkanContext& context, std::span<const glm::vec3> vertices, std::span<const uint32_t> indices);
-    void createRayTracingPipeline(VulkanContext& context, VkPipelineLayout pipelineLayout,
-                                 VkShaderModule rayGenModule, VkShaderModule missModule, VkShaderModule closestHitModule,
-                                 VkPipeline& pipeline);
-    void createShaderBindingTable(VulkanContext& context);
 
     // Functions defined in Vulkan_init.cpp
-    VkPhysicalDevice findPhysicalDevice(VkInstance instance, bool requireRayTracing = false); // Added declaration
+    uint32_t findMemoryType(VkPhysicalDevice physicalDevice, uint32_t typeFilter, VkMemoryPropertyFlags properties);
+    VkPhysicalDevice findPhysicalDevice(VkInstance instance, bool requireRayTracing = false);
     void initializeVulkan(VulkanContext& context, int width, int height);
     void createSwapchain(VulkanContext& context, int width, int height);
     void createImageViews(VulkanContext& context);
@@ -85,6 +80,12 @@ namespace VulkanInitializer {
                                    VkDescriptorPool& descriptorPool, VkDescriptorSet& descriptorSet,
                                    VkSampler& sampler, VkBuffer uniformBuffer, VkImageView storageImageView,
                                    VkAccelerationStructureKHR accelerationStructure);
+    void createAccelerationStructures(VulkanContext& context, std::span<const glm::vec3> vertices, std::span<const uint32_t> indices);
+    void createRayTracingPipeline(VulkanContext& context, VkPipelineLayout pipelineLayout,
+                                 VkShaderModule rayGenModule, VkShaderModule missModule, VkShaderModule closestHitModule,
+                                 VkPipeline& pipeline);
+    void createShaderBindingTable(VulkanContext& context);
+    void cleanupVulkan(VulkanContext& context);
 }
 
 #endif // VULKAN_CORE_HPP
