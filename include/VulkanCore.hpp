@@ -51,6 +51,10 @@ struct VulkanContext {
     VkDescriptorSetLayout rayTracingDescriptorSetLayout = VK_NULL_HANDLE;
     VkBuffer shaderBindingTable = VK_NULL_HANDLE;
     VkDeviceMemory shaderBindingTableMemory = VK_NULL_HANDLE;
+    VkDeviceAddress raygenSbtAddress = 0;
+    VkDeviceAddress missSbtAddress = 0;
+    VkDeviceAddress hitSbtAddress = 0;
+    uint32_t sbtRecordSize = 0;
 };
 
 namespace VulkanInitializer {
@@ -61,7 +65,9 @@ namespace VulkanInitializer {
     VkDeviceAddress getBufferDeviceAddress(VkDevice device, VkBuffer buffer);
     uint32_t findMemoryType(VkPhysicalDevice physicalDevice, uint32_t typeFilter, VkMemoryPropertyFlags properties);
     void createAccelerationStructures(VulkanContext& context, std::span<const glm::vec3> vertices, std::span<const uint32_t> indices);
-    void createRayTracingPipeline(VulkanContext& context);
+    void createRayTracingPipeline(VulkanContext& context, VkPipelineLayout pipelineLayout,
+                                 VkShaderModule rayGenModule, VkShaderModule missModule, VkShaderModule closestHitModule,
+                                 VkPipeline& pipeline);
     void createShaderBindingTable(VulkanContext& context);
 
     // Functions defined in Vulkan_init.cpp
@@ -71,12 +77,9 @@ namespace VulkanInitializer {
     void createDescriptorSetLayout(VkDevice device, VkDescriptorSetLayout& descriptorSetLayout);
     void createRenderPass(VkDevice device, VkRenderPass& renderPass, VkFormat format);
     VkShaderModule loadShader(VkDevice device, const std::string& filepath);
-    void createGraphicsPipeline(VkDevice device, VkRenderPass renderPass, VkPipeline& pipeline,
-                               VkPipelineLayout& pipelineLayout, VkDescriptorSetLayout& descriptorSetLayout,
-                               int width, int height, VkShaderModule& vertexShaderModule, VkShaderModule& fragmentShaderModule);
     void createStorageImage(VkDevice device, VkPhysicalDevice physicalDevice, VkImage& storageImage,
-                            VkDeviceMemory& storageImageMemory, VkImageView& storageImageView,
-                            uint32_t width, uint32_t height);
+                           VkDeviceMemory& storageImageMemory, VkImageView& storageImageView,
+                           uint32_t width, uint32_t height);
     void createDescriptorPoolAndSet(VkDevice device, VkDescriptorSetLayout descriptorSetLayout,
                                    VkDescriptorPool& descriptorPool, VkDescriptorSet& descriptorSet,
                                    VkSampler& sampler, VkBuffer uniformBuffer, VkImageView storageImageView,

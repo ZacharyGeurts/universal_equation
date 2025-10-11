@@ -1,6 +1,6 @@
 // Vulkan_init.hpp
-// AMOURANTH RTX Engine, October 2025 - Vulkan initialization for swapchain, pipeline, and renderer.
-// Dependencies: Vulkan 1.3+, GLM, logging.hpp, VulkanCore.hpp, VulkanBufferManager.hpp.
+// AMOURANTH RTX Engine, October 2025 - Vulkan initialization and utility functions.
+// Dependencies: Vulkan 1.3+, GLM, VulkanCore.hpp, VulkanBufferManager.hpp, ue_init.hpp, logging.hpp.
 // Supported platforms: Linux, Windows.
 // Zachary Geurts 2025
 
@@ -10,15 +10,13 @@
 
 #include "VulkanCore.hpp"
 #include "VulkanBufferManager.hpp"
-#include "engine/logging.hpp"
+#include "ue_init.hpp"
 #include <vulkan/vulkan.h>
-#include <memory>
 #include <vector>
+#include <memory>
+#include <string>
 #include <span>
 #include <glm/glm.hpp>
-
-// Forward declarations
-class AMOURANTH;
 
 class VulkanSwapchainManager {
 public:
@@ -27,18 +25,17 @@ public:
     void initializeSwapchain(int width, int height);
     void cleanupSwapchain();
     void handleResize(int width, int height);
-    VkSwapchainKHR& getSwapchain() { return swapchain_; } // Changed to return reference
+    VkSwapchainKHR getSwapchain() const { return swapchain_; }
     VkFormat getSwapchainImageFormat() const { return swapchainImageFormat_; }
     VkExtent2D getSwapchainExtent() const { return swapchainExtent_; }
-    const std::vector<VkImage>& getSwapchainImages() const { return swapchainImages_; } // Added getter
+    const std::vector<VkImage>& getSwapchainImages() const { return swapchainImages_; }
     const std::vector<VkImageView>& getSwapchainImageViews() const { return swapchainImageViews_; }
-
 private:
     VulkanContext& context_;
-    VkSwapchainKHR swapchain_ = VK_NULL_HANDLE;
-    uint32_t imageCount_ = 0;
-    VkFormat swapchainImageFormat_ = VK_FORMAT_UNDEFINED;
-    VkExtent2D swapchainExtent_ = {0, 0};
+    VkSwapchainKHR swapchain_;
+    uint32_t imageCount_;
+    VkFormat swapchainImageFormat_;
+    VkExtent2D swapchainExtent_;
     std::vector<VkImage> swapchainImages_;
     std::vector<VkImageView> swapchainImageViews_;
 };
@@ -49,23 +46,26 @@ public:
     ~VulkanPipelineManager();
     void createRenderPass();
     void createPipelineLayout();
-    void createGraphicsPipeline();
+    void createRayTracingPipeline();
     void cleanupPipeline();
-    VkRenderPass getRenderPass() const { return renderPass_; }
-    VkPipeline getGraphicsPipeline() const { return graphicsPipeline_; }
+    VkPipeline getRayTracingPipeline() const { return rayTracingPipeline_; }
     VkPipelineLayout getPipelineLayout() const { return pipelineLayout_; }
+    VkRenderPass getRenderPass() const { return renderPass_; }
     VkDescriptorSetLayout getDescriptorSetLayout() const { return descriptorSetLayout_; }
-
+    VkShaderModule getRayGenShaderModule() const { return rayGenShaderModule_; }
+    VkShaderModule getMissShaderModule() const { return missShaderModule_; }
+    VkShaderModule getClosestHitShaderModule() const { return closestHitShaderModule_; }
 private:
     VulkanContext& context_;
     int width_;
     int height_;
-    VkRenderPass renderPass_ = VK_NULL_HANDLE;
-    VkPipeline graphicsPipeline_ = VK_NULL_HANDLE;
-    VkPipelineLayout pipelineLayout_ = VK_NULL_HANDLE;
-    VkDescriptorSetLayout descriptorSetLayout_ = VK_NULL_HANDLE;
-    VkShaderModule vertexShaderModule_ = VK_NULL_HANDLE;
-    VkShaderModule fragmentShaderModule_ = VK_NULL_HANDLE;
+    VkRenderPass renderPass_;
+    VkPipeline rayTracingPipeline_;
+    VkPipelineLayout pipelineLayout_;
+    VkDescriptorSetLayout descriptorSetLayout_;
+    VkShaderModule rayGenShaderModule_;
+    VkShaderModule missShaderModule_;
+    VkShaderModule closestHitShaderModule_;
 };
 
 class VulkanRenderer {
@@ -74,31 +74,27 @@ public:
                   std::span<const glm::vec3> vertices, std::span<const uint32_t> indices,
                   int width, int height);
     ~VulkanRenderer();
+    void createFramebuffers();
+    void createCommandBuffers();
+    void createSyncObjects();
     void renderFrame(const AMOURANTH& camera);
     void handleResize(int width, int height);
     VkDevice getDevice() const { return context_.device; }
+    VkPipeline getRayTracingPipeline() const { return pipelineManager_->getRayTracingPipeline(); }
     VkDeviceMemory getVertexBufferMemory() const;
     VkDeviceMemory getIndexBufferMemory() const;
-    VkPipeline getGraphicsPipeline() const { return pipelineManager_->getGraphicsPipeline(); }
-    uint32_t getWidth() const { return width_; }
-    uint32_t getHeight() const { return height_; }
-
 private:
-    void createCommandBuffers();
-    void createSyncObjects();
-    void createFramebuffers();
-
     VulkanContext context_;
-    std::unique_ptr<VulkanSwapchainManager> swapchainManager_;
-    std::unique_ptr<VulkanPipelineManager> pipelineManager_;
-    std::unique_ptr<VulkanBufferManager> bufferManager_;
-    std::vector<VkCommandBuffer> commandBuffers_;
-    std::vector<VkFramebuffer> framebuffers_;
+    int width_;
+    int height_;
     VkSemaphore imageAvailableSemaphore_ = VK_NULL_HANDLE;
     VkSemaphore renderFinishedSemaphore_ = VK_NULL_HANDLE;
     VkFence inFlightFence_ = VK_NULL_HANDLE;
-    int width_;
-    int height_;
+    std::vector<VkFramebuffer> framebuffers_;
+    std::vector<VkCommandBuffer> commandBuffers_;
+    std::unique_ptr<VulkanSwapchainManager> swapchainManager_;
+    std::unique_ptr<VulkanBufferManager> bufferManager_;
+    std::unique_ptr<VulkanPipelineManager> pipelineManager_;
 };
 
 #endif // VULKAN_INIT_HPP
