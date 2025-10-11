@@ -21,7 +21,6 @@
 
 namespace VulkanInitializer {
     // Function declarations for Vulkan initialization utilities
-    VkPhysicalDevice findPhysicalDevice(VkInstance instance, bool preferNvidia = false);
     void initializeVulkan(VulkanContext& context, int width, int height);
     void createSwapchain(VulkanContext& context, int width, int height);
     void createImageViews(VulkanContext& context);

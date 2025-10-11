@@ -71,6 +71,7 @@ namespace VulkanInitializer {
     void createShaderBindingTable(VulkanContext& context);
 
     // Functions defined in Vulkan_init.cpp
+    VkPhysicalDevice findPhysicalDevice(VkInstance instance, bool requireRayTracing = false); // Added declaration
     void initializeVulkan(VulkanContext& context, int width, int height);
     void createSwapchain(VulkanContext& context, int width, int height);
     void createImageViews(VulkanContext& context);

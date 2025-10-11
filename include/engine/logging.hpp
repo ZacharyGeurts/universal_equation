@@ -29,7 +29,8 @@
 #include <cstdint>
 #include <glm/glm.hpp>
 #include <glm/mat4x4.hpp>
-#include <glm/vec2.hpp> // Added for glm::vec2
+#include <glm/vec2.hpp>
+#include <glm/gtx/string_cast.hpp>  // For glm::to_string
 #include <type_traits>
 #include <concepts>
 #include <filesystem>
@@ -37,9 +38,9 @@
 #include <mutex>
 #include <optional>
 #include <map>
-#include <ctime>
 #include <span>
 #include <set>
+#include <string>
 
 #define LOG_DEBUG(...) Logging::Logger::get().log(Logging::LogLevel::Debug, "General", __VA_ARGS__)
 #define LOG_INFO(...) Logging::Logger::get().log(Logging::LogLevel::Info, "General", __VA_ARGS__)
@@ -69,6 +70,13 @@ inline constexpr std::string_view TEAL = "\033[38;5;51m"; // Teal for audio
 inline constexpr std::string_view YELLOW_GREEN = "\033[38;5;154m"; // Yellow-green for image
 inline constexpr std::string_view BRIGHT_MAGENTA = "\033[38;5;201m"; // Bright magenta for input
 
+// Definition for AMOURANTH (assuming minimal structure for logging; expand as needed)
+struct AMOURANTH {
+    glm::vec3 position;
+    glm::mat4 viewMatrix;
+    // Add other members as defined in your camera struct
+};
+
 struct LogMessage {
     LogLevel level;
     std::string message;
@@ -81,9 +89,6 @@ struct LogMessage {
     LogMessage(LogLevel lvl, std::string_view msg, std::string_view cat, const std::source_location& loc, std::chrono::steady_clock::time_point ts)
         : level(lvl), message(msg), category(cat), location(loc), timestamp(ts) {}
 };
-
-// Forward declaration of AMOURANTH camera (assuming it's defined elsewhere)
-struct AMOURANTH;
 
 class Logger {
 public:
@@ -103,8 +108,7 @@ public:
 
     // Generic log with format string and arguments
     template<typename... Args>
-    void log(LogLevel level, std::string_view category, std::string_view message,
-             const std::source_location& location = std::source_location::current(), const Args&... args) const {
+    void log(LogLevel level, std::string_view category, std::string_view message, const Args&... args) const {
         if (!shouldLog(level, category)) {
             return;
         }
@@ -135,16 +139,15 @@ public:
             formatted = "Empty log message";
         }
 
-        enqueueMessage(level, message, category, formatted, location);
+        enqueueMessage(level, message, category, formatted, std::source_location::current());
     }
 
     // Log without format arguments
-    void log(LogLevel level, std::string_view category, std::string_view message,
-             const std::source_location& location = std::source_location::current()) const {
+    void log(LogLevel level, std::string_view category, std::string_view message) const {
         if (!shouldLog(level, category)) {
             return;
         }
-        enqueueMessage(level, message, category, std::string(message), location);
+        enqueueMessage(level, message, category, std::string(message), std::source_location::current());
     }
 
     // Log Vulkan handles
@@ -162,16 +165,23 @@ public:
         std::same_as<T, VkDescriptorSetLayout> || std::same_as<T, VkInstance> ||
         std::same_as<T, VkSampler> || std::same_as<T, VkDescriptorPool> ||
         std::same_as<T, VkAccelerationStructureKHR> || std::same_as<T, VkPhysicalDevice> ||
-        std::same_as<T, VkExtent2D> || std::same_as<T, VkViewport> || // Added Vulkan types
+        std::same_as<T, VkExtent2D> || std::same_as<T, VkViewport> ||
         std::same_as<T, VkRect2D>
     )
-    void log(LogLevel level, std::string_view category, T handle, std::string_view handleName,
-             const std::source_location& location = std::source_location::current()) const {
+    void log(LogLevel level, std::string_view category, T handle, std::string_view handleName = "") const {
         if (!shouldLog(level, category)) {
             return;
         }
-        std::string formatted = formatVulkanType(handle, handleName);
-        enqueueMessage(level, handleName, category, formatted, location);
+        std::string formatted;
+        try {
+            formatted = std::format("{}", handle);
+            if (!handleName.empty()) {
+                formatted = std::format("{}: {}", handleName, formatted);
+            }
+        } catch (const std::format_error& e) {
+            formatted = std::string(handleName) + " [Format error: " + e.what() + "]";
+        }
+        enqueueMessage(level, handleName, category, formatted, std::source_location::current());
     }
 
     // Log span of Vulkan handles
@@ -190,95 +200,118 @@ public:
         std::same_as<T, VkSampler> || std::same_as<T, VkDescriptorPool> ||
         std::same_as<T, VkAccelerationStructureKHR> || std::same_as<T, VkPhysicalDevice>
     )
-    void log(LogLevel level, std::string_view category, std::span<const T> handles, std::string_view handleName,
-             const std::source_location& location = std::source_location::current()) const {
-        if (!shouldLog(level, category)) {
-            return;
-        }
-        std::string formatted = std::format("{}[{}]{{", handleName, handles.size());
-        for (size_t i = 0; i < handles.size(); ++i) {
-            formatted += formatVulkanType(handles[i], "");
-            if (i < handles.size() - 1) {
-                formatted += ", ";
-            }
-        }
-        formatted += "}";
-        enqueueMessage(level, handleName, category, formatted, location);
-    }
-
-    // Log glm::vec3
-    void log(LogLevel level, std::string_view category, const glm::vec3& vec,
-             const std::source_location& location = std::source_location::current()) const {
-        if (!shouldLog(level, category)) {
-            return;
-        }
-        std::string formatted = std::format("vec3({:.3f}, {:.3f}, {:.3f})", vec.x, vec.y, vec.z);
-        enqueueMessage(level, "glm::vec3", category, formatted, location);
-    }
-
-    // Log glm::vec2
-    void log(LogLevel level, std::string_view category, const glm::vec2& vec,
-             const std::source_location& location = std::source_location::current()) const {
-        if (!shouldLog(level, category)) {
-            return;
-        }
-        std::string formatted = std::format("vec2({:.3f}, {:.3f})", vec.x, vec.y);
-        enqueueMessage(level, "glm::vec2", category, formatted, location);
-    }
-
-    // Log glm::mat4
-    void log(LogLevel level, std::string_view category, const glm::mat4& mat, std::string_view message,
-             const std::source_location& location = std::source_location::current()) const {
-        if (!shouldLog(level, category)) {
-            return;
-        }
-        std::string formatted = std::format("{}: [{:.3f}, {:.3f}, {:.3f}, {:.3f}; {:.3f}, {:.3f}, {:.3f}, {:.3f}; {:.3f}, {:.3f}, {:.3f}, {:.3f}; {:.3f}, {:.3f}, {:.3f}, {:.3f}]",
-                                            message, mat[0][0], mat[0][1], mat[0][2], mat[0][3],
-                                            mat[1][0], mat[1][1], mat[1][2], mat[1][3],
-                                            mat[2][0], mat[2][1], mat[2][2], mat[2][3],
-                                            mat[3][0], mat[3][1], mat[3][2], mat[3][3]);
-        enqueueMessage(level, message, category, formatted, location);
-    }
-
-    // Log span of glm::vec3
-    void log(LogLevel level, std::string_view category, std::span<const glm::vec3> vecs, std::string_view message,
-             const std::source_location& location = std::source_location::current()) const {
-        if (!shouldLog(level, category)) {
-            return;
-        }
-        std::string formatted = std::format("{}[{}]{{", message, vecs.size());
-        for (size_t i = 0; i < vecs.size(); ++i) {
-            formatted += std::format("vec3({:.3f}, {:.3f}, {:.3f})", vecs[i].x, vecs[i].y, vecs[i].z);
-            if (i < vecs.size() - 1) {
-                formatted += ", ";
-            }
-        }
-        formatted += "}";
-        enqueueMessage(level, message, category, formatted, location);
-    }
-
-    // Log AMOURANTH camera (assuming it has position, orientation, etc.)
-    void log(LogLevel level, std::string_view category, const AMOURANTH& camera, std::string_view message,
-             const std::source_location& location = std::source_location::current()) const;
-
-    // Log uint32_t
-    void log(LogLevel level, std::string_view category, std::string_view message, uint32_t value,
-             const std::source_location& location = std::source_location::current()) const {
+    void log(LogLevel level, std::string_view category, std::span<const T> handles, std::string_view handleName = "") const {
         if (!shouldLog(level, category)) {
             return;
         }
         std::string formatted;
         try {
-            formatted = std::vformat(message, std::make_format_args(value));
+            formatted = std::format("{}[{}]{{", handleName, handles.size());
+            for (size_t i = 0; i < handles.size(); ++i) {
+                formatted += std::format("{}", handles[i]);
+                if (i < handles.size() - 1) {
+                    formatted += ", ";
+                }
+            }
+            formatted += "}";
+        } catch (const std::format_error& e) {
+            formatted = std::string(handleName) + " [Format error: " + e.what() + "]";
+        }
+        enqueueMessage(level, handleName, category, formatted, std::source_location::current());
+    }
+
+    // Log glm::vec3
+    void log(LogLevel level, std::string_view category, const glm::vec3& vec, std::string_view message = "") const {
+        if (!shouldLog(level, category)) {
+            return;
+        }
+        std::string formatted;
+        try {
+            formatted = glm::to_string(vec);
+            if (!message.empty()) {
+                formatted = std::format("{}: {}", message, formatted);
+            }
         } catch (const std::format_error& e) {
             formatted = std::string(message) + " [Format error: " + e.what() + "]";
         }
-        enqueueMessage(level, message, category, formatted, location);
+        enqueueMessage(level, message, category, formatted, std::source_location::current());
+    }
+
+    // Log glm::vec2
+    void log(LogLevel level, std::string_view category, const glm::vec2& vec, std::string_view message = "") const {
+        if (!shouldLog(level, category)) {
+            return;
+        }
+        std::string formatted;
+        try {
+            formatted = glm::to_string(vec);
+            if (!message.empty()) {
+                formatted = std::format("{}: {}", message, formatted);
+            }
+        } catch (const std::format_error& e) {
+            formatted = std::string(message) + " [Format error: " + e.what() + "]";
+        }
+        enqueueMessage(level, message, category, formatted, std::source_location::current());
+    }
+
+    // Log glm::mat4
+    void log(LogLevel level, std::string_view category, const glm::mat4& mat, std::string_view message = "") const {
+        if (!shouldLog(level, category)) {
+            return;
+        }
+        std::string formatted;
+        try {
+            formatted = glm::to_string(mat);
+            if (!message.empty()) {
+                formatted = std::format("{}: {}", message, formatted);
+            }
+        } catch (const std::format_error& e) {
+            formatted = std::string(message) + " [Format error: " + e.what() + "]";
+        }
+        enqueueMessage(level, message, category, formatted, std::source_location::current());
+    }
+
+    // Log span of glm::vec3
+    void log(LogLevel level, std::string_view category, std::span<const glm::vec3> vecs, std::string_view message = "") const {
+        if (!shouldLog(level, category)) {
+            return;
+        }
+        std::string formatted;
+        try {
+            formatted = std::format("{}[{}]{{", message, vecs.size());
+            for (size_t i = 0; i < vecs.size(); ++i) {
+                formatted += glm::to_string(vecs[i]);
+                if (i < vecs.size() - 1) {
+                    formatted += ", ";
+                }
+            }
+            formatted += "}";
+        } catch (const std::format_error& e) {
+            formatted = std::string(message) + " [Format error: " + e.what() + "]";
+        }
+        enqueueMessage(level, message, category, formatted, std::source_location::current());
+    }
+
+    // Log AMOURANTH camera
+    void log(LogLevel level, std::string_view category, const AMOURANTH& camera, std::string_view message = "") const {
+        if (!shouldLog(level, category)) {
+            return;
+        }
+        std::string formatted;
+        try {
+            formatted = std::format("AMOURANTH{{position: {}, viewMatrix: {}}}", glm::to_string(camera.position), glm::to_string(camera.viewMatrix));
+            if (!message.empty()) {
+                formatted = std::format("{}: {}", message, formatted);
+            }
+        } catch (const std::format_error& e) {
+            formatted = std::string(message) + " [Format error: " + e.what() + "]";
+        }
+        enqueueMessage(level, message, category, formatted, std::source_location::current());
     }
 
     void setLogLevel(LogLevel level) {
         level_.store(level, std::memory_order_relaxed);
-        log(LogLevel::Info, "General", "Log level set to: {}", std::source_location::current(), static_cast<int>(level));
+        log(LogLevel::Info, "General", "Log level set to: {}", static_cast<int>(level));
     }
 
     bool setLogFile(const std::string& filename, size_t maxSizeBytes = 10 * 1024 * 1024) {
@@ -288,12 +321,12 @@ public:
         }
         logFile_.open(filename, std::ios::out | std::ios::app);
         if (!logFile_.is_open()) {
-            log(LogLevel::Error, "General", "Failed to open log file: {}", std::source_location::current(), filename);
+            log(LogLevel::Error, "General", "Failed to open log file: {}", filename);
             return false;
         }
         logFilePath_ = filename;
         maxLogFileSize_ = maxSizeBytes;
-        log(LogLevel::Info, "General", "Log file set to: {}", std::source_location::current(), filename);
+        log(LogLevel::Info, "General", "Log file set to: {}", filename);
         return true;
     }
 
@@ -304,7 +337,8 @@ public:
         } else {
             enabledCategories_.erase(std::string(category));
         }
-        log(LogLevel::Info, "General", "Category {} {}", std::source_location::current(), category, enable ? "enabled" : "disabled");
+        // Fixed call: Use variadic log with two arguments
+        log(LogLevel::Info, "General", "Category {} {}", category, (enable ? "enabled" : "disabled"));
     }
 
     void stop() {
@@ -380,23 +414,6 @@ private:
             if (!cat.empty()) {
                 enabledCategories_.insert(std::string(cat));
             }
-        }
-    }
-
-    template<typename T>
-    std::string formatVulkanType(T handle, std::string_view handleName) const {
-        if constexpr (std::is_same_v<T, VkExtent2D>) {
-            return std::format("{}: {{width: {}, height: {}}}", handleName, handle.width, handle.height);
-        } else if constexpr (std::is_same_v<T, VkViewport>) {
-            return std::format("{}: {{x: {:.1f}, y: {:.1f}, width: {:.1f}, height: {:.1f}, minDepth: {:.1f}, maxDepth: {:.1f}}}",
-                               handleName, handle.x, handle.y, handle.width, handle.height, handle.minDepth, handle.maxDepth);
-        } else if constexpr (std::is_same_v<T, VkRect2D>) {
-            return std::format("{}: {{offset: {{x: {}, y: {}}}, extent: {{width: {}, height: {}}}}}", handleName,
-                               handle.offset.x, handle.offset.y, handle.extent.width, handle.extent.height);
-        } else {
-            return handle == VK_NULL_HANDLE ?
-                   std::format("{}: VK_NULL_HANDLE", handleName) :
-                   std::format("{}: {:p}", handleName, static_cast<const void*>(handle));
         }
     }
 
@@ -478,10 +495,10 @@ private:
                                 timeStr = std::format("{:>6.3f}h", delta / 3600000000.0);
                             }
 
-                            std::string output = std::format("{}{} [{}] [{}] [{}] {}{}",
-                                                             levelColor, levelStr, timeStr, msg.category,
-                                                             std::source_location(msg.location), // Use formatter
-                                                             msg.formattedMessage, RESET);
+                            std::string sourceLoc = std::format("{}:{}", msg.location.file_name(), msg.location.line());
+                            std::string output = std::format("{}{} [{}] {}[{}]{} [{}] {}{}",
+                                                             levelColor, levelStr, timeStr, categoryColor, msg.category, RESET,
+                                                             sourceLoc, msg.formattedMessage, RESET);
                             std::osyncstream(std::cout) << output << std::endl;
                             if (logFile_.is_open()) {
                                 std::lock_guard<std::mutex> lock(fileMutex_);
@@ -498,13 +515,14 @@ private:
         std::time_t now = std::time(nullptr);
         char timestamp[20];
         std::strftime(timestamp, sizeof(timestamp), "%Y%m%d_%H%M%S", std::localtime(&now));
-        std::string newFile = std::format("{}.{}.log", logFilePath_.string(), timestamp);
+        std::string newFile = std::format("{}.{}.log", logFilePath_.stem().string(), timestamp);
 
-        std::filesystem::rename(logFilePath_, newFile);
+        std::filesystem::rename(logFilePath_, logFilePath_.parent_path() / newFile);
 
         std::vector<std::filesystem::path> logs;
+        std::string stem = logFilePath_.stem().string();
         for (const auto& entry : std::filesystem::directory_iterator(logFilePath_.parent_path())) {
-            if (entry.path().extension() == ".log" && entry.path().stem().string().find(logFilePath_.stem().string()) == 0) {
+            if (entry.path().extension() == ".log" && entry.path().stem().string().rfind(stem, 0) == 0) {
                 logs.push_back(entry.path());
             }
         }
@@ -555,10 +573,10 @@ private:
                 timeStr = std::format("{:>6.3f}h", delta / 3600000000.0);
             }
 
-            std::string output = std::format("{}{} [{}] [{}] [{}] {}{}",
-                                             levelColor, levelStr, timeStr, msg.category,
-                                             std::source_location(msg.location), // Use formatter
-                                             msg.formattedMessage, RESET);
+            std::string sourceLoc = std::format("{}:{}", msg.location.file_name(), msg.location.line());
+            std::string output = std::format("{}{} [{}] {}[{}]{} [{}] {}{}",
+                                             levelColor, levelStr, timeStr, categoryColor, msg.category, RESET,
+                                             sourceLoc, msg.formattedMessage, RESET);
             std::osyncstream(std::cout) << output << std::endl;
             if (logFile_.is_open()) {
                 std::lock_guard<std::mutex> lock(fileMutex_);
@@ -585,50 +603,37 @@ private:
 } // namespace Logging
 
 namespace std {
-// Formatter for uint64_t
+// Formatter for std::source_location
 template<>
-struct formatter<uint64_t, char> {
+struct formatter<std::source_location, char> {
     constexpr auto parse(format_parse_context& ctx) { return ctx.begin(); }
     template<typename FormatContext>
-    auto format(uint64_t value, FormatContext& ctx) const {
-        if (value == UINT64_MAX) {
-            return format_to(ctx.out(), "INVALID_SIZE");
-        }
-        return format_to(ctx.out(), "{}", value);
+    auto format(const std::source_location& loc, FormatContext& ctx) const {
+        return format_to(ctx.out(), "{}:{}:{}", loc.file_name(), loc.line(), loc.function_name());
     }
 };
 
-// Formatter for glm::vec2
-template<>
-struct formatter<glm::vec2, char> {
-    constexpr auto parse(format_parse_context& ctx) { return ctx.begin(); }
+// Formatter for GLM vec types
+template<glm::length_t L, typename T, glm::qualifier Q>
+struct formatter<glm::vec<L, T, Q>, char> {
+    constexpr auto parse(format_parse_context& ctx) {
+        return ctx.begin();
+    }
     template<typename FormatContext>
-    auto format(const glm::vec2& vec, FormatContext& ctx) const {
-        return format_to(ctx.out(), "vec2({:.3f}, {:.3f})", vec.x, vec.y);
+    auto format(const glm::vec<L, T, Q>& vec, FormatContext& ctx) const {
+        return format_to(ctx.out(), "{}", glm::to_string(vec));
     }
 };
 
-// Formatter for glm::vec3
-template<>
-struct formatter<glm::vec3, char> {
-    constexpr auto parse(format_parse_context& ctx) { return ctx.begin(); }
-    template<typename FormatContext>
-    auto format(const glm::vec3& vec, FormatContext& ctx) const {
-        return format_to(ctx.out(), "vec3({:.3f}, {:.3f}, {:.3f})", vec.x, vec.y, vec.z);
+// Formatter for GLM mat types
+template<glm::length_t C, glm::length_t R, typename T, glm::qualifier Q>
+struct formatter<glm::mat<C, R, T, Q>, char> {
+    constexpr auto parse(format_parse_context& ctx) {
+        return ctx.begin();
     }
-};
-
-// Formatter for glm::mat4
-template<>
-struct formatter<glm::mat4, char> {
-    constexpr auto parse(format_parse_context& ctx) { return ctx.begin(); }
     template<typename FormatContext>
-    auto format(const glm::mat4& mat, FormatContext& ctx) const {
-        return format_to(ctx.out(), "mat4[{:.3f}, {:.3f}, {:.3f}, {:.3f}; {:.3f}, {:.3f}, {:.3f}, {:.3f}; {:.3f}, {:.3f}, {:.3f}, {:.3f}; {:.3f}, {:.3f}, {:.3f}, {:.3f}]",
-                        mat[0][0], mat[0][1], mat[0][2], mat[0][3],
-                        mat[1][0], mat[1][1], mat[1][2], mat[1][3],
-                        mat[2][0], mat[2][1], mat[2][2], mat[2][3],
-                        mat[3][0], mat[3][1], mat[3][2], mat[3][3]);
+    auto format(const glm::mat<C, R, T, Q>& mat, FormatContext& ctx) const {
+        return format_to(ctx.out(), "{}", glm::to_string(mat));
     }
 };
 
@@ -667,7 +672,7 @@ struct formatter<T, char> {
         if (ptr == VK_NULL_HANDLE) {
             return format_to(ctx.out(), "VK_NULL_HANDLE");
         }
-        return format_to(ctx.out(), "{:p}", static_cast<const void*>(ptr));
+        return format_to(ctx.out(), "{:p}", static_cast<const void*>(static_cast<void*>(const_cast<T*>(&ptr))));
     }
 };
 
@@ -749,6 +754,41 @@ struct formatter<VkResult, char> {
     }
 };
 
+// Formatter for VkPhysicalDeviceProperties
+template<>
+struct formatter<VkPhysicalDeviceProperties, char> {
+    constexpr auto parse(format_parse_context& ctx) { return ctx.begin(); }
+    template<typename FormatContext>
+    auto format(const VkPhysicalDeviceProperties& props, FormatContext& ctx) const {
+        return format_to(ctx.out(), "VkPhysicalDeviceProperties{{deviceName: {}}}", props.deviceName);
+    }
+};
+
+// Formatter for VkSurfaceCapabilitiesKHR
+template<>
+struct formatter<VkSurfaceCapabilitiesKHR, char> {
+    constexpr auto parse(format_parse_context& ctx) { return ctx.begin(); }
+    template<typename FormatContext>
+    auto format(const VkSurfaceCapabilitiesKHR& caps, FormatContext& ctx) const {
+        return format_to(ctx.out(), "VkSurfaceCapabilitiesKHR{{minImageCount: {}, maxImageCount: {}, currentExtent: {}, currentTransform: {}}}",
+                        caps.minImageCount, caps.maxImageCount, caps.currentExtent, static_cast<uint32_t>(caps.currentTransform));
+    }
+};
+
+// Formatter for SDL_Window
+template<>
+struct formatter<SDL_Window*, char> {
+    constexpr auto parse(format_parse_context& ctx) { return ctx.begin(); }
+    template<typename FormatContext>
+    auto format(SDL_Window* window, FormatContext& ctx) const {
+        if (window == nullptr) {
+            return format_to(ctx.out(), "SDL_Window(nullptr)");
+        }
+        const char* title = SDL_GetWindowTitle(window);
+        return format_to(ctx.out(), "SDL_Window{{title: {}}}", title ? title : "unknown");
+    }
+};
+
 // Formatter for SDL_EventType
 template<>
 struct formatter<SDL_EventType, char> {
@@ -756,92 +796,10 @@ struct formatter<SDL_EventType, char> {
     template<typename FormatContext>
     auto format(SDL_EventType type, FormatContext& ctx) const {
         switch (type) {
-            case SDL_EVENT_FIRST: return format_to(ctx.out(), "SDL_EVENT_FIRST");
             case SDL_EVENT_QUIT: return format_to(ctx.out(), "SDL_EVENT_QUIT");
-            case SDL_EVENT_TERMINATING: return format_to(ctx.out(), "SDL_EVENT_TERMINATING");
-            case SDL_EVENT_LOW_MEMORY: return format_to(ctx.out(), "SDL_EVENT_LOW_MEMORY");
-            case SDL_EVENT_WILL_ENTER_BACKGROUND: return format_to(ctx.out(), "SDL_EVENT_WILL_ENTER_BACKGROUND");
-            case SDL_EVENT_DID_ENTER_BACKGROUND: return format_to(ctx.out(), "SDL_EVENT_DID_ENTER_BACKGROUND");
-            case SDL_EVENT_WILL_ENTER_FOREGROUND: return format_to(ctx.out(), "SDL_EVENT_WILL_ENTER_FOREGROUND");
-            case SDL_EVENT_DID_ENTER_FOREGROUND: return format_to(ctx.out(), "SDL_EVENT_DID_ENTER_FOREGROUND");
-            case SDL_EVENT_LOCALE_CHANGED: return format_to(ctx.out(), "SDL_EVENT_LOCALE_CHANGED");
-            case SDL_EVENT_SYSTEM_THEME_CHANGED: return format_to(ctx.out(), "SDL_EVENT_SYSTEM_THEME_CHANGED");
-            case SDL_EVENT_DISPLAY_ORIENTATION: return format_to(ctx.out(), "SDL_EVENT_DISPLAY_ORIENTATION");
-            case SDL_EVENT_DISPLAY_ADDED: return format_to(ctx.out(), "SDL_EVENT_DISPLAY_ADDED");
-            case SDL_EVENT_DISPLAY_REMOVED: return format_to(ctx.out(), "SDL_EVENT_DISPLAY_REMOVED");
-            case SDL_EVENT_DISPLAY_MOVED: return format_to(ctx.out(), "SDL_EVENT_DISPLAY_MOVED");
-            case SDL_EVENT_DISPLAY_CONTENT_SCALE_CHANGED: return format_to(ctx.out(), "SDL_EVENT_DISPLAY_CONTENT_SCALE_CHANGED");
-            case SDL_EVENT_WINDOW_SHOWN: return format_to(ctx.out(), "SDL_EVENT_WINDOW_SHOWN");
-            case SDL_EVENT_WINDOW_HIDDEN: return format_to(ctx.out(), "SDL_EVENT_WINDOW_HIDDEN");
-            case SDL_EVENT_WINDOW_EXPOSED: return format_to(ctx.out(), "SDL_EVENT_WINDOW_EXPOSED");
-            case SDL_EVENT_WINDOW_MOVED: return format_to(ctx.out(), "SDL_EVENT_WINDOW_MOVED");
-            case SDL_EVENT_WINDOW_RESIZED: return format_to(ctx.out(), "SDL_EVENT_WINDOW_RESIZED");
-            case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED: return format_to(ctx.out(), "SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED");
-            case SDL_EVENT_WINDOW_MINIMIZED: return format_to(ctx.out(), "SDL_EVENT_WINDOW_MINIMIZED");
-            case SDL_EVENT_WINDOW_MAXIMIZED: return format_to(ctx.out(), "SDL_EVENT_WINDOW_MAXIMIZED");
-            case SDL_EVENT_WINDOW_RESTORED: return format_to(ctx.out(), "SDL_EVENT_WINDOW_RESTORED");
-            case SDL_EVENT_WINDOW_MOUSE_ENTER: return format_to(ctx.out(), "SDL_EVENT_WINDOW_MOUSE_ENTER");
-            case SDL_EVENT_WINDOW_MOUSE_LEAVE: return format_to(ctx.out(), "SDL_EVENT_WINDOW_MOUSE_LEAVE");
-            case SDL_EVENT_WINDOW_FOCUS_GAINED: return format_to(ctx.out(), "SDL_EVENT_WINDOW_FOCUS_GAINED");
-            case SDL_EVENT_WINDOW_FOCUS_LOST: return format_to(ctx.out(), "SDL_EVENT_WINDOW_FOCUS_LOST");
-            case SDL_EVENT_WINDOW_CLOSE_REQUESTED: return format_to(ctx.out(), "SDL_EVENT_WINDOW_CLOSE_REQUESTED");
-            case SDL_EVENT_WINDOW_HIT_TEST: return format_to(ctx.out(), "SDL_EVENT_WINDOW_HIT_TEST");
-            case SDL_EVENT_WINDOW_ICCPROF_CHANGED: return format_to(ctx.out(), "SDL_EVENT_WINDOW_ICCPROF_CHANGED");
-            case SDL_EVENT_WINDOW_DISPLAY_CHANGED: return format_to(ctx.out(), "SDL_EVENT_WINDOW_DISPLAY_CHANGED");
-            case SDL_EVENT_WINDOW_DESTROYED: return format_to(ctx.out(), "SDL_EVENT_WINDOW_DESTROYED");
-            case SDL_EVENT_KEY_DOWN: return format_to(ctx.out(), "SDL_EVENT_KEY_DOWN");
-            case SDL_EVENT_KEY_UP: return format_to(ctx.out(), "SDL_EVENT_KEY_UP");
-            case SDL_EVENT_TEXT_EDITING: return format_to(ctx.out(), "SDL_EVENT_TEXT_EDITING");
-            case SDL_EVENT_TEXT_INPUT: return format_to(ctx.out(), "SDL_EVENT_TEXT_INPUT");
-            case SDL_EVENT_KEYMAP_CHANGED: return format_to(ctx.out(), "SDL_EVENT_KEYMAP_CHANGED");
-            case SDL_EVENT_MOUSE_MOTION: return format_to(ctx.out(), "SDL_EVENT_MOUSE_MOTION");
-            case SDL_EVENT_MOUSE_BUTTON_DOWN: return format_to(ctx.out(), "SDL_EVENT_MOUSE_BUTTON_DOWN");
-            case SDL_EVENT_MOUSE_BUTTON_UP: return format_to(ctx.out(), "SDL_EVENT_MOUSE_BUTTON_UP");
-            case SDL_EVENT_MOUSE_WHEEL: return format_to(ctx.out(), "SDL_EVENT_MOUSE_WHEEL");
-            case SDL_EVENT_JOYSTICK_AXIS_MOTION: return format_to(ctx.out(), "SDL_EVENT_JOYSTICK_AXIS_MOTION");
-            case SDL_EVENT_JOYSTICK_BALL_MOTION: return format_to(ctx.out(), "SDL_EVENT_JOYSTICK_BALL_MOTION");
-            case SDL_EVENT_JOYSTICK_HAT_MOTION: return format_to(ctx.out(), "SDL_EVENT_JOYSTICK_HAT_MOTION");
-            case SDL_EVENT_JOYSTICK_BUTTON_DOWN: return format_to(ctx.out(), "SDL_EVENT_JOYSTICK_BUTTON_DOWN");
-            case SDL_EVENT_JOYSTICK_BUTTON_UP: return format_to(ctx.out(), "SDL_EVENT_JOYSTICK_BUTTON_UP");
-            case SDL_EVENT_JOYSTICK_ADDED: return format_to(ctx.out(), "SDL_EVENT_JOYSTICK_ADDED");
-            case SDL_EVENT_JOYSTICK_REMOVED: return format_to(ctx.out(), "SDL_EVENT_JOYSTICK_REMOVED");
-            case SDL_EVENT_JOYSTICK_BATTERY_UPDATED: return format_to(ctx.out(), "SDL_EVENT_JOYSTICK_BATTERY_UPDATED");
-            case SDL_EVENT_GAMEPAD_AXIS_MOTION: return format_to(ctx.out(), "SDL_EVENT_GAMEPAD_AXIS_MOTION");
-            case SDL_EVENT_GAMEPAD_BUTTON_DOWN: return format_to(ctx.out(), "SDL_EVENT_GAMEPAD_BUTTON_DOWN");
-            case SDL_EVENT_GAMEPAD_BUTTON_UP: return format_to(ctx.out(), "SDL_EVENT_GAMEPAD_BUTTON_UP");
-            case SDL_EVENT_GAMEPAD_ADDED: return format_to(ctx.out(), "SDL_EVENT_GAMEPAD_ADDED");
-            case SDL_EVENT_GAMEPAD_REMOVED: return format_to(ctx.out(), "SDL_EVENT_GAMEPAD_REMOVED");
-            case SDL_EVENT_GAMEPAD_TOUCHPAD_DOWN: return format_to(ctx.out(), "SDL_EVENT_GAMEPAD_TOUCHPAD_DOWN");
-            case SDL_EVENT_GAMEPAD_TOUCHPAD_UP: return format_to(ctx.out(), "SDL_EVENT_GAMEPAD_TOUCHPAD_UP");
-            case SDL_EVENT_GAMEPAD_TOUCHPAD_MOTION: return format_to(ctx.out(), "SDL_EVENT_GAMEPAD_TOUCHPAD_MOTION");
-            case SDL_EVENT_GAMEPAD_SENSOR_UPDATE: return format_to(ctx.out(), "SDL_EVENT_GAMEPAD_SENSOR_UPDATE");
-            case SDL_EVENT_FINGER_DOWN: return format_to(ctx.out(), "SDL_EVENT_FINGER_DOWN");
-            case SDL_EVENT_FINGER_UP: return format_to(ctx.out(), "SDL_EVENT_FINGER_UP");
-            case SDL_EVENT_FINGER_MOTION: return format_to(ctx.out(), "SDL_EVENT_FINGER_MOTION");
-            case SDL_EVENT_CLIPBOARD_UPDATE: return format_to(ctx.out(), "SDL_EVENT_CLIPBOARD_UPDATE");
-            case SDL_EVENT_DROP_FILE: return format_to(ctx.out(), "SDL_EVENT_DROP_FILE");
-            case SDL_EVENT_DROP_TEXT: return format_to(ctx.out(), "SDL_EVENT_DROP_TEXT");
-            case SDL_EVENT_DROP_BEGIN: return format_to(ctx.out(), "SDL_EVENT_DROP_BEGIN");
-            case SDL_EVENT_DROP_COMPLETE: return format_to(ctx.out(), "SDL_EVENT_DROP_COMPLETE");
-            case SDL_EVENT_DROP_POSITION: return format_to(ctx.out(), "SDL_EVENT_DROP_POSITION");
-            case SDL_EVENT_SENSOR_UPDATE: return format_to(ctx.out(), "SDL_EVENT_SENSOR_UPDATE");
-            case SDL_EVENT_RENDER_TARGETS_RESET: return format_to(ctx.out(), "SDL_EVENT_RENDER_TARGETS_RESET");
-            case SDL_EVENT_RENDER_DEVICE_RESET: return format_to(ctx.out(), "SDL_EVENT_RENDER_DEVICE_RESET");
-            case SDL_EVENT_POLL_SENTINEL: return format_to(ctx.out(), "SDL_EVENT_POLL_SENTINEL");
-            case SDL_EVENT_USER: return format_to(ctx.out(), "SDL_EVENT_USER");
-            case SDL_EVENT_LAST: return format_to(ctx.out(), "SDL_EVENT_LAST");
-            default: return format_to(ctx.out(), "Unknown SDL_EventType({})", static_cast<uint32_t>(type));
+            // Add other cases as needed
+            default: return format_to(ctx.out(), "SDL_EventType({})", static_cast<uint32_t>(type));
         }
-    }
-};
-
-// Formatter for std::source_location
-template<>
-struct formatter<std::source_location, char> {
-    constexpr auto parse(format_parse_context& ctx) { return ctx.begin(); }
-    template<typename FormatContext>
-    auto format(const std::source_location& loc, FormatContext& ctx) const {
-        return format_to(ctx.out(), "{}:{}", loc.file_name(), loc.line());
     }
 };
 
