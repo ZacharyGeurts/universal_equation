@@ -1,87 +1,143 @@
 // SDL3_vulkan.cpp
-// AMOURANTH RTX Engine, October 2025 - SDL3 and Vulkan integration.
-// Dependencies: SDL3, Vulkan 1.3, VulkanCore.hpp, logging.hpp.
+// AMOURANTH RTX Engine, October 2025 - Vulkan instance and surface initialization with SDL3.
+// Dependencies: SDL3, Vulkan 1.3+, C++20 standard library.
 // Supported platforms: Linux, Windows.
 // Zachary Geurts 2025
 
-#include "VulkanCore.hpp"
-#include <SDL3/SDL.h>
+#include "engine/SDL3/SDL3_vulkan.hpp"
+#include "engine/logging.hpp"
 #include <SDL3/SDL_vulkan.h>
 #include <vulkan/vulkan.h>
-#include "engine/logging.hpp"
+#include <vector>
 #include <stdexcept>
 #include <source_location>
-#include <vector>
-#include <string_view>
+#include <cstring>
 
 namespace SDL3Initializer {
 
-using VulkanInstancePtr = VkInstance;
-using VulkanSurfacePtr = VkSurfaceKHR;
-
-void initVulkan(SDL_Window* window, VulkanInstancePtr& vkInstance, VulkanSurfacePtr& vkSurface,
-                bool enableValidation, bool enableDebug, bool enableRayTracing, std::string_view appName) {
-    LOG_INFO("Initializing Vulkan with appName={}", std::source_location::current(), appName);
-
-    Uint32 extensionCount = 0;
-    const char* const* extensionsRaw = SDL_Vulkan_GetInstanceExtensions(&extensionCount);
-    if (!extensionsRaw) {
-        LOG_ERROR("SDL_Vulkan_GetInstanceExtensions failed: {}", std::source_location::current(), SDL_GetError());
-        throw std::runtime_error(std::string("SDL_Vulkan_GetInstanceExtensions failed: ") + SDL_GetError());
+void VulkanInstanceDeleter::operator()(VkInstance instance) {
+    if (instance != VK_NULL_HANDLE) {
+        LOG_INFO_CAT("Vulkan", "Destroying Vulkan instance: {:p}", std::source_location::current(), static_cast<void*>(instance));
+        vkDestroyInstance(instance, nullptr);
     }
-    std::vector<const char*> extensions(extensionsRaw, extensionsRaw + extensionCount);
-    if (enableDebug) {
-        extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+}
+
+void VulkanSurfaceDeleter::operator()(VkSurfaceKHR surface) {
+    if (surface != VK_NULL_HANDLE && m_instance != VK_NULL_HANDLE) {
+        LOG_INFO_CAT("Vulkan", "Destroying Vulkan surface: {:p}", std::source_location::current(), static_cast<void*>(surface));
+        vkDestroySurfaceKHR(m_instance, surface, nullptr);
     }
-    if (enableRayTracing) {
+}
+
+void initVulkan(
+    SDL_Window* window, 
+    VulkanInstancePtr& instance,
+    VulkanSurfacePtr& surface,
+    bool enableValidation, 
+    bool preferNvidia, 
+    bool rt, 
+    std::string_view title) {
+    if (!window) {
+        LOG_ERROR("Invalid SDL window pointer", std::source_location::current());
+        throw std::runtime_error("Invalid SDL window pointer");
+    }
+
+    // Get required Vulkan extensions from SDL
+    uint32_t extensionCount = 0;
+    const char* const* extensionNames = SDL_Vulkan_GetInstanceExtensions(&extensionCount);
+    if (!extensionNames) {
+        LOG_ERROR("Failed to get Vulkan extensions from SDL: {}", std::source_location::current(), SDL_GetError());
+        throw std::runtime_error("Failed to get Vulkan extensions from SDL");
+    }
+    std::vector<const char*> extensions(extensionNames, extensionNames + extensionCount);
+
+    // Add additional extensions for ray tracing if required
+    if (rt) {
         extensions.push_back(VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME);
     }
-    LOG_DEBUG("Vulkan instance extensions retrieved: count={}", std::source_location::current(), extensions.size());
 
-    const char* validationLayers[] = {"VK_LAYER_KHRONOS_validation"};
-    uint32_t layerCount = enableValidation ? 1 : 0;
+    // Validation layers
+    std::vector<const char*> layers;
+    if (enableValidation) {
+        layers.push_back("VK_LAYER_KHRONOS_validation");
+        // Verify validation layer support
+        uint32_t layerCount;
+        vkEnumerateInstanceLayerProperties(&layerCount, nullptr);
+        std::vector<VkLayerProperties> availableLayers(layerCount);
+        vkEnumerateInstanceLayerProperties(&layerCount, availableLayers.data());
+        bool validationSupported = false;
+        for (const auto& layer : availableLayers) {
+            if (strcmp(layer.layerName, "VK_LAYER_KHRONOS_validation") == 0) {
+                validationSupported = true;
+                break;
+            }
+        }
+        if (!validationSupported) {
+            LOG_WARNING("Validation layers requested but not available", std::source_location::current());
+            layers.clear();
+        }
+    }
 
-    VkApplicationInfo appInfo = {
+    // Vulkan instance creation
+    VkApplicationInfo appInfo{
         .sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
         .pNext = nullptr,
-        .pApplicationName = appName.data(),
+        .pApplicationName = title.data(),
         .applicationVersion = VK_MAKE_VERSION(1, 0, 0),
         .pEngineName = "AMOURANTH RTX Engine",
         .engineVersion = VK_MAKE_VERSION(1, 0, 0),
-        .apiVersion = VK_API_VERSION_1_3,
+        .apiVersion = VK_API_VERSION_1_3
     };
 
-    VkInstanceCreateInfo createInfo = {
+    VkInstanceCreateInfo createInfo{
         .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
         .pNext = nullptr,
         .flags = 0,
         .pApplicationInfo = &appInfo,
-        .enabledLayerCount = layerCount,
-        .ppEnabledLayerNames = validationLayers,
+        .enabledLayerCount = static_cast<uint32_t>(layers.size()),
+        .ppEnabledLayerNames = layers.empty() ? nullptr : layers.data(),
         .enabledExtensionCount = static_cast<uint32_t>(extensions.size()),
-        .ppEnabledExtensionNames = extensions.data(),
+        .ppEnabledExtensionNames = extensions.data()
     };
 
-    VkResult result = vkCreateInstance(&createInfo, nullptr, &vkInstance);
-    if (result != VK_SUCCESS) {
-        LOG_ERROR("vkCreateInstance failed with result={}", std::source_location::current(), static_cast<int>(result));
-        throw std::runtime_error("vkCreateInstance failed: " + std::to_string(static_cast<int>(result)));
+    VkInstance rawInstance;
+    if (vkCreateInstance(&createInfo, nullptr, &rawInstance) != VK_SUCCESS) {
+        LOG_ERROR("Failed to create Vulkan instance", std::source_location::current());
+        throw std::runtime_error("Failed to create Vulkan instance");
     }
-    LOG_DEBUG("Vulkan instance created: {:p}", std::source_location::current(), static_cast<void*>(vkInstance));
+    instance = VulkanInstancePtr(rawInstance, VulkanInstanceDeleter());
+    LOG_INFO("Created Vulkan instance: {:p}", std::source_location::current(), static_cast<void*>(rawInstance));
 
-    if (!SDL_Vulkan_CreateSurface(window, vkInstance, nullptr, &vkSurface)) {
-        LOG_ERROR("SDL_Vulkan_CreateSurface failed: {}", std::source_location::current(), SDL_GetError());
-        vkDestroyInstance(vkInstance, nullptr);
-        throw std::runtime_error(std::string("SDL_Vulkan_CreateSurface failed: ") + SDL_GetError());
+    // Create Vulkan surface
+    VkSurfaceKHR rawSurface;
+    if (!SDL_Vulkan_CreateSurface(window, rawInstance, nullptr, &rawSurface)) {
+        LOG_ERROR("Failed to create Vulkan surface: {}", std::source_location::current(), SDL_GetError());
+        throw std::runtime_error("Failed to create Vulkan surface: " + std::string(SDL_GetError()));
     }
-    LOG_DEBUG("Vulkan surface created: {:p}", std::source_location::current(), static_cast<void*>(vkSurface));
+    surface = VulkanSurfacePtr(rawSurface, VulkanSurfaceDeleter(rawInstance));
+    LOG_INFO("Created Vulkan surface: {:p}", std::source_location::current(), static_cast<void*>(rawSurface));
+}
 
-    VulkanContext context;
-    context.instance = vkInstance;
-    context.surface = vkSurface;
-    VulkanInitializer::initializeVulkan(context, 1280, 720);
-    vkInstance = context.instance;
-    vkSurface = context.surface;
+VkInstance getVkInstance(const VulkanInstancePtr& instance) {
+    return instance.get();
+}
+
+VkSurfaceKHR getVkSurface(const VulkanSurfacePtr& surface) {
+    return surface.get();
+}
+
+std::vector<std::string> getVulkanExtensions() {
+    uint32_t extensionCount = 0;
+    const char* const* extensionNames = SDL_Vulkan_GetInstanceExtensions(&extensionCount);
+    if (!extensionNames) {
+        LOG_ERROR("Failed to get Vulkan extensions from SDL: {}", std::source_location::current(), SDL_GetError());
+        throw std::runtime_error("Failed to get Vulkan extensions from SDL");
+    }
+    std::vector<std::string> result(extensionCount);
+    for (uint32_t i = 0; i < extensionCount; ++i) {
+        result[i] = extensionNames[i];
+    }
+    return result;
 }
 
 } // namespace SDL3Initializer
