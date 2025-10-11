@@ -1,4 +1,9 @@
 // handle_app.cpp
+// AMOURANTH RTX Engine, October 2025 - Application handling.
+// Dependencies: VulkanRenderer, AMOURANTH, DimensionalNavigator, SDL3Initializer, SDL3Audio, etc.
+// Supported platforms: Linux, Windows.
+// Zachary Geurts 2025
+
 #include "handle_app.hpp"
 #include "engine/SDL3/SDL3_audio.hpp"
 #include <stdexcept>
@@ -48,7 +53,7 @@ Application::Application(const char* title, int width, int height)
 
     amouranth_.emplace(navigator_.get(), renderer_->getDevice(),
                        renderer_->getVertexBufferMemory(), renderer_->getIndexBufferMemory(),
-                       renderer_->getGraphicsPipeline());
+                       renderer_->getRayTracingPipeline());
     LOG_DEBUG_CAT("Application", "AMOURANTH instance created successfully", std::source_location::current());
 
     inputHandler_ = std::make_unique<HandleInput>(amouranth_.value(), navigator_.get());

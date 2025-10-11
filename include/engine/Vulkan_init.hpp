@@ -47,8 +47,10 @@ public:
     void createRenderPass();
     void createPipelineLayout();
     void createRayTracingPipeline();
+    void createGraphicsPipeline(); // Added
     void cleanupPipeline();
     VkPipeline getRayTracingPipeline() const { return rayTracingPipeline_; }
+    VkPipeline getGraphicsPipeline() const { return graphicsPipeline_; } // Added
     VkPipelineLayout getPipelineLayout() const { return pipelineLayout_; }
     VkRenderPass getRenderPass() const { return renderPass_; }
     VkDescriptorSetLayout getDescriptorSetLayout() const { return descriptorSetLayout_; }
@@ -61,6 +63,7 @@ private:
     int height_;
     VkRenderPass renderPass_;
     VkPipeline rayTracingPipeline_;
+    VkPipeline graphicsPipeline_; // Added
     VkPipelineLayout pipelineLayout_;
     VkDescriptorSetLayout descriptorSetLayout_;
     VkShaderModule rayGenShaderModule_;

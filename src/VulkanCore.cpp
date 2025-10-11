@@ -11,6 +11,7 @@
 #include <source_location>
 #include <fstream>
 #include <algorithm>
+#include <filesystem>
 
 namespace VulkanInitializer {
     void createBuffer(VkDevice device, VkPhysicalDevice physicalDevice, VkDeviceSize size,
@@ -365,54 +366,22 @@ namespace VulkanInitializer {
         vkFreeMemory(context.device, instanceBufferMemory, nullptr);
     }
 
-    void createRayTracingPipeline(VulkanContext& context) {
+    void createRayTracingPipeline(VulkanContext& context, VkPipelineLayout pipelineLayout,
+                                 VkShaderModule rayGenModule, VkShaderModule missModule, VkShaderModule closestHitModule,
+                                 VkPipeline& pipeline) {
         auto vkCreateRayTracingPipelinesKHR = (PFN_vkCreateRayTracingPipelinesKHR)vkGetDeviceProcAddr(context.device, "vkCreateRayTracingPipelinesKHR");
         if (!vkCreateRayTracingPipelinesKHR) {
             LOG_ERROR("Failed to load vkCreateRayTracingPipelinesKHR", std::source_location::current());
             throw std::runtime_error("Failed to load vkCreateRayTracingPipelinesKHR");
         }
-        auto loadShader = [&](const std::string& filepath) -> VkShaderModule {
-            std::ifstream file(filepath, std::ios::ate | std::ios::binary);
-            if (!file.is_open()) {
-                LOG_ERROR("Failed to open shader file: {}", std::source_location::current(), filepath);
-                throw std::runtime_error("Failed to open shader file");
-            }
-            size_t fileSize = static_cast<size_t>(file.tellg());
-            std::vector<char> buffer(fileSize);
-            file.seekg(0);
-            file.read(buffer.data(), fileSize);
-            file.close();
-            VkShaderModuleCreateInfo createInfo{
-                .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
-                .pNext = nullptr,
-                .flags = 0,
-                .codeSize = buffer.size(),
-                .pCode = reinterpret_cast<const uint32_t*>(buffer.data())
-            };
-            VkShaderModule shaderModule;
-            if (vkCreateShaderModule(context.device, &createInfo, nullptr, &shaderModule) != VK_SUCCESS) {
-                LOG_ERROR("Failed to create shader module: {}", std::source_location::current(), filepath);
-                throw std::runtime_error("Failed to create shader module");
-            }
-            return shaderModule;
-        };
-        VkShaderModule raygenShader = loadShader("shaders/raygen.spv");
-        VkShaderModule missShader = loadShader("shaders/miss.spv");
-        VkShaderModule closestHitShader = loadShader("shaders/closesthit.spv");
-        if (raygenShader == VK_NULL_HANDLE || missShader == VK_NULL_HANDLE || closestHitShader == VK_NULL_HANDLE) {
-            LOG_ERROR("Failed to load ray-tracing shader modules", std::source_location::current());
-            if (raygenShader != VK_NULL_HANDLE) vkDestroyShaderModule(context.device, raygenShader, nullptr);
-            if (missShader != VK_NULL_HANDLE) vkDestroyShaderModule(context.device, missShader, nullptr);
-            if (closestHitShader != VK_NULL_HANDLE) vkDestroyShaderModule(context.device, closestHitShader, nullptr);
-            throw std::runtime_error("Failed to load ray-tracing shader modules");
-        }
+
         VkPipelineShaderStageCreateInfo shaderStages[] = {
             {
                 .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
                 .pNext = nullptr,
                 .flags = 0,
                 .stage = VK_SHADER_STAGE_RAYGEN_BIT_KHR,
-                .module = raygenShader,
+                .module = rayGenModule,
                 .pName = "main",
                 .pSpecializationInfo = nullptr
             },
@@ -421,7 +390,7 @@ namespace VulkanInitializer {
                 .pNext = nullptr,
                 .flags = 0,
                 .stage = VK_SHADER_STAGE_MISS_BIT_KHR,
-                .module = missShader,
+                .module = missModule,
                 .pName = "main",
                 .pSpecializationInfo = nullptr
             },
@@ -430,7 +399,7 @@ namespace VulkanInitializer {
                 .pNext = nullptr,
                 .flags = 0,
                 .stage = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR,
-                .module = closestHitShader,
+                .module = closestHitModule,
                 .pName = "main",
                 .pSpecializationInfo = nullptr
             }
@@ -467,62 +436,6 @@ namespace VulkanInitializer {
                 .pShaderGroupCaptureReplayHandle = nullptr
             }
         };
-        VkDescriptorSetLayoutBinding bindings[] = {
-            {
-                .binding = 0,
-                .descriptorType = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR,
-                .descriptorCount = 1,
-                .stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR,
-                .pImmutableSamplers = nullptr
-            },
-            {
-                .binding = 1,
-                .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-                .descriptorCount = 1,
-                .stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR,
-                .pImmutableSamplers = nullptr
-            },
-            {
-                .binding = 2,
-                .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
-                .descriptorCount = 1,
-                .stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR,
-                .pImmutableSamplers = nullptr
-            }
-        };
-        VkDescriptorSetLayoutCreateInfo layoutInfo{
-            .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-            .pNext = nullptr,
-            .flags = 0,
-            .bindingCount = 3,
-            .pBindings = bindings
-        };
-        if (vkCreateDescriptorSetLayout(context.device, &layoutInfo, nullptr, &context.rayTracingDescriptorSetLayout) != VK_SUCCESS) {
-            LOG_ERROR("Failed to create ray-tracing descriptor set layout", std::source_location::current());
-            vkDestroyShaderModule(context.device, raygenShader, nullptr);
-            vkDestroyShaderModule(context.device, missShader, nullptr);
-            vkDestroyShaderModule(context.device, closestHitShader, nullptr);
-            throw std::runtime_error("Failed to create ray-tracing descriptor set layout");
-        }
-        LOG_INFO("Created ray-tracing descriptor set layout: {:p}", std::source_location::current(), static_cast<void*>(context.rayTracingDescriptorSetLayout));
-        VkPipelineLayoutCreateInfo pipelineLayoutInfo{
-            .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
-            .pNext = nullptr,
-            .flags = 0,
-            .setLayoutCount = 1,
-            .pSetLayouts = &context.rayTracingDescriptorSetLayout,
-            .pushConstantRangeCount = 0,
-            .pPushConstantRanges = nullptr
-        };
-        if (vkCreatePipelineLayout(context.device, &pipelineLayoutInfo, nullptr, &context.rayTracingPipelineLayout) != VK_SUCCESS) {
-            LOG_ERROR("Failed to create ray-tracing pipeline layout", std::source_location::current());
-            vkDestroyShaderModule(context.device, raygenShader, nullptr);
-            vkDestroyShaderModule(context.device, missShader, nullptr);
-            vkDestroyShaderModule(context.device, closestHitShader, nullptr);
-            vkDestroyDescriptorSetLayout(context.device, context.rayTracingDescriptorSetLayout, nullptr);
-            throw std::runtime_error("Failed to create ray-tracing pipeline layout");
-        }
-        LOG_INFO("Created ray-tracing pipeline layout: {:p}", std::source_location::current(), static_cast<void*>(context.rayTracingPipelineLayout));
         VkRayTracingPipelineCreateInfoKHR pipelineInfo{
             .sType = VK_STRUCTURE_TYPE_RAY_TRACING_PIPELINE_CREATE_INFO_KHR,
             .pNext = nullptr,
@@ -535,24 +448,15 @@ namespace VulkanInitializer {
             .pLibraryInfo = nullptr,
             .pLibraryInterface = nullptr,
             .pDynamicState = nullptr,
-            .layout = context.rayTracingPipelineLayout,
+            .layout = pipelineLayout,
             .basePipelineHandle = VK_NULL_HANDLE,
             .basePipelineIndex = -1
         };
-        if (vkCreateRayTracingPipelinesKHR(context.device, VK_NULL_HANDLE, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &context.rayTracingPipeline) != VK_SUCCESS) {
+        if (vkCreateRayTracingPipelinesKHR(context.device, VK_NULL_HANDLE, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &pipeline) != VK_SUCCESS) {
             LOG_ERROR("Failed to create ray-tracing pipeline", std::source_location::current());
-            vkDestroyShaderModule(context.device, raygenShader, nullptr);
-            vkDestroyShaderModule(context.device, missShader, nullptr);
-            vkDestroyShaderModule(context.device, closestHitShader, nullptr);
-            vkDestroyDescriptorSetLayout(context.device, context.rayTracingDescriptorSetLayout, nullptr);
-            vkDestroyPipelineLayout(context.device, context.rayTracingPipelineLayout, nullptr);
             throw std::runtime_error("Failed to create ray-tracing pipeline");
         }
-        LOG_INFO("Created ray-tracing pipeline: {:p}", std::source_location::current(), static_cast<void*>(context.rayTracingPipeline));
-        vkDestroyShaderModule(context.device, raygenShader, nullptr);
-        vkDestroyShaderModule(context.device, missShader, nullptr);
-        vkDestroyShaderModule(context.device, closestHitShader, nullptr);
-        LOG_INFO("Destroyed ray-tracing shader modules", std::source_location::current());
+        LOG_INFO("Created ray-tracing pipeline: {:p}", std::source_location::current(), static_cast<void*>(pipeline));
     }
 
     void createShaderBindingTable(VulkanContext& context) {
@@ -582,7 +486,10 @@ namespace VulkanInitializer {
         LOG_INFO("SBT properties: handle size: {}, alignment: {}", std::source_location::current(),
                  rtProperties.shaderGroupHandleSize, rtProperties.shaderGroupBaseAlignment);
         const uint32_t groupCount = 3;
-        const uint32_t sbtSize = rtProperties.shaderGroupHandleSize * groupCount;
+        const uint32_t handleSize = rtProperties.shaderGroupHandleSize;
+        const uint32_t handleSizeAligned = (handleSize + rtProperties.shaderGroupBaseAlignment - 1) & ~(rtProperties.shaderGroupBaseAlignment - 1);
+        const uint32_t sbtSize = handleSizeAligned * groupCount;
+        context.sbtRecordSize = handleSizeAligned;
         std::vector<uint8_t> shaderHandleStorage(sbtSize);
         if (vkGetRayTracingShaderGroupHandlesKHR(context.device, context.rayTracingPipeline, 0, groupCount, sbtSize, shaderHandleStorage.data()) != VK_SUCCESS) {
             LOG_ERROR("Failed to get shader group handles", std::source_location::current());
@@ -595,8 +502,14 @@ namespace VulkanInitializer {
         LOG_INFO("Created shader binding table: {:p}", std::source_location::current(), static_cast<void*>(context.shaderBindingTable));
         void* data;
         vkMapMemory(context.device, context.shaderBindingTableMemory, 0, sbtSize, 0, &data);
-        memcpy(data, shaderHandleStorage.data(), sbtSize);
+        for (uint32_t i = 0; i < groupCount; ++i) {
+            memcpy(static_cast<uint8_t*>(data) + i * handleSizeAligned, shaderHandleStorage.data() + i * handleSize, handleSize);
+        }
         vkUnmapMemory(context.device, context.shaderBindingTableMemory);
-        LOG_INFO("Populated shader binding table with size: {}", std::source_location::current(), sbtSize);
+        context.raygenSbtAddress = getBufferDeviceAddress(context.device, context.shaderBindingTable);
+        context.missSbtAddress = context.raygenSbtAddress + handleSizeAligned;
+        context.hitSbtAddress = context.missSbtAddress + handleSizeAligned;
+        LOG_INFO("Populated shader binding table with size: {}, raygen: {}, miss: {}, hit: {}", 
+                 std::source_location::current(), sbtSize, context.raygenSbtAddress, context.missSbtAddress, context.hitSbtAddress);
     }
 }

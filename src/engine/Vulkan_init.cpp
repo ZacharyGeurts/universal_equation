@@ -15,6 +15,7 @@
 #include <algorithm>
 #include <stdexcept>
 #include <source_location>
+#include <filesystem>
 
 VulkanSwapchainManager::VulkanSwapchainManager(VulkanContext& context, VkSurfaceKHR surface)
     : context_(context), swapchain_(VK_NULL_HANDLE), imageCount_(0), swapchainImageFormat_(VK_FORMAT_UNDEFINED), swapchainExtent_{0, 0} {
@@ -64,11 +65,13 @@ void VulkanSwapchainManager::handleResize(int width, int height) {
 }
 
 VulkanPipelineManager::VulkanPipelineManager(VulkanContext& context, int width, int height)
-    : context_(context), width_(width), height_(height), renderPass_(VK_NULL_HANDLE), 
-      graphicsPipeline_(VK_NULL_HANDLE), pipelineLayout_(VK_NULL_HANDLE), descriptorSetLayout_(VK_NULL_HANDLE) {
+    : context_(context), width_(width), height_(height), renderPass_(VK_NULL_HANDLE),
+      rayTracingPipeline_(VK_NULL_HANDLE), graphicsPipeline_(VK_NULL_HANDLE), pipelineLayout_(VK_NULL_HANDLE), descriptorSetLayout_(VK_NULL_HANDLE),
+      rayGenShaderModule_(VK_NULL_HANDLE), missShaderModule_(VK_NULL_HANDLE), closestHitShaderModule_(VK_NULL_HANDLE) {
     createRenderPass();
     VulkanInitializer::createDescriptorSetLayout(context_.device, descriptorSetLayout_);
     createPipelineLayout();
+    createRayTracingPipeline();
     createGraphicsPipeline();
     LOG_INFO("Initialized VulkanPipelineManager {}x{}", std::source_location::current(), width, height);
 }
@@ -99,16 +102,175 @@ void VulkanPipelineManager::createPipelineLayout() {
     LOG_INFO_CAT("Vulkan", "Created pipeline layout: {:p}", std::source_location::current(), static_cast<void*>(pipelineLayout_));
 }
 
+void VulkanPipelineManager::createRayTracingPipeline() {
+    std::filesystem::path rayGenPath = "assets/shaders/raytracing/raygen.spv";
+    std::filesystem::path missPath = "assets/shaders/raytracing/miss.spv";
+    std::filesystem::path closestHitPath = "assets/shaders/raytracing/closesthit.spv";
+
+    if (!std::filesystem::exists(rayGenPath)) {
+        LOG_ERROR("Ray generation shader file does not exist: {}", std::source_location::current(), rayGenPath.string());
+        throw std::runtime_error("Ray generation shader file does not exist: " + rayGenPath.string());
+    }
+    if (!std::filesystem::exists(missPath)) {
+        LOG_ERROR("Miss shader file does not exist: {}", std::source_location::current(), missPath.string());
+        throw std::runtime_error("Miss shader file does not exist: " + missPath.string());
+    }
+    if (!std::filesystem::exists(closestHitPath)) {
+        LOG_ERROR("Closest hit shader file does not exist: {}", std::source_location::current(), closestHitPath.string());
+        throw std::runtime_error("Closest hit shader file does not exist: " + closestHitPath.string());
+    }
+
+    rayGenShaderModule_ = VulkanInitializer::loadShader(context_.device, rayGenPath.string());
+    missShaderModule_ = VulkanInitializer::loadShader(context_.device, missPath.string());
+    closestHitShaderModule_ = VulkanInitializer::loadShader(context_.device, closestHitPath.string());
+
+    VulkanInitializer::createRayTracingPipeline(context_, pipelineLayout_, rayGenShaderModule_, missShaderModule_, closestHitShaderModule_, rayTracingPipeline_);
+    LOG_INFO_CAT("Vulkan", "Created ray tracing pipeline: {:p}", std::source_location::current(), static_cast<void*>(rayTracingPipeline_));
+}
+
 void VulkanPipelineManager::createGraphicsPipeline() {
-    vertexShaderModule_ = VulkanInitializer::loadShader(context_.device, "assets/shaders/rasterization/vertex.spv");
-    fragmentShaderModule_ = VulkanInitializer::loadShader(context_.device, "assets/shaders/rasterization/fragment.spv");
-    VulkanInitializer::createGraphicsPipeline(context_.device, renderPass_, graphicsPipeline_, 
-                                             pipelineLayout_, descriptorSetLayout_, 
-                                             width_, height_, vertexShaderModule_, fragmentShaderModule_);
-    LOG_INFO_CAT("Vulkan", "Created graphics pipeline: {:p}", std::source_location::current(), static_cast<void*>(graphicsPipeline_));
+    std::filesystem::path vertPath = "assets/shaders/rasterization/vertex.spv";
+    std::filesystem::path fragPath = "assets/shaders/rasterization/fragment.spv";
+    VkShaderModule vertShaderModule = VulkanInitializer::loadShader(context_.device, vertPath.string());
+    VkShaderModule fragShaderModule = VulkanInitializer::loadShader(context_.device, fragPath.string());
+
+    VkPipelineShaderStageCreateInfo shaderStages[] = {
+        {
+            .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+            .pNext = nullptr,
+            .flags = 0,
+            .stage = VK_SHADER_STAGE_VERTEX_BIT,
+            .module = vertShaderModule,
+            .pName = "main",
+            .pSpecializationInfo = nullptr
+        },
+        {
+            .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+            .pNext = nullptr,
+            .flags = 0,
+            .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
+            .module = fragShaderModule,
+            .pName = "main",
+            .pSpecializationInfo = nullptr
+        }
+    };
+
+    VkPipelineVertexInputStateCreateInfo vertexInputInfo{
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
+        .pNext = nullptr,
+        .flags = 0,
+        .vertexBindingDescriptionCount = 0,
+        .pVertexBindingDescriptions = nullptr,
+        .vertexAttributeDescriptionCount = 0,
+        .pVertexAttributeDescriptions = nullptr
+    };
+    VkPipelineInputAssemblyStateCreateInfo inputAssembly{
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
+        .pNext = nullptr,
+        .flags = 0,
+        .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+        .primitiveRestartEnable = VK_FALSE
+    };
+    VkViewport viewport{
+        .x = 0.0f,
+        .y = 0.0f,
+        .width = static_cast<float>(width_),
+        .height = static_cast<float>(height_),
+        .minDepth = 0.0f,
+        .maxDepth = 1.0f
+    };
+    VkRect2D scissor{{0, 0}, {static_cast<uint32_t>(width_), static_cast<uint32_t>(height_)}};
+    VkPipelineViewportStateCreateInfo viewportState{
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
+        .pNext = nullptr,
+        .flags = 0,
+        .viewportCount = 1,
+        .pViewports = &viewport,
+        .scissorCount = 1,
+        .pScissors = &scissor
+    };
+    VkPipelineRasterizationStateCreateInfo rasterizer{
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
+        .pNext = nullptr,
+        .flags = 0,
+        .depthClampEnable = VK_FALSE,
+        .rasterizerDiscardEnable = VK_FALSE,
+        .polygonMode = VK_POLYGON_MODE_FILL,
+        .cullMode = VK_CULL_MODE_NONE,
+        .frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE,
+        .depthBiasEnable = VK_FALSE,
+        .depthBiasConstantFactor = 0.0f,
+        .depthBiasClamp = 0.0f,
+        .depthBiasSlopeFactor = 0.0f,
+        .lineWidth = 1.0f
+    };
+    VkPipelineMultisampleStateCreateInfo multisampling{
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
+        .pNext = nullptr,
+        .flags = 0,
+        .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT,
+        .sampleShadingEnable = VK_FALSE,
+        .minSampleShading = 1.0f,
+        .pSampleMask = nullptr,
+        .alphaToCoverageEnable = VK_FALSE,
+        .alphaToOneEnable = VK_FALSE
+    };
+    VkPipelineColorBlendAttachmentState colorBlendAttachment{
+        .blendEnable = VK_FALSE,
+        .srcColorBlendFactor = VK_BLEND_FACTOR_ONE,
+        .dstColorBlendFactor = VK_BLEND_FACTOR_ZERO,
+        .colorBlendOp = VK_BLEND_OP_ADD,
+        .srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE,
+        .dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO,
+        .alphaBlendOp = VK_BLEND_OP_ADD,
+        .colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT
+    };
+    VkPipelineColorBlendStateCreateInfo colorBlending{
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
+        .pNext = nullptr,
+        .flags = 0,
+        .logicOpEnable = VK_FALSE,
+        .logicOp = VK_LOGIC_OP_COPY,
+        .attachmentCount = 1,
+        .pAttachments = &colorBlendAttachment,
+        .blendConstants = {0.0f, 0.0f, 0.0f, 0.0f}
+    };
+    VkGraphicsPipelineCreateInfo pipelineInfo{
+        .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
+        .pNext = nullptr,
+        .flags = 0,
+        .stageCount = 2,
+        .pStages = shaderStages,
+        .pVertexInputState = &vertexInputInfo,
+        .pInputAssemblyState = &inputAssembly,
+        .pTessellationState = nullptr,
+        .pViewportState = &viewportState,
+        .pRasterizationState = &rasterizer,
+        .pMultisampleState = &multisampling,
+        .pDepthStencilState = nullptr,
+        .pColorBlendState = &colorBlending,
+        .pDynamicState = nullptr,
+        .layout = pipelineLayout_,
+        .renderPass = renderPass_,
+        .subpass = 0,
+        .basePipelineHandle = VK_NULL_HANDLE,
+        .basePipelineIndex = -1
+    };
+    if (vkCreateGraphicsPipelines(context_.device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &graphicsPipeline_) != VK_SUCCESS) {
+        LOG_ERROR("Failed to create graphics pipeline", std::source_location::current());
+        throw std::runtime_error("Failed to create graphics pipeline");
+    }
+    vkDestroyShaderModule(context_.device, vertShaderModule, nullptr);
+    vkDestroyShaderModule(context_.device, fragShaderModule, nullptr);
+    LOG_INFO("Created graphics pipeline: {:p}", std::source_location::current(), static_cast<void*>(graphicsPipeline_));
 }
 
 void VulkanPipelineManager::cleanupPipeline() {
+    if (rayTracingPipeline_ != VK_NULL_HANDLE) {
+        LOG_INFO_CAT("Vulkan", "Destroying ray tracing pipeline: {:p}", std::source_location::current(), static_cast<void*>(rayTracingPipeline_));
+        vkDestroyPipeline(context_.device, rayTracingPipeline_, nullptr);
+        rayTracingPipeline_ = VK_NULL_HANDLE;
+    }
     if (graphicsPipeline_ != VK_NULL_HANDLE) {
         LOG_INFO_CAT("Vulkan", "Destroying graphics pipeline: {:p}", std::source_location::current(), static_cast<void*>(graphicsPipeline_));
         vkDestroyPipeline(context_.device, graphicsPipeline_, nullptr);
@@ -129,15 +291,20 @@ void VulkanPipelineManager::cleanupPipeline() {
         vkDestroyDescriptorSetLayout(context_.device, descriptorSetLayout_, nullptr);
         descriptorSetLayout_ = VK_NULL_HANDLE;
     }
-    if (vertexShaderModule_ != VK_NULL_HANDLE) {
-        LOG_INFO_CAT("Vulkan", "Destroying vertex shader module: {:p}", std::source_location::current(), static_cast<void*>(vertexShaderModule_));
-        vkDestroyShaderModule(context_.device, vertexShaderModule_, nullptr);
-        vertexShaderModule_ = VK_NULL_HANDLE;
+    if (rayGenShaderModule_ != VK_NULL_HANDLE) {
+        LOG_INFO_CAT("Vulkan", "Destroying ray gen shader module: {:p}", std::source_location::current(), static_cast<void*>(rayGenShaderModule_));
+        vkDestroyShaderModule(context_.device, rayGenShaderModule_, nullptr);
+        rayGenShaderModule_ = VK_NULL_HANDLE;
     }
-    if (fragmentShaderModule_ != VK_NULL_HANDLE) {
-        LOG_INFO_CAT("Vulkan", "Destroying fragment shader module: {:p}", std::source_location::current(), static_cast<void*>(fragmentShaderModule_));
-        vkDestroyShaderModule(context_.device, fragmentShaderModule_, nullptr);
-        fragmentShaderModule_ = VK_NULL_HANDLE;
+    if (missShaderModule_ != VK_NULL_HANDLE) {
+        LOG_INFO_CAT("Vulkan", "Destroying miss shader module: {:p}", std::source_location::current(), static_cast<void*>(missShaderModule_));
+        vkDestroyShaderModule(context_.device, missShaderModule_, nullptr);
+        missShaderModule_ = VK_NULL_HANDLE;
+    }
+    if (closestHitShaderModule_ != VK_NULL_HANDLE) {
+        LOG_INFO_CAT("Vulkan", "Destroying closest hit shader module: {:p}", std::source_location::current(), static_cast<void*>(closestHitShaderModule_));
+        vkDestroyShaderModule(context_.device, closestHitShaderModule_, nullptr);
+        closestHitShaderModule_ = VK_NULL_HANDLE;
     }
     LOG_DEBUG("Pipeline cleaned up", std::source_location::current());
 }
@@ -145,10 +312,11 @@ void VulkanPipelineManager::cleanupPipeline() {
 VulkanRenderer::VulkanRenderer(VkInstance instance, VkSurfaceKHR surface,
                               std::span<const glm::vec3> vertices, std::span<const uint32_t> indices,
                               int width, int height)
-    : context_{}, width_(width), height_(height) {
+    : context_{}, width_(width), height_(height), imageAvailableSemaphore_(VK_NULL_HANDLE),
+      renderFinishedSemaphore_(VK_NULL_HANDLE), inFlightFence_(VK_NULL_HANDLE) {
     context_.instance = instance;
     context_.surface = surface;
-    VulkanInitializer::initializeVulkan(context_, width_, height_);
+    VulkanInitializer::initializeVulkan(context_, width, height);
     swapchainManager_ = std::make_unique<VulkanSwapchainManager>(context_, surface);
     swapchainManager_->initializeSwapchain(width, height);
     context_.swapchain = swapchainManager_->getSwapchain();
@@ -165,7 +333,11 @@ VulkanRenderer::VulkanRenderer(VkInstance instance, VkSurfaceKHR surface,
     VulkanInitializer::createStorageImage(context_.device, context_.physicalDevice, context_.storageImage,
                                          context_.storageImageMemory, context_.storageImageView, width, height);
     VulkanInitializer::createAccelerationStructures(context_, vertices, indices);
-    VulkanInitializer::createRayTracingPipeline(context_);
+    VulkanInitializer::createRayTracingPipeline(context_, pipelineManager_->getPipelineLayout(),
+                                               pipelineManager_->getRayGenShaderModule(),
+                                               pipelineManager_->getMissShaderModule(),
+                                               pipelineManager_->getClosestHitShaderModule(),
+                                               context_.rayTracingPipeline);
     VulkanInitializer::createShaderBindingTable(context_);
     VulkanInitializer::createDescriptorPoolAndSet(context_.device, pipelineManager_->getDescriptorSetLayout(),
                                                  context_.descriptorPool, context_.descriptorSet, context_.sampler,
@@ -180,24 +352,30 @@ VulkanRenderer::~VulkanRenderer() {
     vkDeviceWaitIdle(context_.device);
     LOG_INFO("Destroying VulkanRenderer", std::source_location::current());
 
-    // Destroy pipeline manager first to clean up pipeline-related objects
     pipelineManager_.reset();
 
-    // Destroy synchronization objects
+    if (!commandBuffers_.empty() && context_.commandPool != VK_NULL_HANDLE) {
+        LOG_INFO_CAT("Vulkan", "Freeing command buffers", std::source_location::current());
+        vkFreeCommandBuffers(context_.device, context_.commandPool, static_cast<uint32_t>(commandBuffers_.size()), commandBuffers_.data());
+        commandBuffers_.clear();
+    }
+
     if (imageAvailableSemaphore_ != VK_NULL_HANDLE) {
         LOG_INFO_CAT("Vulkan", "Destroying image available semaphore: {:p}", std::source_location::current(), static_cast<void*>(imageAvailableSemaphore_));
         vkDestroySemaphore(context_.device, imageAvailableSemaphore_, nullptr);
+        imageAvailableSemaphore_ = VK_NULL_HANDLE;
     }
     if (renderFinishedSemaphore_ != VK_NULL_HANDLE) {
         LOG_INFO_CAT("Vulkan", "Destroying render finished semaphore: {:p}", std::source_location::current(), static_cast<void*>(renderFinishedSemaphore_));
         vkDestroySemaphore(context_.device, renderFinishedSemaphore_, nullptr);
+        renderFinishedSemaphore_ = VK_NULL_HANDLE;
     }
     if (inFlightFence_ != VK_NULL_HANDLE) {
         LOG_INFO_CAT("Vulkan", "Destroying in-flight fence: {:p}", std::source_location::current(), static_cast<void*>(inFlightFence_));
         vkDestroyFence(context_.device, inFlightFence_, nullptr);
+        inFlightFence_ = VK_NULL_HANDLE;
     }
 
-    // Destroy framebuffers
     for (auto framebuffer : framebuffers_) {
         if (framebuffer != VK_NULL_HANDLE) {
             LOG_INFO_CAT("Vulkan", "Destroying framebuffer: {:p}", std::source_location::current(), static_cast<void*>(framebuffer));
@@ -206,97 +384,105 @@ VulkanRenderer::~VulkanRenderer() {
     }
     framebuffers_.clear();
 
-    // Destroy swapchain manager (cleans up swapchain and image views)
     swapchainManager_.reset();
-
-    // Destroy buffer manager (cleans up vertex, index, and uniform buffers)
     bufferManager_.reset();
 
-    // Destroy command pool
     if (context_.commandPool != VK_NULL_HANDLE) {
         LOG_INFO_CAT("Vulkan", "Destroying command pool: {:p}", std::source_location::current(), static_cast<void*>(context_.commandPool));
         vkDestroyCommandPool(context_.device, context_.commandPool, nullptr);
+        context_.commandPool = VK_NULL_HANDLE;
     }
 
-    // Destroy storage image resources
     if (context_.storageImageView != VK_NULL_HANDLE) {
         LOG_INFO_CAT("Vulkan", "Destroying storage image view: {:p}", std::source_location::current(), static_cast<void*>(context_.storageImageView));
         vkDestroyImageView(context_.device, context_.storageImageView, nullptr);
+        context_.storageImageView = VK_NULL_HANDLE;
     }
     if (context_.storageImage != VK_NULL_HANDLE) {
         LOG_INFO_CAT("Vulkan", "Destroying storage image: {:p}", std::source_location::current(), static_cast<void*>(context_.storageImage));
         vkDestroyImage(context_.device, context_.storageImage, nullptr);
+        context_.storageImage = VK_NULL_HANDLE;
     }
     if (context_.storageImageMemory != VK_NULL_HANDLE) {
         LOG_INFO_CAT("Vulkan", "Freeing storage image memory: {:p}", std::source_location::current(), static_cast<void*>(context_.storageImageMemory));
         vkFreeMemory(context_.device, context_.storageImageMemory, nullptr);
+        context_.storageImageMemory = VK_NULL_HANDLE;
     }
 
-    // Destroy sampler
     if (context_.sampler != VK_NULL_HANDLE) {
         LOG_INFO_CAT("Vulkan", "Destroying sampler: {:p}", std::source_location::current(), static_cast<void*>(context_.sampler));
         vkDestroySampler(context_.device, context_.sampler, nullptr);
+        context_.sampler = VK_NULL_HANDLE;
     }
 
-    // Destroy descriptor pool
     if (context_.descriptorPool != VK_NULL_HANDLE) {
         LOG_INFO_CAT("Vulkan", "Destroying descriptor pool: {:p}", std::source_location::current(), static_cast<void*>(context_.descriptorPool));
         vkDestroyDescriptorPool(context_.device, context_.descriptorPool, nullptr);
+        context_.descriptorPool = VK_NULL_HANDLE;
     }
 
-    // Destroy acceleration structures
     auto vkDestroyAccelerationStructureKHR = (PFN_vkDestroyAccelerationStructureKHR)vkGetDeviceProcAddr(context_.device, "vkDestroyAccelerationStructureKHR");
     if (context_.topLevelAS != VK_NULL_HANDLE && vkDestroyAccelerationStructureKHR) {
         LOG_INFO_CAT("Vulkan", "Destroying top-level AS: {:p}", std::source_location::current(), static_cast<void*>(context_.topLevelAS));
         vkDestroyAccelerationStructureKHR(context_.device, context_.topLevelAS, nullptr);
+        context_.topLevelAS = VK_NULL_HANDLE;
     }
     if (context_.topLevelASBuffer != VK_NULL_HANDLE) {
         LOG_INFO_CAT("Vulkan", "Destroying top-level AS buffer: {:p}", std::source_location::current(), static_cast<void*>(context_.topLevelASBuffer));
         vkDestroyBuffer(context_.device, context_.topLevelASBuffer, nullptr);
+        context_.topLevelASBuffer = VK_NULL_HANDLE;
     }
     if (context_.topLevelASBufferMemory != VK_NULL_HANDLE) {
         LOG_INFO_CAT("Vulkan", "Freeing top-level AS buffer memory: {:p}", std::source_location::current(), static_cast<void*>(context_.topLevelASBufferMemory));
         vkFreeMemory(context_.device, context_.topLevelASBufferMemory, nullptr);
+        context_.topLevelASBufferMemory = VK_NULL_HANDLE;
     }
     if (context_.bottomLevelAS != VK_NULL_HANDLE && vkDestroyAccelerationStructureKHR) {
         LOG_INFO_CAT("Vulkan", "Destroying bottom-level AS: {:p}", std::source_location::current(), static_cast<void*>(context_.bottomLevelAS));
         vkDestroyAccelerationStructureKHR(context_.device, context_.bottomLevelAS, nullptr);
+        context_.bottomLevelAS = VK_NULL_HANDLE;
     }
     if (context_.bottomLevelASBuffer != VK_NULL_HANDLE) {
         LOG_INFO_CAT("Vulkan", "Destroying bottom-level AS buffer: {:p}", std::source_location::current(), static_cast<void*>(context_.bottomLevelASBuffer));
         vkDestroyBuffer(context_.device, context_.bottomLevelASBuffer, nullptr);
+        context_.bottomLevelASBuffer = VK_NULL_HANDLE;
     }
     if (context_.bottomLevelASBufferMemory != VK_NULL_HANDLE) {
         LOG_INFO_CAT("Vulkan", "Freeing bottom-level AS buffer memory: {:p}", std::source_location::current(), static_cast<void*>(context_.bottomLevelASBufferMemory));
         vkFreeMemory(context_.device, context_.bottomLevelASBufferMemory, nullptr);
+        context_.bottomLevelASBufferMemory = VK_NULL_HANDLE;
     }
 
-    // Destroy ray-tracing pipeline resources
     if (context_.rayTracingPipeline != VK_NULL_HANDLE) {
         LOG_INFO_CAT("Vulkan", "Destroying ray-tracing pipeline: {:p}", std::source_location::current(), static_cast<void*>(context_.rayTracingPipeline));
         vkDestroyPipeline(context_.device, context_.rayTracingPipeline, nullptr);
+        context_.rayTracingPipeline = VK_NULL_HANDLE;
     }
     if (context_.rayTracingPipelineLayout != VK_NULL_HANDLE) {
         LOG_INFO_CAT("Vulkan", "Destroying ray-tracing pipeline layout: {:p}", std::source_location::current(), static_cast<void*>(context_.rayTracingPipelineLayout));
         vkDestroyPipelineLayout(context_.device, context_.rayTracingPipelineLayout, nullptr);
+        context_.rayTracingPipelineLayout = VK_NULL_HANDLE;
     }
     if (context_.rayTracingDescriptorSetLayout != VK_NULL_HANDLE) {
         LOG_INFO_CAT("Vulkan", "Destroying ray-tracing descriptor set layout: {:p}", std::source_location::current(), static_cast<void*>(context_.rayTracingDescriptorSetLayout));
         vkDestroyDescriptorSetLayout(context_.device, context_.rayTracingDescriptorSetLayout, nullptr);
+        context_.rayTracingDescriptorSetLayout = VK_NULL_HANDLE;
     }
     if (context_.shaderBindingTable != VK_NULL_HANDLE) {
         LOG_INFO_CAT("Vulkan", "Destroying shader binding table: {:p}", std::source_location::current(), static_cast<void*>(context_.shaderBindingTable));
         vkDestroyBuffer(context_.device, context_.shaderBindingTable, nullptr);
+        context_.shaderBindingTable = VK_NULL_HANDLE;
     }
     if (context_.shaderBindingTableMemory != VK_NULL_HANDLE) {
         LOG_INFO_CAT("Vulkan", "Freeing shader binding table memory: {:p}", std::source_location::current(), static_cast<void*>(context_.shaderBindingTableMemory));
         vkFreeMemory(context_.device, context_.shaderBindingTableMemory, nullptr);
+        context_.shaderBindingTableMemory = VK_NULL_HANDLE;
     }
 
-    // Destroy device last
     if (context_.device != VK_NULL_HANDLE) {
         LOG_INFO_CAT("Vulkan", "Destroying device: {:p}", std::source_location::current(), static_cast<void*>(context_.device));
         vkDestroyDevice(context_.device, nullptr);
+        context_.device = VK_NULL_HANDLE;
     }
 }
 
@@ -375,6 +561,7 @@ void VulkanRenderer::renderFrame(const AMOURANTH& camera) {
         LOG_ERROR("Failed to acquire swapchain image: {}", std::source_location::current(), result);
         throw std::runtime_error("Failed to acquire swapchain image");
     }
+
     void* data;
     UE::UniformBufferObject ubo{
         .model = glm::mat4(1.0f),
@@ -386,6 +573,7 @@ void VulkanRenderer::renderFrame(const AMOURANTH& camera) {
     memcpy(data, &ubo, sizeof(UE::UniformBufferObject));
     vkUnmapMemory(context_.device, bufferManager_->getUniformBufferMemory(imageIndex));
     LOG_DEBUG("Updated uniform buffer for image {}", std::source_location::current(), imageIndex);
+
     VkCommandBuffer commandBuffer = commandBuffers_[imageIndex];
     vkResetCommandBuffer(commandBuffer, 0);
     VkCommandBufferBeginInfo beginInfo{
@@ -398,56 +586,125 @@ void VulkanRenderer::renderFrame(const AMOURANTH& camera) {
         LOG_ERROR("Failed to begin command buffer: {:p}", std::source_location::current(), static_cast<void*>(commandBuffer));
         throw std::runtime_error("Failed to begin command buffer");
     }
-    VkClearValue clearColor = {{{0.0f, 0.0f, 0.0f, 1.0f}}};
-    VkRenderPassBeginInfo renderPassInfo{
-        .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
+
+    VkImageMemoryBarrier imageBarrier{
+        .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
         .pNext = nullptr,
-        .renderPass = pipelineManager_->getRenderPass(),
-        .framebuffer = framebuffers_[imageIndex],
-        .renderArea = {{0, 0}, swapchainManager_->getSwapchainExtent()},
-        .clearValueCount = 1,
-        .pClearValues = &clearColor
+        .srcAccessMask = 0,
+        .dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT,
+        .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+        .newLayout = VK_IMAGE_LAYOUT_GENERAL,
+        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .image = context_.storageImage,
+        .subresourceRange = {
+            .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+            .baseMipLevel = 0,
+            .levelCount = 1,
+            .baseArrayLayer = 0,
+            .layerCount = 1
+        }
     };
+    vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR,
+                         0, 0, nullptr, 0, nullptr, 1, &imageBarrier);
+
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, pipelineManager_->getRayTracingPipeline());
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, pipelineManager_->getPipelineLayout(),
+                            0, 1, &context_.descriptorSet, 0, nullptr);
+
+    VkStridedDeviceAddressRegionKHR raygenSbt{}, missSbt{}, hitSbt{}, callableSbt{};
+    raygenSbt.deviceAddress = context_.raygenSbtAddress;
+    raygenSbt.stride = context_.sbtRecordSize;
+    raygenSbt.size = context_.sbtRecordSize;
+    missSbt.deviceAddress = context_.missSbtAddress;
+    missSbt.stride = context_.sbtRecordSize;
+    missSbt.size = context_.sbtRecordSize;
+    hitSbt.deviceAddress = context_.hitSbtAddress;
+    hitSbt.stride = context_.sbtRecordSize;
+    hitSbt.size = context_.sbtRecordSize;
+    callableSbt.deviceAddress = 0;
+    callableSbt.stride = 0;
+    callableSbt.size = 0;
+
+    auto vkCmdTraceRaysKHR = (PFN_vkCmdTraceRaysKHR)vkGetDeviceProcAddr(context_.device, "vkCmdTraceRaysKHR");
+    if (!vkCmdTraceRaysKHR) {
+        LOG_ERROR("Failed to get vkCmdTraceRaysKHR function pointer", std::source_location::current());
+        throw std::runtime_error("Failed to get vkCmdTraceRaysKHR");
+    }
+    vkCmdTraceRaysKHR(commandBuffer, &raygenSbt, &missSbt, &hitSbt, &callableSbt,
+                      swapchainManager_->getSwapchainExtent().width, swapchainManager_->getSwapchainExtent().height, 1);
+
+    VkImageMemoryBarrier storageToShaderReadBarrier{
+        .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+        .pNext = nullptr,
+        .srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT,
+        .dstAccessMask = VK_ACCESS_SHADER_READ_BIT,
+        .oldLayout = VK_IMAGE_LAYOUT_GENERAL,
+        .newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .image = context_.storageImage,
+        .subresourceRange = {
+            .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+            .baseMipLevel = 0,
+            .levelCount = 1,
+            .baseArrayLayer = 0,
+            .layerCount = 1
+        }
+    };
+    vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                         0, 0, nullptr, 0, nullptr, 1, &storageToShaderReadBarrier);
+
+    VkClearValue clearColor = {{{0.0f, 0.0f, 0.0f, 1.0f}}};
+	VkRenderPassBeginInfo renderPassInfo{
+    	.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
+    	.pNext = nullptr,
+    	.renderPass = pipelineManager_->getRenderPass(),
+    	.framebuffer = framebuffers_[imageIndex],
+    	.renderArea = {{0, 0}, swapchainManager_->getSwapchainExtent()},
+    	.clearValueCount = 1,
+    	.pClearValues = &clearColor
+	};
     vkCmdBeginRenderPass(commandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineManager_->getGraphicsPipeline());
-    VkBuffer vertexBuffers[] = {bufferManager_->getVertexBuffer()};
-    VkDeviceSize offsets[] = {0};
-    vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
-    vkCmdBindIndexBuffer(commandBuffer, bufferManager_->getIndexBuffer(), 0, VK_INDEX_TYPE_UINT32);
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineManager_->getPipelineLayout(),
                             0, 1, &context_.descriptorSet, 0, nullptr);
-    vkCmdDrawIndexed(commandBuffer, bufferManager_->getIndexCount(), 1, 0, 0, 0);
+    vkCmdDraw(commandBuffer, 3, 1, 0, 0);
     vkCmdEndRenderPass(commandBuffer);
+
     if (vkEndCommandBuffer(commandBuffer) != VK_SUCCESS) {
         LOG_ERROR("Failed to end command buffer: {:p}", std::source_location::current(), static_cast<void*>(commandBuffer));
         throw std::runtime_error("Failed to end command buffer");
     }
+
     VkPipelineStageFlags waitStages = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    VkSubmitInfo submitInfo{
-        .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
-        .pNext = nullptr,
-        .waitSemaphoreCount = 1,
-        .pWaitSemaphores = &imageAvailableSemaphore_,
-        .pWaitDstStageMask = &waitStages,
-        .commandBufferCount = 1,
-        .pCommandBuffers = &commandBuffer,
-        .signalSemaphoreCount = 1,
-        .pSignalSemaphores = &renderFinishedSemaphore_
-    };
+	VkSubmitInfo submitInfo{
+    	.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+    	.pNext = nullptr,
+    	.waitSemaphoreCount = 1,
+    	.pWaitSemaphores = &imageAvailableSemaphore_,
+    	.pWaitDstStageMask = &waitStages,
+    	.commandBufferCount = 1,
+    	.pCommandBuffers = &commandBuffer,
+    	.signalSemaphoreCount = 1,
+    	.pSignalSemaphores = &renderFinishedSemaphore_
+	};
     if (vkQueueSubmit(context_.graphicsQueue, 1, &submitInfo, inFlightFence_) != VK_SUCCESS) {
         LOG_ERROR("Failed to submit draw command buffer: {:p}", std::source_location::current(), static_cast<void*>(context_.graphicsQueue));
         throw std::runtime_error("Failed to submit draw command buffer");
     }
-    VkPresentInfoKHR presentInfo{
-        .sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
-        .pNext = nullptr,
-        .waitSemaphoreCount = 1,
-        .pWaitSemaphores = &renderFinishedSemaphore_,
-        .swapchainCount = 1,
-        .pSwapchains = &swapchainManager_->getSwapchain(),
-        .pImageIndices = &imageIndex,
-        .pResults = nullptr
-    };
+
+    VkSwapchainKHR swapchain = swapchainManager_->getSwapchain();
+	VkPresentInfoKHR presentInfo{
+    	.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
+    	.pNext = nullptr,
+    	.waitSemaphoreCount = 1,
+    	.pWaitSemaphores = &renderFinishedSemaphore_,
+    	.swapchainCount = 1,
+    	.pSwapchains = &swapchain,
+    	.pImageIndices = &imageIndex,
+    	.pResults = nullptr
+	};
     result = vkQueuePresentKHR(context_.presentQueue, &presentInfo);
     if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
         handleResize(width_, height_);
@@ -485,7 +742,10 @@ VkDeviceMemory VulkanRenderer::getIndexBufferMemory() const {
 
 namespace VulkanInitializer {
 
-void initializeVulkan(VulkanContext& context, [[maybe_unused]] int width, [[maybe_unused]] int height) {
+void initializeVulkan(VulkanContext& context, int width, int height) {
+    (void)width;
+    (void)height;
+
     uint32_t deviceCount = 0;
     vkEnumeratePhysicalDevices(context.instance, &deviceCount, nullptr);
     if (deviceCount == 0) {
@@ -494,24 +754,82 @@ void initializeVulkan(VulkanContext& context, [[maybe_unused]] int width, [[mayb
     }
     std::vector<VkPhysicalDevice> devices(deviceCount);
     vkEnumeratePhysicalDevices(context.instance, &deviceCount, devices.data());
-    context.physicalDevice = devices[0];
+
+    context.physicalDevice = VK_NULL_HANDLE;
+    const char* requiredExtensions[] = {
+        VK_KHR_SWAPCHAIN_EXTENSION_NAME,
+        VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,
+        VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME,
+        VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME,
+        VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME
+    };
+    constexpr uint32_t requiredExtensionCount = 5;
+    for (const auto& device : devices) {
+        uint32_t extensionCount;
+        vkEnumerateDeviceExtensionProperties(device, nullptr, &extensionCount, nullptr);
+        std::vector<VkExtensionProperties> availableExtensions(extensionCount);
+        vkEnumerateDeviceExtensionProperties(device, nullptr, &extensionCount, availableExtensions.data());
+        bool hasAllExtensions = true;
+        for (uint32_t i = 0; i < requiredExtensionCount; ++i) {
+            bool found = false;
+            for (const auto& ext : availableExtensions) {
+                if (strcmp(ext.extensionName, requiredExtensions[i]) == 0) {
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) {
+                hasAllExtensions = false;
+                break;
+            }
+        }
+        if (hasAllExtensions) {
+            context.physicalDevice = device;
+            break;
+        }
+    }
+    if (context.physicalDevice == VK_NULL_HANDLE) {
+        LOG_ERROR("No physical device with required ray tracing extensions found", std::source_location::current());
+        throw std::runtime_error("No physical device with required ray tracing extensions found");
+    }
+
     VkPhysicalDeviceProperties props;
     vkGetPhysicalDeviceProperties(context.physicalDevice, &props);
     LOG_INFO("Selected physical device: {}", std::source_location::current(), props.deviceName);
+
     uint32_t queueFamilyCount = 0;
     vkGetPhysicalDeviceQueueFamilyProperties(context.physicalDevice, &queueFamilyCount, nullptr);
     std::vector<VkQueueFamilyProperties> queueFamilies(queueFamilyCount);
     vkGetPhysicalDeviceQueueFamilyProperties(context.physicalDevice, &queueFamilyCount, queueFamilies.data());
+
+    context.graphicsQueueFamilyIndex = UINT32_MAX;
+    context.presentQueueFamilyIndex = UINT32_MAX;
     for (uint32_t i = 0; i < queueFamilyCount; ++i) {
-        if (queueFamilies[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) context.graphicsQueueFamilyIndex = i;
+        if (queueFamilies[i].queueFlags & (VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT)) {
+            context.graphicsQueueFamilyIndex = i;
+        }
         VkBool32 presentSupport = VK_FALSE;
         vkGetPhysicalDeviceSurfaceSupportKHR(context.physicalDevice, i, context.surface, &presentSupport);
-        if (presentSupport) context.presentQueueFamilyIndex = i;
+        if (presentSupport) {
+            context.presentQueueFamilyIndex = i;
+        }
+        if (context.graphicsQueueFamilyIndex != UINT32_MAX && context.presentQueueFamilyIndex != UINT32_MAX) {
+            break;
+        }
     }
-    LOG_INFO("Graphics queue family: {}, present: {}", std::source_location::current(),
+    if (context.graphicsQueueFamilyIndex == UINT32_MAX) {
+        LOG_ERROR("Failed to find graphics or compute queue family", std::source_location::current());
+        throw std::runtime_error("Failed to find graphics or compute queue family");
+    }
+    if (context.presentQueueFamilyIndex == UINT32_MAX) {
+        LOG_ERROR("Failed to find present queue family", std::source_location::current());
+        throw std::runtime_error("Failed to find present queue family");
+    }
+    LOG_INFO("Graphics queue family: {}, present queue family: {}", std::source_location::current(),
              context.graphicsQueueFamilyIndex, context.presentQueueFamilyIndex);
+
     float queuePriority = 1.0f;
-    VkDeviceQueueCreateInfo queueCreateInfos[] = {
+    VkDeviceQueueCreateInfo queueCreateInfos[2] = {
         {
             .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
             .pNext = nullptr,
@@ -529,6 +847,8 @@ void initializeVulkan(VulkanContext& context, [[maybe_unused]] int width, [[mayb
             .pQueuePriorities = &queuePriority
         }
     };
+    uint32_t queueCreateInfoCount = (context.graphicsQueueFamilyIndex == context.presentQueueFamilyIndex) ? 1 : 2;
+
     VkPhysicalDeviceFeatures deviceFeatures{};
     VkPhysicalDeviceBufferDeviceAddressFeaturesKHR bufferDeviceAddressFeatures{
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_BUFFER_DEVICE_ADDRESS_FEATURES_KHR,
@@ -555,6 +875,7 @@ void initializeVulkan(VulkanContext& context, [[maybe_unused]] int width, [[mayb
         .rayTracingPipelineTraceRaysIndirect = VK_FALSE,
         .rayTraversalPrimitiveCulling = VK_FALSE
     };
+
     const char* deviceExtensions[] = {
         VK_KHR_SWAPCHAIN_EXTENSION_NAME,
         VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,
@@ -562,15 +883,16 @@ void initializeVulkan(VulkanContext& context, [[maybe_unused]] int width, [[mayb
         VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME,
         VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME
     };
+
     VkDeviceCreateInfo deviceCreateInfo{
         .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
         .pNext = &rtPipelineFeatures,
         .flags = 0,
-        .queueCreateInfoCount = static_cast<uint32_t>(context.graphicsQueueFamilyIndex == context.presentQueueFamilyIndex ? 1 : 2),
+        .queueCreateInfoCount = queueCreateInfoCount,
         .pQueueCreateInfos = queueCreateInfos,
         .enabledLayerCount = 0,
         .ppEnabledLayerNames = nullptr,
-        .enabledExtensionCount = 5,
+        .enabledExtensionCount = requiredExtensionCount,
         .ppEnabledExtensionNames = deviceExtensions,
         .pEnabledFeatures = &deviceFeatures
     };
@@ -579,10 +901,12 @@ void initializeVulkan(VulkanContext& context, [[maybe_unused]] int width, [[mayb
         throw std::runtime_error("Failed to create logical device");
     }
     LOG_INFO("Created logical device: {:p}", std::source_location::current(), static_cast<void*>(context.device));
+
     vkGetDeviceQueue(context.device, context.graphicsQueueFamilyIndex, 0, &context.graphicsQueue);
     vkGetDeviceQueue(context.device, context.presentQueueFamilyIndex, 0, &context.presentQueue);
     LOG_INFO("Graphics queue: {:p}, present queue: {:p}", std::source_location::current(),
              static_cast<void*>(context.graphicsQueue), static_cast<void*>(context.presentQueue));
+
     VkCommandPoolCreateInfo poolInfo{
         .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
         .pNext = nullptr,
@@ -594,6 +918,7 @@ void initializeVulkan(VulkanContext& context, [[maybe_unused]] int width, [[mayb
         throw std::runtime_error("Failed to create command pool");
     }
     LOG_INFO("Created command pool: {:p}", std::source_location::current(), static_cast<void*>(context.commandPool));
+
     vkGetPhysicalDeviceMemoryProperties(context.physicalDevice, &context.memoryProperties);
 }
 
@@ -700,6 +1025,11 @@ void createImageViews(VulkanContext& context) {
 }
 
 VkShaderModule loadShader(VkDevice device, const std::string& filepath) {
+    std::filesystem::path shaderPath(filepath);
+    if (!std::filesystem::exists(shaderPath)) {
+        LOG_ERROR("Shader file does not exist: {}", std::source_location::current(), filepath);
+        throw std::runtime_error("Shader file does not exist: " + filepath);
+    }
     std::ifstream file(filepath, std::ios::binary | std::ios::ate);
     if (!file.is_open()) {
         LOG_ERROR("Failed to open shader file: {}", std::source_location::current(), filepath);
@@ -791,14 +1121,14 @@ void createDescriptorSetLayout(VkDevice device, VkDescriptorSetLayout& descripto
             .binding = 0,
             .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
             .descriptorCount = 1,
-            .stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_RAYGEN_BIT_KHR,
+            .stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_FRAGMENT_BIT,
             .pImmutableSamplers = nullptr
         },
         {
             .binding = 1,
             .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
             .descriptorCount = 1,
-            .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_RAYGEN_BIT_KHR,
+            .stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_FRAGMENT_BIT,
             .pImmutableSamplers = nullptr
         },
         {
@@ -821,151 +1151,6 @@ void createDescriptorSetLayout(VkDevice device, VkDescriptorSetLayout& descripto
         throw std::runtime_error("Failed to create descriptor set layout");
     }
     LOG_INFO("Created descriptor set layout: {:p}", std::source_location::current(), static_cast<void*>(descriptorSetLayout));
-}
-
-void createGraphicsPipeline(VkDevice device, VkRenderPass renderPass, VkPipeline& pipeline,
-                           VkPipelineLayout& pipelineLayout, [[maybe_unused]] VkDescriptorSetLayout& descriptorSetLayout,
-                           int width, int height, VkShaderModule& vertexShaderModule, VkShaderModule& fragmentShaderModule) {
-    VkPipelineShaderStageCreateInfo shaderStages[] = {
-        {
-            .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-            .pNext = nullptr,
-            .flags = 0,
-            .stage = VK_SHADER_STAGE_VERTEX_BIT,
-            .module = vertexShaderModule,
-            .pName = "main",
-            .pSpecializationInfo = nullptr
-        },
-        {
-            .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-            .pNext = nullptr,
-            .flags = 0,
-            .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
-            .module = fragmentShaderModule,
-            .pName = "main",
-            .pSpecializationInfo = nullptr
-        }
-    };
-    VkVertexInputBindingDescription bindingDescription{
-        .binding = 0,
-        .stride = sizeof(glm::vec3),
-        .inputRate = VK_VERTEX_INPUT_RATE_VERTEX
-    };
-    VkVertexInputAttributeDescription attributeDescription{
-        .location = 0,
-        .binding = 0,
-        .format = VK_FORMAT_R32G32B32_SFLOAT,
-        .offset = 0
-    };
-    VkPipelineVertexInputStateCreateInfo vertexInputInfo{
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
-        .pNext = nullptr,
-        .flags = 0,
-        .vertexBindingDescriptionCount = 1,
-        .pVertexBindingDescriptions = &bindingDescription,
-        .vertexAttributeDescriptionCount = 1,
-        .pVertexAttributeDescriptions = &attributeDescription
-    };
-    VkPipelineInputAssemblyStateCreateInfo inputAssembly{
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
-        .pNext = nullptr,
-        .flags = 0,
-        .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
-        .primitiveRestartEnable = VK_FALSE
-    };
-    VkViewport viewport{
-        .x = 0.0f,
-        .y = 0.0f,
-        .width = static_cast<float>(width),
-        .height = static_cast<float>(height),
-        .minDepth = 0.0f,
-        .maxDepth = 1.0f
-    };
-    VkRect2D scissor{
-        .offset = {0, 0},
-        .extent = {static_cast<uint32_t>(width), static_cast<uint32_t>(height)}
-    };
-    VkPipelineViewportStateCreateInfo viewportState{
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
-        .pNext = nullptr,
-        .flags = 0,
-        .viewportCount = 1,
-        .pViewports = &viewport,
-        .scissorCount = 1,
-        .pScissors = &scissor
-    };
-    VkPipelineRasterizationStateCreateInfo rasterizer{
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
-        .pNext = nullptr,
-        .flags = 0,
-        .depthClampEnable = VK_FALSE,
-        .rasterizerDiscardEnable = VK_FALSE,
-        .polygonMode = VK_POLYGON_MODE_FILL,
-        .cullMode = VK_CULL_MODE_BACK_BIT,
-        .frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE,
-        .depthBiasEnable = VK_FALSE,
-        .depthBiasConstantFactor = 0.0f,
-        .depthBiasClamp = 0.0f,
-        .depthBiasSlopeFactor = 0.0f,
-        .lineWidth = 1.0f
-    };
-    VkPipelineMultisampleStateCreateInfo multisampling{
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
-        .pNext = nullptr,
-        .flags = 0,
-        .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT,
-        .sampleShadingEnable = VK_FALSE,
-        .minSampleShading = 1.0f,
-        .pSampleMask = nullptr,
-        .alphaToCoverageEnable = VK_FALSE,
-        .alphaToOneEnable = VK_FALSE
-    };
-    VkPipelineColorBlendAttachmentState colorBlendAttachment{
-        .blendEnable = VK_FALSE,
-        .srcColorBlendFactor = VK_BLEND_FACTOR_ONE,
-        .dstColorBlendFactor = VK_BLEND_FACTOR_ZERO,
-        .colorBlendOp = VK_BLEND_OP_ADD,
-        .srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE,
-        .dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO,
-        .alphaBlendOp = VK_BLEND_OP_ADD,
-        .colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT
-    };
-    VkPipelineColorBlendStateCreateInfo colorBlending{
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
-        .pNext = nullptr,
-        .flags = 0,
-        .logicOpEnable = VK_FALSE,
-        .logicOp = VK_LOGIC_OP_COPY,
-        .attachmentCount = 1,
-        .pAttachments = &colorBlendAttachment,
-        .blendConstants = {0.0f, 0.0f, 0.0f, 0.0f}
-    };
-    VkGraphicsPipelineCreateInfo pipelineInfo{
-        .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
-        .pNext = nullptr,
-        .flags = 0,
-        .stageCount = 2,
-        .pStages = shaderStages,
-        .pVertexInputState = &vertexInputInfo,
-        .pInputAssemblyState = &inputAssembly,
-        .pTessellationState = nullptr,
-        .pViewportState = &viewportState,
-        .pRasterizationState = &rasterizer,
-        .pMultisampleState = &multisampling,
-        .pDepthStencilState = nullptr,
-        .pColorBlendState = &colorBlending,
-        .pDynamicState = nullptr,
-        .layout = pipelineLayout,
-        .renderPass = renderPass,
-        .subpass = 0,
-        .basePipelineHandle = VK_NULL_HANDLE,
-        .basePipelineIndex = -1
-    };
-    if (vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &pipeline) != VK_SUCCESS) {
-        LOG_ERROR("Failed to create graphics pipeline", std::source_location::current());
-        throw std::runtime_error("Failed to create graphics pipeline");
-    }
-    LOG_INFO("Created graphics pipeline: {:p}", std::source_location::current(), static_cast<void*>(pipeline));
 }
 
 void createDescriptorPoolAndSet(VkDevice device, VkDescriptorSetLayout descriptorSetLayout,
@@ -1099,7 +1284,7 @@ void createStorageImage(VkDevice device, VkPhysicalDevice physicalDevice, VkImag
         .arrayLayers = 1,
         .samples = VK_SAMPLE_COUNT_1_BIT,
         .tiling = VK_IMAGE_TILING_OPTIMAL,
-        .usage = VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+        .usage = VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
         .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
         .queueFamilyIndexCount = 0,
         .pQueueFamilyIndices = nullptr,
