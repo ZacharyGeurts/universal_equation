@@ -86,14 +86,19 @@ void VulkanPipelineManager::createRenderPass() {
 }
 
 void VulkanPipelineManager::createPipelineLayout() {
+    VkPushConstantRange pushConstantRange{
+        .stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR,
+        .offset = 0,
+        .size = sizeof(int) // For uMode
+    };
     VkPipelineLayoutCreateInfo layoutInfo{
         .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
         .pNext = nullptr,
         .flags = 0,
         .setLayoutCount = 1,
         .pSetLayouts = &descriptorSetLayout_,
-        .pushConstantRangeCount = 0,
-        .pPushConstantRanges = nullptr
+        .pushConstantRangeCount = 1,
+        .pPushConstantRanges = &pushConstantRange
     };
     if (vkCreatePipelineLayout(context_.device, &layoutInfo, nullptr, &pipelineLayout_) != VK_SUCCESS) {
         LOG_ERROR("Failed to create pipeline layout", std::source_location::current());
@@ -155,14 +160,25 @@ void VulkanPipelineManager::createGraphicsPipeline() {
         }
     };
 
+    VkVertexInputBindingDescription bindingDescription{
+        .binding = 0,
+        .stride = sizeof(glm::vec3),
+        .inputRate = VK_VERTEX_INPUT_RATE_VERTEX
+    };
+    VkVertexInputAttributeDescription attributeDescription{
+        .location = 0,
+        .binding = 0,
+        .format = VK_FORMAT_R32G32B32_SFLOAT,
+        .offset = 0
+    };
     VkPipelineVertexInputStateCreateInfo vertexInputInfo{
         .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
         .pNext = nullptr,
         .flags = 0,
-        .vertexBindingDescriptionCount = 0,
-        .pVertexBindingDescriptions = nullptr,
-        .vertexAttributeDescriptionCount = 0,
-        .pVertexAttributeDescriptions = nullptr
+        .vertexBindingDescriptionCount = 1,
+        .pVertexBindingDescriptions = &bindingDescription,
+        .vertexAttributeDescriptionCount = 1,
+        .pVertexAttributeDescriptions = &attributeDescription
     };
     VkPipelineInputAssemblyStateCreateInfo inputAssembly{
         .sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
@@ -612,6 +628,10 @@ void VulkanRenderer::renderFrame(const AMOURANTH& camera) {
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, pipelineManager_->getPipelineLayout(),
                             0, 1, &context_.descriptorSet, 0, nullptr);
 
+    int mode = camera.getMode();
+    vkCmdPushConstants(commandBuffer, pipelineManager_->getPipelineLayout(), 
+                       VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, 0, sizeof(int), &mode);
+
     VkStridedDeviceAddressRegionKHR raygenSbt{}, missSbt{}, hitSbt{}, callableSbt{};
     raygenSbt.deviceAddress = context_.raygenSbtAddress;
     raygenSbt.stride = context_.sbtRecordSize;
@@ -656,20 +676,24 @@ void VulkanRenderer::renderFrame(const AMOURANTH& camera) {
                          0, 0, nullptr, 0, nullptr, 1, &storageToShaderReadBarrier);
 
     VkClearValue clearColor = {{{0.0f, 0.0f, 0.0f, 1.0f}}};
-	VkRenderPassBeginInfo renderPassInfo{
-    	.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
-    	.pNext = nullptr,
-    	.renderPass = pipelineManager_->getRenderPass(),
-    	.framebuffer = framebuffers_[imageIndex],
-    	.renderArea = {{0, 0}, swapchainManager_->getSwapchainExtent()},
-    	.clearValueCount = 1,
-    	.pClearValues = &clearColor
-	};
+    VkRenderPassBeginInfo renderPassInfo{
+        .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
+        .pNext = nullptr,
+        .renderPass = pipelineManager_->getRenderPass(),
+        .framebuffer = framebuffers_[imageIndex],
+        .renderArea = {{0, 0}, swapchainManager_->getSwapchainExtent()},
+        .clearValueCount = 1,
+        .pClearValues = &clearColor
+    };
     vkCmdBeginRenderPass(commandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineManager_->getGraphicsPipeline());
+    VkBuffer vertexBuffers[] = {context_.vertexBuffer_};
+    VkDeviceSize offsets[] = {0};
+    vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
+    vkCmdBindIndexBuffer(commandBuffer, context_.indexBuffer_, 0, VK_INDEX_TYPE_UINT32);
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineManager_->getPipelineLayout(),
                             0, 1, &context_.descriptorSet, 0, nullptr);
-    vkCmdDraw(commandBuffer, 3, 1, 0, 0);
+    vkCmdDrawIndexed(commandBuffer, bufferManager_->getIndexCount(), 1, 0, 0, 0);
     vkCmdEndRenderPass(commandBuffer);
 
     if (vkEndCommandBuffer(commandBuffer) != VK_SUCCESS) {
@@ -678,33 +702,33 @@ void VulkanRenderer::renderFrame(const AMOURANTH& camera) {
     }
 
     VkPipelineStageFlags waitStages = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-	VkSubmitInfo submitInfo{
-    	.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
-    	.pNext = nullptr,
-    	.waitSemaphoreCount = 1,
-    	.pWaitSemaphores = &imageAvailableSemaphore_,
-    	.pWaitDstStageMask = &waitStages,
-    	.commandBufferCount = 1,
-    	.pCommandBuffers = &commandBuffer,
-    	.signalSemaphoreCount = 1,
-    	.pSignalSemaphores = &renderFinishedSemaphore_
-	};
+    VkSubmitInfo submitInfo{
+        .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+        .pNext = nullptr,
+        .waitSemaphoreCount = 1,
+        .pWaitSemaphores = &imageAvailableSemaphore_,
+        .pWaitDstStageMask = &waitStages,
+        .commandBufferCount = 1,
+        .pCommandBuffers = &commandBuffer,
+        .signalSemaphoreCount = 1,
+        .pSignalSemaphores = &renderFinishedSemaphore_
+    };
     if (vkQueueSubmit(context_.graphicsQueue, 1, &submitInfo, inFlightFence_) != VK_SUCCESS) {
         LOG_ERROR("Failed to submit draw command buffer: {:p}", std::source_location::current(), static_cast<void*>(context_.graphicsQueue));
         throw std::runtime_error("Failed to submit draw command buffer");
     }
 
     VkSwapchainKHR swapchain = swapchainManager_->getSwapchain();
-	VkPresentInfoKHR presentInfo{
-    	.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
-    	.pNext = nullptr,
-    	.waitSemaphoreCount = 1,
-    	.pWaitSemaphores = &renderFinishedSemaphore_,
-    	.swapchainCount = 1,
-    	.pSwapchains = &swapchain,
-    	.pImageIndices = &imageIndex,
-    	.pResults = nullptr
-	};
+    VkPresentInfoKHR presentInfo{
+        .sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
+        .pNext = nullptr,
+        .waitSemaphoreCount = 1,
+        .pWaitSemaphores = &renderFinishedSemaphore_,
+        .swapchainCount = 1,
+        .pSwapchains = &swapchain,
+        .pImageIndices = &imageIndex,
+        .pResults = nullptr
+    };
     result = vkQueuePresentKHR(context_.presentQueue, &presentInfo);
     if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
         handleResize(width_, height_);
@@ -892,7 +916,7 @@ void initializeVulkan(VulkanContext& context, int width, int height) {
         .pQueueCreateInfos = queueCreateInfos,
         .enabledLayerCount = 0,
         .ppEnabledLayerNames = nullptr,
-        .enabledExtensionCount = requiredExtensionCount,
+        .enabledExtensionCount = 5,
         .ppEnabledExtensionNames = deviceExtensions,
         .pEnabledFeatures = &deviceFeatures
     };
@@ -1116,34 +1140,40 @@ void createRenderPass(VkDevice device, VkRenderPass& renderPass, VkFormat format
 }
 
 void createDescriptorSetLayout(VkDevice device, VkDescriptorSetLayout& descriptorSetLayout) {
-    VkDescriptorSetLayoutBinding bindings[] = {
-        {
-            .binding = 0,
-            .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-            .descriptorCount = 1,
-            .stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_FRAGMENT_BIT,
-            .pImmutableSamplers = nullptr
-        },
-        {
-            .binding = 1,
-            .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-            .descriptorCount = 1,
-            .stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_FRAGMENT_BIT,
-            .pImmutableSamplers = nullptr
-        },
-        {
-            .binding = 2,
-            .descriptorType = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR,
-            .descriptorCount = 1,
-            .stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR,
-            .pImmutableSamplers = nullptr
-        }
+    VkDescriptorSetLayoutBinding tlasBinding{
+        .binding = 0,
+        .descriptorType = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR,
+        .descriptorCount = 1,
+        .stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR,
+        .pImmutableSamplers = nullptr
     };
+    VkDescriptorSetLayoutBinding uModeBinding{
+        .binding = 1,
+        .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+        .descriptorCount = 1,
+        .stageFlags = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR,
+        .pImmutableSamplers = nullptr
+    };
+    VkDescriptorSetLayoutBinding uboBinding{
+        .binding = 2,
+        .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+        .descriptorCount = 1,
+        .stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
+        .pImmutableSamplers = nullptr
+    };
+    VkDescriptorSetLayoutBinding samplerBinding{
+        .binding = 3,
+        .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+        .descriptorCount = 1,
+        .stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_FRAGMENT_BIT,
+        .pImmutableSamplers = nullptr
+    };
+    VkDescriptorSetLayoutBinding bindings[] = {tlasBinding, uModeBinding, uboBinding, samplerBinding};
     VkDescriptorSetLayoutCreateInfo layoutInfo{
         .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
         .pNext = nullptr,
         .flags = 0,
-        .bindingCount = 3,
+        .bindingCount = 4,
         .pBindings = bindings
     };
     if (vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &descriptorSetLayout) != VK_SUCCESS) {
@@ -1158,9 +1188,9 @@ void createDescriptorPoolAndSet(VkDevice device, VkDescriptorSetLayout descripto
                                VkSampler& sampler, VkBuffer uniformBuffer, VkImageView storageImageView,
                                VkAccelerationStructureKHR topLevelAS) {
     VkDescriptorPoolSize poolSizes[] = {
-        {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1},
-        {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1},
-        {VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, 1}
+        {VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, 1},
+        {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 2},
+        {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1}
     };
     VkDescriptorPoolCreateInfo poolInfo{
         .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
@@ -1212,7 +1242,12 @@ void createDescriptorPoolAndSet(VkDevice device, VkDescriptorSetLayout descripto
         throw std::runtime_error("Failed to create sampler");
     }
     LOG_INFO("Created sampler: {:p}", std::source_location::current(), static_cast<void*>(sampler));
-    VkDescriptorBufferInfo bufferInfo{
+    VkDescriptorBufferInfo modeInfo{
+        .buffer = uniformBuffer,
+        .offset = 0,
+        .range = sizeof(int)
+    };
+    VkDescriptorBufferInfo uboInfo{
         .buffer = uniformBuffer,
         .offset = 0,
         .range = sizeof(UE::UniformBufferObject)
@@ -1231,14 +1266,14 @@ void createDescriptorPoolAndSet(VkDevice device, VkDescriptorSetLayout descripto
     VkWriteDescriptorSet descriptorWrites[] = {
         {
             .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-            .pNext = nullptr,
+            .pNext = &accelInfo,
             .dstSet = descriptorSet,
             .dstBinding = 0,
             .dstArrayElement = 0,
             .descriptorCount = 1,
-            .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+            .descriptorType = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR,
             .pImageInfo = nullptr,
-            .pBufferInfo = &bufferInfo,
+            .pBufferInfo = nullptr,
             .pTexelBufferView = nullptr
         },
         {
@@ -1248,25 +1283,37 @@ void createDescriptorPoolAndSet(VkDevice device, VkDescriptorSetLayout descripto
             .dstBinding = 1,
             .dstArrayElement = 0,
             .descriptorCount = 1,
-            .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-            .pImageInfo = &imageInfo,
-            .pBufferInfo = nullptr,
+            .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+            .pImageInfo = nullptr,
+            .pBufferInfo = &modeInfo,
             .pTexelBufferView = nullptr
         },
         {
             .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-            .pNext = &accelInfo,
+            .pNext = nullptr,
             .dstSet = descriptorSet,
             .dstBinding = 2,
             .dstArrayElement = 0,
             .descriptorCount = 1,
-            .descriptorType = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR,
+            .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
             .pImageInfo = nullptr,
+            .pBufferInfo = &uboInfo,
+            .pTexelBufferView = nullptr
+        },
+        {
+            .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+            .pNext = nullptr,
+            .dstSet = descriptorSet,
+            .dstBinding = 3,
+            .dstArrayElement = 0,
+            .descriptorCount = 1,
+            .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+            .pImageInfo = &imageInfo,
             .pBufferInfo = nullptr,
             .pTexelBufferView = nullptr
         }
     };
-    vkUpdateDescriptorSets(device, 3, descriptorWrites, 0, nullptr);
+    vkUpdateDescriptorSets(device, 4, descriptorWrites, 0, nullptr);
     LOG_INFO("Updated descriptor sets", std::source_location::current());
 }
 
